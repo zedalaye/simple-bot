@@ -2,8 +2,11 @@ package main
 
 import (
 	"bot/internal/trading"
+	"encoding/json"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ccxt/ccxt/go/v4"
@@ -22,7 +25,14 @@ type PendingOrder struct {
 	Timestamp time.Time // Moment de la création de l'ordre
 }
 
+type State struct {
+	Positions        []Position
+	PendingBuyOrders map[string]PendingOrder
+}
+
 func main() {
+	log.Println("Starting Simple Bot")
+
 	// Configurer l'échange (ex. Binance)
 	exchange := ccxt.CreateExchange("mexc", map[string]interface{}{
 		"apiKey":          os.Getenv("API_KEY"),
@@ -32,6 +42,8 @@ func main() {
 	if exchange == nil {
 		log.Fatal("Failed to create exchange")
 	}
+
+	log.Println("MEXC exchange initialized")
 
 	// Paramètres du bot
 	pair := "BTC/USDC"
@@ -43,6 +55,7 @@ func main() {
 	var positions []Position
 
 	// Charger les précisions du marché pour BTC/USDC
+	log.Println("Fetch market data...")
 	markets, err := exchange.FetchMarkets()
 	if err != nil {
 		log.Fatal("Erreur lors de la récupération des marchés : %v", err)
@@ -73,103 +86,154 @@ func main() {
 		}
 	}
 
-	ticker := time.NewTicker(4 * time.Hour)       // Planificateur pour les achats (toutes les 4 heures)
-	priceCheck := time.NewTicker(5 * time.Minute) // Vérifie les prix toutes les 5 minutes
-	orderCheck := time.NewTicker(5 * time.Minute) // Vérifie les ordres toutes les 5 minutes
+	log.Println("Got market data")
 
-	for {
-		select {
-		case <-ticker.C:
-			// Vérifier le solde
-			balance, err := exchange.FetchBalance(map[string]interface{}{})
-			if err != nil {
-				log.Printf("Erreur lors de la récupération du solde : %v", err)
-				continue
-			}
-			usdcBalance, ok := balance.Free["USDC"]
-			if !ok || (*usdcBalance < amountUSDC) {
-				log.Printf("Solde USDC insuffisant ou non trouvé : %v", usdcBalance)
-				continue
-			}
+	if data, err := os.ReadFile("bot_state.json"); err == nil {
+		var state State
+		if err := json.Unmarshal(data, &state); err == nil {
+			positions = state.Positions
+			pendingBuyOrders = state.PendingBuyOrders
+			log.Println("État du bot restauré depuis bot_state.json")
+		}
+	}
 
-			// Passer un ordre d'achat
-			order, err := trading.PlaceLimitBuyOrder(exchange, pair, amountUSDC, priceOffset)
-			if err != nil {
-				log.Printf("Erreur lors de l'achat : %v", err)
-				continue
-			}
+	log.Printf("Starting Tickers...")
 
-			// Arrondir les valeurs pour respecter la précision
-			orderPrice := roundToPrecision(*order.Price, pricePrecision)
-			orderAmount := roundToPrecision(*order.Amount, amountPrecision)
+	done := make(chan bool)
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-			pendingBuyOrders[*order.Id] = PendingOrder{
-				ID:        *order.Id,
-				Amount:    orderAmount,
-				Price:     orderPrice,
-				Timestamp: time.Now(),
-			}
-			log.Printf("Ordre d'achat limite placé : %v BTC à %v USDC (ID: %v)", orderAmount, orderPrice, *order.Id)
+	go func() {
+		ticker := time.NewTicker(4 * time.Hour) // Planificateur pour les achats (toutes les 4 heures)
+		defer ticker.Stop()
+		priceCheck := time.NewTicker(5 * time.Minute) // Vérifie les prix toutes les 5 minutes
+		defer priceCheck.Stop()
+		orderCheck := time.NewTicker(5 * time.Minute) // Vérifie les ordres toutes les 5 minutes
+		defer orderCheck.Stop()
 
-		case <-priceCheck.C:
-			// Vérifier le prix actuel
-			currentPrice, err := trading.GetPrice(exchange, pair)
-			if err != nil {
-				log.Printf("Erreur lors de la récupération du ticker : %v", err)
-				continue
-			}
-			currentPrice = roundToPrecision(currentPrice, pricePrecision)
-
-			// Vérifier les positions pour vendre
-			for i, pos := range positions {
-				if currentPrice >= pos.Price*profitThreshold {
-					// Placer un ordre de vente limite à +200 USDC
-					order, err := trading.PlaceLimitSellOrder(exchange, pair, pos.Amount, pos.Price, priceOffset)
-					if err != nil {
-						log.Printf("Erreur lors de la vente : %v", err)
-						continue
-					}
-					orderPrice := roundToPrecision(*order.Price, pricePrecision)
-					orderAmount := roundToPrecision(*order.Amount, amountPrecision)
-					if *order.Status == "closed" {
-						log.Printf("Vente limite effectuée : %v BTC à %v USDC", orderAmount, orderPrice)
-						// Supprimer la position vendue
-						positions = append(positions[:i], positions[i+1:]...)
+		for {
+			select {
+			case <-done:
+				state := State{
+					Positions:        positions,
+					PendingBuyOrders: pendingBuyOrders,
+				}
+				data, err := json.MarshalIndent(state, "", "  ")
+				if err != nil {
+					log.Printf("Erreur lors de la sauvegarde de l'état : %v", err)
+				} else {
+					if err := os.WriteFile("bot_state.json", data, 0644); err != nil {
+						log.Printf("Erreur lors de l'écriture du fichier bot_state.json : %v", err)
 					} else {
-						log.Printf("Ordre de vente limite en attente : %v BTC à %v USDC", orderAmount, orderPrice)
+						log.Println("État du bot sauvegardé dans bot_state.json")
 					}
 				}
-			}
+				return
 
-		case <-orderCheck.C:
-			// Vérifier et annuler les ordres en attente trop anciens
-			for orderId, _ := range pendingBuyOrders {
-				order, err := exchange.FetchOrder(orderId)
+			case <-ticker.C:
+				log.Println("Plan a new BuyOrder...")
+
+				// Vérifier le solde
+				balance, err := exchange.FetchBalance(map[string]interface{}{})
 				if err != nil {
-					log.Printf("Erreur lors de la récupération de l'ordre %v : %v", orderId, err)
+					log.Printf("Erreur lors de la récupération du solde : %v", err)
 					continue
 				}
-				if *order.Status == "closed" {
-					// Ordre exécuté : ajouter à positions
-					positions = append(positions, Position{
-						Price:     roundToPrecision(*order.Price, pricePrecision),
-						Amount:    roundToPrecision(*order.Amount, amountPrecision),
-						Timestamp: time.UnixMilli(*order.Timestamp),
-					})
-					log.Printf("Achat limite exécuté : %v BTC à %v USDC (ID: %v)", *order.Amount, *order.Price, orderId)
-					delete(pendingBuyOrders, orderId)
-				} else if order.Timestamp != nil && *order.Timestamp > 0 && time.Since(time.UnixMilli(*order.Timestamp)) > time.Hour {
-					_, err := exchange.CancelOrder(orderId)
+				usdcBalance, ok := balance.Free["USDC"]
+				if !ok || (*usdcBalance < amountUSDC) {
+					log.Printf("Solde USDC insuffisant ou non trouvé : %v", usdcBalance)
+					continue
+				}
+
+				// Passer un ordre d'achat
+				order, err := trading.PlaceLimitBuyOrder(exchange, pair, amountUSDC, priceOffset)
+				if err != nil {
+					log.Printf("Erreur lors de l'achat : %v", err)
+					continue
+				}
+
+				// Arrondir les valeurs pour respecter la précision
+				orderPrice := roundToPrecision(*order.Price, pricePrecision)
+				orderAmount := roundToPrecision(*order.Amount, amountPrecision)
+
+				pendingBuyOrders[*order.Id] = PendingOrder{
+					ID:        *order.Id,
+					Amount:    orderAmount,
+					Price:     orderPrice,
+					Timestamp: time.Now(),
+				}
+				log.Printf("Ordre d'achat limite placé : %v BTC à %v USDC (ID: %v)", orderAmount, orderPrice, *order.Id)
+
+			case <-priceCheck.C:
+				log.Println("Check Price...")
+
+				// Vérifier le prix actuel
+				currentPrice, err := trading.GetPrice(exchange, pair)
+				if err != nil {
+					log.Printf("Erreur lors de la récupération du ticker : %v", err)
+					continue
+				}
+				currentPrice = roundToPrecision(currentPrice, pricePrecision)
+
+				// Vérifier les positions pour vendre
+				for i, pos := range positions {
+					if currentPrice >= pos.Price*profitThreshold {
+						// Placer un ordre de vente limite à +200 USDC
+						order, err := trading.PlaceLimitSellOrder(exchange, pair, pos.Amount, pos.Price, priceOffset)
+						if err != nil {
+							log.Printf("Erreur lors de la vente : %v", err)
+							continue
+						}
+						orderPrice := roundToPrecision(*order.Price, pricePrecision)
+						orderAmount := roundToPrecision(*order.Amount, amountPrecision)
+						if *order.Status == "closed" {
+							log.Printf("Vente limite effectuée : %v BTC à %v USDC", orderAmount, orderPrice)
+							// Supprimer la position vendue
+							positions = append(positions[:i], positions[i+1:]...)
+						} else {
+							log.Printf("Ordre de vente limite en attente : %v BTC à %v USDC", orderAmount, orderPrice)
+						}
+					}
+				}
+
+			case <-orderCheck.C:
+				log.Println("Check Orders...")
+
+				// Vérifier et annuler les ordres en attente trop anciens
+				for orderId, _ := range pendingBuyOrders {
+					order, err := exchange.FetchOrder(orderId)
 					if err != nil {
-						log.Printf("Erreur lors de l'annulation de l'ordre %v : %v", orderId, err)
-					} else {
-						log.Printf("Ordre %v annulé (trop ancien)", orderId)
+						log.Printf("Erreur lors de la récupération de l'ordre %v : %v", orderId, err)
+						continue
+					}
+					if *order.Status == "closed" {
+						// Ordre exécuté : ajouter à positions
+						positions = append(positions, Position{
+							Price:     roundToPrecision(*order.Price, pricePrecision),
+							Amount:    roundToPrecision(*order.Amount, amountPrecision),
+							Timestamp: time.UnixMilli(*order.Timestamp),
+						})
+						log.Printf("Achat limite exécuté : %v BTC à %v USDC (ID: %v)", *order.Amount, *order.Price, orderId)
 						delete(pendingBuyOrders, orderId)
+					} else if order.Timestamp != nil && *order.Timestamp > 0 && time.Since(time.UnixMilli(*order.Timestamp)) > time.Hour {
+						_, err := exchange.CancelOrder(orderId)
+						if err != nil {
+							log.Printf("Erreur lors de l'annulation de l'ordre %v : %v", orderId, err)
+						} else {
+							log.Printf("Ordre %v annulé (trop ancien)", orderId)
+							delete(pendingBuyOrders, orderId)
+						}
 					}
 				}
 			}
 		}
-	}
+	}()
+
+	<-sigs
+	log.Println("Signal d'arrêt reçu. Arrêt du bot...")
+	close(done)
+	time.Sleep(1 * time.Second)
+	log.Println("Bot arrêté")
 }
 
 // roundToPrecision arrondit une valeur à la précision spécifiée
