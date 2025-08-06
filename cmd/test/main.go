@@ -23,6 +23,10 @@ func main() {
 	//var pricePrecision, amountPrecision float64
 	for _, market := range markets {
 		if *market.Symbol == "BTC/USDC" {
+
+			fmt.Printf("Market: %v\n\n", market)
+			fmt.Printf("Base Asset = %s\nQuote Asset = %s\n\n", *market.BaseId, *market.QuoteId)
+
 			if precision, ok := market.Info["precision"].(map[string]interface{}); ok {
 				fmt.Printf("Market precision.amount : %v\n", precision["amount"])
 				fmt.Printf("Market precision.price : %v\n", precision["price"])

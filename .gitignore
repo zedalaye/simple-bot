@@ -1,5 +1,5 @@
 .idea/
-main
-bot
-test
-bot_state.json
+bin/
+!bin/.keep
+bot.db
+config.yml

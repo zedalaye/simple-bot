@@ -14,26 +14,26 @@ func GetPrice(exchange ccxt.IExchange, pair string) (float64, error) {
 }
 
 // PlaceLimitBuyOrder place un ordre d'achat limite
-func PlaceLimitBuyOrder(exchange ccxt.IExchange, pair string, amountUSDC float64, priceOffset float64) (ccxt.Order, error) {
+func PlaceLimitBuyOrder(exchange ccxt.IExchange, pair string, quoteAmount float64, priceOffset float64) (ccxt.Order, error) {
 	currentPrice, err := GetPrice(exchange, pair)
 	if err != nil {
 		return ccxt.Order{}, err
 	}
-	// Calculer le prix limite : prix actuel - 200 USDC
+	// Calculer le prix limite : prix actuel - offset
 	limitPrice := currentPrice - priceOffset
-	// Calculer la quantité de BTC (amountUSDC / prix limite)
-	amountBTC := amountUSDC / limitPrice
+	// Calculer la quantité à acheter (quoteAmount / prix limite)
+	baseAmount := quoteAmount / limitPrice
 
 	postOnly := ccxt.CreateLimitBuyOrderOptions(func(opts *ccxt.CreateLimitBuyOrderOptionsStruct) {
 		*opts.Params = map[string]interface{}{
 			"postOnly": true,
 		}
 	})
-	return exchange.CreateLimitBuyOrder(pair, amountBTC, limitPrice, postOnly)
+	return exchange.CreateLimitBuyOrder(pair, baseAmount, limitPrice, postOnly)
 }
 
 // PlaceLimitSellOrder place un ordre de vente limite
-func PlaceLimitSellOrder(exchange ccxt.IExchange, pair string, amountBTC float64, price float64, priceOffset float64) (ccxt.Order, error) {
+func PlaceLimitSellOrder(exchange ccxt.IExchange, pair string, baseAmount float64, price float64, priceOffset float64) (ccxt.Order, error) {
 	// Prix limite pour la vente : prix d'achat + 200 USDC
 	limitPrice := price + priceOffset
 
@@ -43,5 +43,5 @@ func PlaceLimitSellOrder(exchange ccxt.IExchange, pair string, amountBTC float64
 		}
 	})
 
-	return exchange.CreateLimitSellOrder(pair, amountBTC, limitPrice, postOnly)
+	return exchange.CreateLimitSellOrder(pair, baseAmount, limitPrice, postOnly)
 }

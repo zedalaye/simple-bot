@@ -4,6 +4,8 @@ go 1.24.5
 
 require (
 	github.com/ccxt/ccxt/go/v4 v4.4.98 // direct
+	github.com/mattn/go-sqlite3 v1.14.30 // direct
+    gopkg.in/yaml.v3 v3.0.1 // direct
 )
 
 require (
