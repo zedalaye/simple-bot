@@ -19,6 +19,7 @@ func PlaceLimitBuyOrder(exchange ccxt.IExchange, pair string, quoteAmount float6
 	if err != nil {
 		return ccxt.Order{}, err
 	}
+
 	// Calculer le prix limite : prix actuel - offset
 	limitPrice := currentPrice - priceOffset
 	// Calculer la quantité à acheter (quoteAmount / prix limite)
