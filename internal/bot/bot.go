@@ -217,7 +217,7 @@ func (b *Bot) checkBalance() bool {
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
-	order, err := trading.PlaceLimitSellOrder(b.exchange, b.config.Pair, pos.Amount, pos.Price, b.config.PriceOffset)
+	order, err := trading.PlaceLimitSellOrder(b.exchange, b.config.Pair, pos.Amount, currentPrice, b.config.PriceOffset)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
 		return
