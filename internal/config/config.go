@@ -22,6 +22,7 @@ type FileConfig struct {
 		QuoteAmount     float64 `yaml:"quote_amount" json:"quote_amount"`
 		PriceOffset     float64 `yaml:"price_offset" json:"price_offset"`
 		ProfitThreshold float64 `yaml:"profit_threshold" json:"profit_threshold"`
+		OrderTTL        int64   `yaml:"order_ttl" json:"order_ttl"`
 	} `yaml:"trading" json:"trading"`
 
 	Intervals struct {
@@ -52,11 +53,13 @@ func LoadConfig(filename string) (*FileConfig, error) {
 			QuoteAmount     float64 `yaml:"quote_amount" json:"quote_amount"`
 			PriceOffset     float64 `yaml:"price_offset" json:"price_offset"`
 			ProfitThreshold float64 `yaml:"profit_threshold" json:"profit_threshold"`
+			OrderTTL        int64   `yaml:"order_ttl" json:"order_ttl"`
 		}{
 			Pair:            "BTC/USDC",
 			QuoteAmount:     50.0,
 			PriceOffset:     200.0,
 			ProfitThreshold: 1.015,
+			OrderTTL:        18,
 		},
 		Intervals: struct {
 			BuyIntervalHours  int `yaml:"buy_interval_hours" json:"buy_interval_hours"`
@@ -139,6 +142,7 @@ trading:
   quote_amount: 50.0       # Amount in quote currency (USDC) per buy order
   price_offset: 200.0      # Price difference for limit orders (USDC)
   profit_threshold: 1.015  # Profit threshold (1.5% = 1.015)
+  order_ttl: 18            # Hours
 
 # Timing intervals
 intervals:
@@ -179,6 +183,9 @@ func validateConfig(config *FileConfig) error {
 	if config.Trading.ProfitThreshold <= 1.0 {
 		return fmt.Errorf("trading.profit_threshold must be greater than 1.0")
 	}
+	if config.Trading.OrderTTL < 1 {
+		return fmt.Errorf("trading.order_ttl must be greater or equal than 1")
+	}
 	if config.Intervals.BuyIntervalHours <= 0 {
 		return fmt.Errorf("intervals.buy_interval_hours must be positive")
 	}
@@ -209,6 +216,7 @@ func (fc *FileConfig) ToBotConfig() bot.Config {
 		QuoteAmount:     fc.Trading.QuoteAmount,
 		PriceOffset:     fc.Trading.PriceOffset,
 		ProfitThreshold: fc.Trading.ProfitThreshold,
+		OrderTTL:        time.Duration(fc.Trading.OrderTTL) * time.Hour,
 		BuyInterval:     time.Duration(fc.Intervals.BuyIntervalHours) * time.Hour,
 		CheckInterval:   time.Duration(fc.Intervals.CheckIntervalMins) * time.Minute,
 	}

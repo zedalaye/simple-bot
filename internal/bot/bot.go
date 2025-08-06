@@ -14,6 +14,7 @@ type Config struct {
 	QuoteAmount     float64
 	PriceOffset     float64
 	ProfitThreshold float64
+	OrderTTL        time.Duration
 	BuyInterval     time.Duration
 	CheckInterval   time.Duration
 }
@@ -297,7 +298,7 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order ccxt.Order) {
 
 func (b *Bot) shouldCancelOrder(order ccxt.Order) bool {
 	return order.Timestamp != nil && *order.Timestamp > 0 &&
-		time.Since(time.UnixMilli(*order.Timestamp)) > time.Hour
+		time.Since(time.UnixMilli(*order.Timestamp)) > b.config.OrderTTL
 }
 
 func (b *Bot) handleCancelOrder(dbOrder database.Order) {
