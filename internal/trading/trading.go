@@ -25,24 +25,15 @@ func PlaceLimitBuyOrder(exchange ccxt.IExchange, pair string, quoteAmount float6
 	// Calculer la quantité à acheter (quoteAmount / prix limite)
 	baseAmount := quoteAmount / limitPrice
 
-	postOnly := ccxt.CreateLimitBuyOrderOptions(func(opts *ccxt.CreateLimitBuyOrderOptionsStruct) {
-		*opts.Params = map[string]interface{}{
-			"postOnly": true,
-		}
-	})
-	return exchange.CreateLimitBuyOrder(pair, baseAmount, limitPrice, postOnly)
+	// Version simple sans postOnly si les options posent problème
+	return exchange.CreateLimitBuyOrder(pair, baseAmount, limitPrice)
 }
 
 // PlaceLimitSellOrder place un ordre de vente limite
 func PlaceLimitSellOrder(exchange ccxt.IExchange, pair string, baseAmount float64, price float64, priceOffset float64) (ccxt.Order, error) {
-	// Prix limite pour la vente : prix d'achat + 200 USDC
+	// Prix limite pour la vente : prix d'achat + offset
 	limitPrice := price + priceOffset
 
-	postOnly := ccxt.CreateLimitSellOrderOptions(func(opts *ccxt.CreateLimitSellOrderOptionsStruct) {
-		*opts.Params = map[string]interface{}{
-			"postOnly": true,
-		}
-	})
-
-	return exchange.CreateLimitSellOrder(pair, baseAmount, limitPrice, postOnly)
+	// Version simple sans postOnly
+	return exchange.CreateLimitSellOrder(pair, baseAmount, limitPrice)
 }
