@@ -1,37 +1,214 @@
 package main
 
 import (
+	"bot/internal/config"
+	"bot/internal/logger"
+	"bot/internal/trading"
+	"flag"
 	"fmt"
+	"log"
+	"os"
+	"time"
 
 	"github.com/ccxt/ccxt/go/v4"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	exchange := ccxt.CreateExchange("mexc", map[string]interface{}{})
+	fmt.Println("=== Bot Test Suite ===")
 
-	ticker, err := exchange.FetchTicker("BTC/USDC")
+	// Paramètres de ligne de commande
+	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	flag.Parse()
+
+	// 1. Charger la configuration du bot
+	fmt.Println("1. Loading bot configuration...")
+	fileConfig, err := config.LoadConfig(*configFile)
 	if err != nil {
-		fmt.Printf("Erreur : %v\n", err)
-		return
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	fmt.Printf("Ticker: %v\n", *ticker.Last)
 
-	markets, err := exchange.FetchMarkets()
+	// Initialiser le logger pour les tests
+	err = logger.InitLogger(fileConfig.GetLogLevel(), "")
 	if err != nil {
-		fmt.Printf("Erreur : %v\n", err)
+		log.Fatalf("Failed to initialize logger: %v", err)
 	}
-	//var pricePrecision, amountPrecision float64
-	for _, market := range markets {
-		if *market.Symbol == "BTC/USDC" {
 
-			fmt.Printf("Market: %v\n\n", market)
-			fmt.Printf("Base Asset = %s\nQuote Asset = %s\n\n", *market.BaseId, *market.QuoteId)
+	// Charge le fichier .env pour obtenir les API Keys
+	err = godotenv.Load()
+	if err != nil {
+		logger.Warn("No .env file found, using system environment variables")
+	}
 
-			if precision, ok := market.Info["precision"].(map[string]interface{}); ok {
-				fmt.Printf("Market precision.amount : %v\n", precision["amount"])
-				fmt.Printf("Market precision.price : %v\n", precision["price"])
-			}
-			break
+	botConfig := fileConfig.ToBotConfig()
+	logger.Debugf("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
+		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
+
+	// 2. Créer l'instance de l'exchange
+	logger.Info("2. Creating exchange instance...")
+	exchange := createExchange(fileConfig.Exchange.Name)
+	if exchange == nil {
+		logger.Fatalf("Failed to create %s exchange instance", fileConfig.Exchange.Name)
+	}
+	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
+
+	// Récupérer les informations du marché
+	baseAsset, quoteAsset, err := getMarketInfo(exchange, botConfig.Pair)
+	if err != nil {
+		logger.Fatalf("Failed to get market info: %v", err)
+	}
+	logger.Infof("✓ Market info: %s/%s", baseAsset, quoteAsset)
+
+	// 3. Vérifier les fonds disponibles dans la devise de cotation
+	logger.Info("3. Checking quote currency balance...")
+	baseBalance, quoteBalance, err := checkBalance(exchange, baseAsset, quoteAsset)
+	if err != nil {
+		logger.Fatalf("Failed to check balances: %v", err)
+	}
+	logger.Infof("✓ %s balance: %.6f", baseAsset, baseBalance)
+	logger.Infof("✓ %s balance: %.6f", quoteAsset, quoteBalance)
+
+	if quoteBalance < botConfig.QuoteAmount {
+		logger.Warnf("⚠️  Warning: Insufficient %s balance (%.6f < %.2f)",
+			quoteAsset, quoteBalance, botConfig.QuoteAmount)
+	}
+
+	// 4. Vérifier le prix de la devise de base
+	logger.Info("4. Fetching current price...")
+	currentPrice, err := trading.GetPrice(exchange, botConfig.Pair)
+	if err != nil {
+		logger.Fatalf("Failed to get current price: %v", err)
+	}
+	logger.Infof("✓ Current %s price: %.2f %s", baseAsset, currentPrice, quoteAsset)
+
+	// 5. Créer un ordre d'achat limite de 1au prix - offset
+	logger.Info("5. Creating limit buy order...")
+
+	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, 5.0)
+	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
+
+	buyOrder, err := trading.PlaceLimitBuyOrder(exchange, botConfig.Pair, buyAmountInQuoteAsset, botConfig.PriceOffset)
+	if err != nil {
+		logger.Fatalf("Failed to place buy order: %v", err)
+	}
+	logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f",
+		*buyOrder.Id, *buyOrder.Price, *buyOrder.Amount)
+
+	// Attendre un moment pour que l'ordre soit enregistré
+	time.Sleep(2 * time.Second)
+
+	// 6. Annuler l'ordre d'achat
+	logger.Info("6. Cancelling buy order...")
+	_, err = exchange.CancelOrder(*buyOrder.Id, ccxt.WithCancelOrderSymbol(botConfig.Pair))
+	if err != nil {
+		logger.Errorf("Failed to cancel buy order: %v", err)
+		// Ne pas arrêter le test, continuer
+	} else {
+		logger.Infof("✓ Buy order cancelled: ID=%s", *buyOrder.Id)
+	}
+
+	// Attendre un moment pour que l'annulation soit effective
+	time.Sleep(2 * time.Second)
+
+	//// 7. Vérifier les fonds disponibles dans la devise de base
+	//logger.Info("7. Checking base currency balance...")
+	//baseBalance, err := checkBalance(exchange, baseAsset)
+	//if err != nil {
+	//	logger.Fatalf("Failed to check base balance: %v", err)
+	//}
+	//logger.Infof("✓ %s balance: %.6f", baseAsset, baseBalance)
+	//
+	//if baseBalance <= 0 {
+	//	logger.Warnf("⚠️  Warning: No %s balance for sell order test", baseAsset)
+	//	logger.Info("   Using minimum amount for demonstration...")
+	//	baseBalance = 0.001 // Montant minimal pour le test
+	//}
+
+	// 8. Créer un ordre de vente limite au prix + offset
+	logger.Info("7. Creating limit sell order...")
+	sellPrice := currentPrice + botConfig.PriceOffset
+	sellAmountInBaseAsset := *buyOrder.Amount
+
+	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, botConfig.PriceOffset)
+	logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
+
+	sellOrder, err := trading.PlaceLimitSellOrder(exchange, botConfig.Pair, sellAmountInBaseAsset, currentPrice, botConfig.PriceOffset)
+	if err != nil {
+		logger.Errorf("Failed to place sell order: %v", err)
+		// Ne pas arrêter le test, continuer
+	} else {
+		logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f",
+			*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount)
+
+		// Attendre un moment
+		time.Sleep(2 * time.Second)
+
+		// 9. Annuler l'ordre de vente
+		logger.Info("8. Cancelling sell order...")
+		_, err = exchange.CancelOrder(*sellOrder.Id, ccxt.WithCancelOrderSymbol(botConfig.Pair))
+		if err != nil {
+			logger.Errorf("Failed to cancel sell order: %v", err)
+		} else {
+			logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
 		}
 	}
+
+	// Résumé final
+	logger.Info("=== Test Summary ===")
+	logger.Infof("Exchange: %s", fileConfig.Exchange.Name)
+	logger.Infof("Trading pair: %s", botConfig.Pair)
+	logger.Infof("Current price: %.2f %s", currentPrice, quoteAsset)
+	logger.Infof("Price offset: %.2f %s", botConfig.PriceOffset, quoteAsset)
+	logger.Infof("%s balance: %.6f", quoteAsset, quoteBalance)
+	logger.Infof("%s balance: %.6f", baseAsset, baseBalance)
+	logger.Info("✓ All tests completed successfully!")
+}
+
+func createExchange(exchangeName string) ccxt.IExchange {
+	apiKey := os.Getenv("API_KEY")
+	apiSecret := os.Getenv("API_SECRET")
+
+	if apiKey == "" || apiSecret == "" {
+		logger.Warn("⚠️  Warning: API_KEY or API_SECRET not set - using sandbox mode")
+	}
+
+	return ccxt.CreateExchange(exchangeName, map[string]interface{}{
+		"apiKey":          apiKey,
+		"secret":          apiSecret,
+		"enableRateLimit": true,
+		"sandbox":         apiKey == "" || apiSecret == "", // Mode sandbox si pas de clés
+	})
+}
+
+func getMarketInfo(exchange ccxt.IExchange, pair string) (string, string, error) {
+	markets, err := exchange.FetchMarkets()
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, market := range markets {
+		if market.Symbol != nil && *market.Symbol == pair {
+			return *market.BaseId, *market.QuoteId, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("market %s not found", pair)
+}
+
+func checkBalance(exchange ccxt.IExchange, baseAsset, quoteAsset string) (float64, float64, error) {
+	balance, err := exchange.FetchBalance(map[string]interface{}{})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	baseBalance, ok1 := balance.Free[baseAsset]
+	if !ok1 {
+		*baseBalance = 0
+	}
+	quoteBalance, ok2 := balance.Free[quoteAsset]
+	if !ok2 {
+		*quoteBalance = 0
+	}
+
+	return *baseBalance, *quoteBalance, nil
 }
