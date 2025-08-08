@@ -1,28 +1,48 @@
 package bot
 
 import (
-	"bot/internal/database"
+	"bot/internal/core/config"
+	"bot/internal/core/database"
 	"bot/internal/logger"
-	"bot/internal/trading"
 	"time"
-
-	"github.com/ccxt/ccxt/go/v4"
 )
 
-type Config struct {
-	Pair            string
-	QuoteAmount     float64
-	PriceOffset     float64
-	ProfitThreshold float64
-	OrderTTL        time.Duration
-	BuyInterval     time.Duration
-	CheckInterval   time.Duration
+type Exchange interface {
+	FetchMarkets() ([]Market, error)
+	FetchBalance() (map[string]Balance, error)
+	PlaceLimitBuyOrder(pair string, amount float64, price float64) (Order, error)
+	PlaceLimitSellOrder(pair string, amount float64, price float64) (Order, error)
+	FetchOrder(id string) (Order, error)
+	CancelOrder(id string, symbol string) (Order, error)
+	GetPrice(pair string) (float64, error)
+}
+
+type Market struct {
+	Symbol    string
+	BaseId    string
+	QuoteId   string
+	Precision struct {
+		Price  float64
+		Amount float64
+	}
+}
+
+type Balance struct {
+	Free float64
+}
+
+type Order struct {
+	Id        string
+	Price     float64
+	Amount    float64
+	Status    string
+	Timestamp int64
 }
 
 type Bot struct {
-	config          Config
+	config          config.BotConfig
 	db              *database.DB
-	exchange        ccxt.IExchange
+	exchange        Exchange
 	pricePrecision  float64
 	amountPrecision float64
 	baseAsset       string
@@ -30,7 +50,7 @@ type Bot struct {
 	done            chan bool
 }
 
-func NewBot(config Config, db *database.DB, exchange ccxt.IExchange) (*Bot, error) {
+func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
 	bot := &Bot{
 		config:   config,
 		db:       db,
@@ -38,7 +58,6 @@ func NewBot(config Config, db *database.DB, exchange ccxt.IExchange) (*Bot, erro
 		done:     make(chan bool),
 	}
 
-	// Initialiser les précisions du marché
 	if err := bot.initializeMarketPrecision(); err != nil {
 		return nil, err
 	}
@@ -53,30 +72,15 @@ func (b *Bot) initializeMarketPrecision() error {
 		return err
 	}
 
-	// Valeurs par défaut
 	b.pricePrecision = 0.01
 	b.amountPrecision = 0.000001
 
 	for _, market := range markets {
-		if market.Symbol != nil && *market.Symbol == b.config.Pair {
-
-			b.baseAsset = *market.BaseId
-			b.quoteAsset = *market.QuoteId
-
-			if precision, ok := market.Info["precision"].(map[string]interface{}); ok {
-				if pp, ok := precision["price"].(float64); ok {
-					b.pricePrecision = pp
-				} else {
-					logger.Info("precision.price not found, using default value: 0.01")
-				}
-				if ap, ok := precision["amount"].(float64); ok {
-					b.amountPrecision = ap
-				} else {
-					logger.Info("precision.amount not found, using default value: 0.000001")
-				}
-			} else {
-				logger.Info("precision data not found in market.Info, using default values")
-			}
+		if market.Symbol == b.config.Pair {
+			b.baseAsset = market.BaseId
+			b.quoteAsset = market.QuoteId
+			b.pricePrecision = market.Precision.Price
+			b.amountPrecision = market.Precision.Amount
 			break
 		}
 	}
@@ -88,12 +92,9 @@ func (b *Bot) initializeMarketPrecision() error {
 
 func (b *Bot) Start() error {
 	logger.Info("Starting bot...")
-
-	// Afficher les statistiques au démarrage
 	if stats, err := b.db.GetStats(); err == nil {
 		logger.Infof("Bot statistics: %+v", stats)
 	}
-
 	go b.run()
 	return nil
 }
@@ -118,13 +119,10 @@ func (b *Bot) run() {
 		case <-b.done:
 			logger.Info("Bot stopped gracefully")
 			return
-
 		case <-buyTicker.C:
 			b.handleBuySignal()
-
 		case <-priceCheckTicker.C:
 			b.handlePriceCheck()
-
 		case <-orderCheckTicker.C:
 			b.handleOrderCheck()
 		}
@@ -134,33 +132,50 @@ func (b *Bot) run() {
 func (b *Bot) handleBuySignal() {
 	logger.Info("Time to place a new Buy Order...")
 
-	if !b.checkBalance() {
+	balance, err := b.exchange.FetchBalance()
+	if err != nil {
+		logger.Errorf("Failed to fetch balances: %v", err)
 		return
 	}
 
-	order, err := trading.PlaceLimitBuyOrder(b.exchange, b.config.Pair, b.config.QuoteAmount, b.config.PriceOffset)
+	quoteAssetBalance, ok := balance[b.quoteAsset]
+	if !ok || (quoteAssetBalance.Free < b.config.QuoteAmount) {
+		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
+		return
+	}
+
+	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
+	if err != nil {
+		logger.Errorf("Failed to get ticker data: %v", err)
+		return
+	}
+
+	limitPrice := currentPrice - b.config.PriceOffset
+	baseAmount := b.config.QuoteAmount / limitPrice
+
+	order, err := b.exchange.PlaceLimitBuyOrder(b.config.Pair, baseAmount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Buy Order: %v", err)
 		return
 	}
 
-	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
+	orderPrice := b.roundToPrecision(order.Price, b.pricePrecision)
+	orderAmount := b.roundToPrecision(order.Amount, b.amountPrecision)
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, nil)
+	dbOrder, err := b.db.CreateOrder(order.Id, database.Buy, orderAmount, orderPrice, nil)
 	if err != nil {
 		logger.Errorf("Failed to save buy order to database: %v", err)
 		return
 	}
 
 	logger.Infof("Limit Buy Order placed: %v %s at %v %s (ID=%v, DB_ID=%v)",
-		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, *order.Id, dbOrder.ID)
+		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, order.Id, dbOrder.ID)
 }
 
 func (b *Bot) handlePriceCheck() {
 	logger.Debug("Checking prices...")
 
-	currentPrice, err := trading.GetPrice(b.exchange, b.config.Pair)
+	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to get ticker data: %v", err)
 		return
@@ -200,41 +215,25 @@ func (b *Bot) handleOrderCheck() {
 	}
 }
 
-func (b *Bot) checkBalance() bool {
-	balance, err := b.exchange.FetchBalance(map[string]interface{}{})
-	if err != nil {
-		logger.Errorf("Failed to fetch balances: %v", err)
-		return false
-	}
-
-	quoteAssetBalance, ok := balance.Free[b.quoteAsset]
-	if !ok || (*quoteAssetBalance < b.config.QuoteAmount) {
-		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance)
-		return false
-	}
-
-	logger.Debugf("USDC balance: %v", quoteAssetBalance)
-	return true
-}
-
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
-	order, err := trading.PlaceLimitSellOrder(b.exchange, b.config.Pair, pos.Amount, currentPrice, b.config.PriceOffset)
+	limitPrice := currentPrice + b.config.PriceOffset
+	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
 		return
 	}
 
-	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
+	orderPrice := b.roundToPrecision(order.Price, b.pricePrecision)
+	orderAmount := b.roundToPrecision(order.Amount, b.amountPrecision)
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
+	dbOrder, err := b.db.CreateOrder(order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
 	if err != nil {
 		logger.Errorf("Failed to save sell order to database: %v", err)
 		return
 	}
 
 	logger.Infof("Limit Sell Order placed: %v %s at %v %s (ID=%v, DB_ID=%v, Position=%v)",
-		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, *order.Id, dbOrder.ID, pos.ID)
+		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, order.Id, dbOrder.ID, pos.ID)
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {
@@ -244,14 +243,14 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 		return
 	}
 
-	if *order.Status == "FILLED" {
+	if order.Status == "FILLED" {
 		b.handleFilledOrder(dbOrder, order)
 	} else if b.shouldCancelOrder(order) {
 		b.handleCancelOrder(dbOrder)
 	}
 }
 
-func (b *Bot) handleFilledOrder(dbOrder database.Order, order ccxt.Order) {
+func (b *Bot) handleFilledOrder(dbOrder database.Order, order Order) {
 	err := b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Filled)
 	if err != nil {
 		logger.Errorf("Failed to update order status in database: %v", err)
@@ -266,13 +265,13 @@ func (b *Bot) handleFilledOrder(dbOrder database.Order, order ccxt.Order) {
 	}
 }
 
-func (b *Bot) handleFilledBuyOrder(order ccxt.Order) {
+func (b *Bot) handleFilledBuyOrder(order Order) {
 	logger.Infof("Buy Order Filled: %v %s at %v %s (ID=%v)",
-		*order.Amount, b.baseAsset, *order.Price, b.quoteAsset, *order.Id)
+		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
 
 	position, err := b.db.CreatePosition(
-		b.roundToPrecision(*order.Price, b.pricePrecision),
-		b.roundToPrecision(*order.Amount, b.amountPrecision),
+		b.roundToPrecision(order.Price, b.pricePrecision),
+		b.roundToPrecision(order.Amount, b.amountPrecision),
 	)
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
@@ -282,9 +281,9 @@ func (b *Bot) handleFilledBuyOrder(order ccxt.Order) {
 	}
 }
 
-func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order ccxt.Order) {
+func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	logger.Infof("Sell Order Filled: %v %s at %v %s (ID=%v)",
-		*order.Amount, b.baseAsset, *order.Price, b.quoteAsset, *order.Id)
+		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
 
 	if dbOrder.PositionID != nil {
 		err := b.db.DeletePosition(*dbOrder.PositionID)
@@ -296,13 +295,13 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order ccxt.Order) {
 	}
 }
 
-func (b *Bot) shouldCancelOrder(order ccxt.Order) bool {
-	return order.Timestamp != nil && *order.Timestamp > 0 &&
-		time.Since(time.UnixMilli(*order.Timestamp)) > b.config.OrderTTL
+func (b *Bot) shouldCancelOrder(order Order) bool {
+	return order.Timestamp > 0 &&
+		time.Since(time.UnixMilli(order.Timestamp)) > b.config.OrderTTL
 }
 
 func (b *Bot) handleCancelOrder(dbOrder database.Order) {
-	_, err := b.exchange.CancelOrder(dbOrder.ExternalID)
+	_, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to Cancel Order (ID=%v): %v", dbOrder.ExternalID, err)
 		return

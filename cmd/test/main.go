@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bot/internal/config"
+	"bot/internal/bot"
+	"bot/internal/core/config"
+	"bot/internal/exchange"
 	"bot/internal/logger"
-	"bot/internal/trading"
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
-	"github.com/ccxt/ccxt/go/v4"
 	"github.com/joho/godotenv"
 )
 
@@ -46,14 +45,14 @@ func main() {
 
 	// 2. Créer l'instance de l'exchange
 	logger.Info("2. Creating exchange instance...")
-	exchange := createExchange(fileConfig.Exchange.Name)
-	if exchange == nil {
+	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
+	if exchg == nil {
 		logger.Fatalf("Failed to create %s exchange instance", fileConfig.Exchange.Name)
 	}
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
 	// Récupérer les informations du marché
-	baseAsset, quoteAsset, err := getMarketInfo(exchange, botConfig.Pair)
+	baseAsset, quoteAsset, err := getMarketInfo(exchg, botConfig.Pair)
 	if err != nil {
 		logger.Fatalf("Failed to get market info: %v", err)
 	}
@@ -61,7 +60,7 @@ func main() {
 
 	// 3. Vérifier les fonds disponibles dans la devise de cotation
 	logger.Info("3. Checking quote currency balance...")
-	baseBalance, quoteBalance, err := checkBalance(exchange, baseAsset, quoteAsset)
+	baseBalance, quoteBalance, err := checkBalance(exchg, baseAsset, quoteAsset)
 	if err != nil {
 		logger.Fatalf("Failed to check balances: %v", err)
 	}
@@ -75,7 +74,7 @@ func main() {
 
 	// 4. Vérifier le prix de la devise de base
 	logger.Info("4. Fetching current price...")
-	currentPrice, err := trading.GetPrice(exchange, botConfig.Pair)
+	currentPrice, err := exchg.GetPrice(botConfig.Pair)
 	if err != nil {
 		logger.Fatalf("Failed to get current price: %v", err)
 	}
@@ -87,24 +86,27 @@ func main() {
 	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, 5.0)
 	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
 
-	buyOrder, err := trading.PlaceLimitBuyOrder(exchange, botConfig.Pair, buyAmountInQuoteAsset, botConfig.PriceOffset)
+	limitPrice := currentPrice - botConfig.PriceOffset
+	baseAmount := buyAmountInQuoteAsset / limitPrice
+
+	buyOrder, err := exchg.PlaceLimitBuyOrder(botConfig.Pair, baseAmount, limitPrice)
 	if err != nil {
 		logger.Fatalf("Failed to place buy order: %v", err)
 	}
-	logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f",
-		*buyOrder.Id, *buyOrder.Price, *buyOrder.Amount)
+	logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
+		buyOrder.Id, buyOrder.Price, buyOrder.Amount, buyOrder.Status)
 
 	// Attendre un moment pour que l'ordre soit enregistré
 	time.Sleep(2 * time.Second)
 
 	// 6. Annuler l'ordre d'achat
 	logger.Info("6. Cancelling buy order...")
-	_, err = exchange.CancelOrder(*buyOrder.Id, ccxt.WithCancelOrderSymbol(botConfig.Pair))
+	_, err = exchg.CancelOrder(buyOrder.Id, botConfig.Pair)
 	if err != nil {
 		logger.Errorf("Failed to cancel buy order: %v", err)
 		// Ne pas arrêter le test, continuer
 	} else {
-		logger.Infof("✓ Buy order cancelled: ID=%s", *buyOrder.Id)
+		logger.Infof("✓ Buy order cancelled: ID=%s", buyOrder.Id)
 	}
 
 	// Attendre un moment pour que l'annulation soit effective
@@ -127,29 +129,29 @@ func main() {
 	// 8. Créer un ordre de vente limite au prix + offset
 	logger.Info("7. Creating limit sell order...")
 	sellPrice := currentPrice + botConfig.PriceOffset
-	sellAmountInBaseAsset := *buyOrder.Amount
+	sellAmountInBaseAsset := buyOrder.Amount
 
 	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, botConfig.PriceOffset)
 	logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
 
-	sellOrder, err := trading.PlaceLimitSellOrder(exchange, botConfig.Pair, sellAmountInBaseAsset, currentPrice, botConfig.PriceOffset)
+	sellOrder, err := exchg.PlaceLimitSellOrder(botConfig.Pair, sellAmountInBaseAsset, sellPrice)
 	if err != nil {
 		logger.Errorf("Failed to place sell order: %v", err)
 		// Ne pas arrêter le test, continuer
 	} else {
-		logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f",
-			*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount)
+		logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
+			sellOrder.Id, sellOrder.Price, sellOrder.Amount, sellOrder.Status)
 
 		// Attendre un moment
 		time.Sleep(2 * time.Second)
 
 		// 9. Annuler l'ordre de vente
 		logger.Info("8. Cancelling sell order...")
-		_, err = exchange.CancelOrder(*sellOrder.Id, ccxt.WithCancelOrderSymbol(botConfig.Pair))
+		_, err = exchg.CancelOrder(sellOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Errorf("Failed to cancel sell order: %v", err)
 		} else {
-			logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
+			logger.Infof("✓ Sell order cancelled: ID=%s", sellOrder.Id)
 		}
 	}
 
@@ -164,51 +166,35 @@ func main() {
 	logger.Info("✓ All tests completed successfully!")
 }
 
-func createExchange(exchangeName string) ccxt.IExchange {
-	apiKey := os.Getenv("API_KEY")
-	apiSecret := os.Getenv("API_SECRET")
-
-	if apiKey == "" || apiSecret == "" {
-		logger.Warn("⚠️  Warning: API_KEY or API_SECRET not set - using sandbox mode")
-	}
-
-	return ccxt.CreateExchange(exchangeName, map[string]interface{}{
-		"apiKey":          apiKey,
-		"secret":          apiSecret,
-		"enableRateLimit": true,
-		"sandbox":         apiKey == "" || apiSecret == "", // Mode sandbox si pas de clés
-	})
-}
-
-func getMarketInfo(exchange ccxt.IExchange, pair string) (string, string, error) {
+func getMarketInfo(exchange bot.Exchange, pair string) (string, string, error) {
 	markets, err := exchange.FetchMarkets()
 	if err != nil {
 		return "", "", err
 	}
 
 	for _, market := range markets {
-		if market.Symbol != nil && *market.Symbol == pair {
-			return *market.BaseId, *market.QuoteId, nil
+		if market.Symbol == pair {
+			return market.BaseId, market.QuoteId, nil
 		}
 	}
 
 	return "", "", fmt.Errorf("market %s not found", pair)
 }
 
-func checkBalance(exchange ccxt.IExchange, baseAsset, quoteAsset string) (float64, float64, error) {
-	balance, err := exchange.FetchBalance(map[string]interface{}{})
+func checkBalance(exchange bot.Exchange, baseAsset, quoteAsset string) (float64, float64, error) {
+	balances, err := exchange.FetchBalance()
 	if err != nil {
 		return 0, 0, err
 	}
 
-	baseBalance, ok1 := balance.Free[baseAsset]
+	baseBalance, ok1 := balances[baseAsset]
 	if !ok1 {
-		*baseBalance = 0
+		baseBalance.Free = 0
 	}
-	quoteBalance, ok2 := balance.Free[quoteAsset]
+	quoteBalance, ok2 := balances[quoteAsset]
 	if !ok2 {
-		*quoteBalance = 0
+		quoteBalance.Free = 0
 	}
 
-	return *baseBalance, *quoteBalance, nil
+	return baseBalance.Free, quoteBalance.Free, nil
 }

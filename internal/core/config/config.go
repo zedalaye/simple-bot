@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bot/internal/bot"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -210,8 +209,18 @@ func validateConfig(config *FileConfig) error {
 	return nil
 }
 
-func (fc *FileConfig) ToBotConfig() bot.Config {
-	return bot.Config{
+type BotConfig struct {
+	Pair            string
+	QuoteAmount     float64
+	PriceOffset     float64
+	ProfitThreshold float64
+	OrderTTL        time.Duration
+	BuyInterval     time.Duration
+	CheckInterval   time.Duration
+}
+
+func (fc *FileConfig) ToBotConfig() BotConfig {
+	return BotConfig{
 		Pair:            fc.Trading.Pair,
 		QuoteAmount:     fc.Trading.QuoteAmount,
 		PriceOffset:     fc.Trading.PriceOffset,

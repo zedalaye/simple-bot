@@ -2,8 +2,9 @@ package main
 
 import (
 	"bot/internal/bot"
-	"bot/internal/config"
-	"bot/internal/database"
+	"bot/internal/core/config"
+	"bot/internal/core/database"
+	"bot/internal/exchange"
 	"bot/internal/logger"
 	"flag"
 	"log"
@@ -11,8 +12,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/ccxt/ccxt/go/v4"
 )
 
 func main() {
@@ -45,18 +44,20 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func(db *database.DB) {
+		err := db.Close()
+		if err != nil {
+			logger.Fatalf("Failed to close database: %v", err)
+		}
+	}(db)
 	logger.Info("Database initialized successfully")
 
 	// Configuration de l'exchange
-	exchange := createExchange(fileConfig.Exchange.Name)
-	if exchange == nil {
-		logger.Fatalf("Failed to create %s exchange instance", fileConfig.Exchange.Name)
-	}
+	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
 	logger.Infof("%s exchange initialized", fileConfig.Exchange.Name)
 
 	// Création et démarrage du bot
-	tradingBot, err := bot.NewBot(botConfig, db, exchange)
+	tradingBot, err := bot.NewBot(botConfig, db, exchg)
 	if err != nil {
 		logger.Fatalf("Failed to create bot: %v", err)
 	}
@@ -68,14 +69,6 @@ func main() {
 
 	// Gestion des signaux d'arrêt
 	waitForShutdown(tradingBot)
-}
-
-func createExchange(exchangeName string) ccxt.IExchange {
-	return ccxt.CreateExchange(exchangeName, map[string]interface{}{
-		"apiKey":          os.Getenv("API_KEY"),
-		"secret":          os.Getenv("API_SECRET"),
-		"enableRateLimit": true,
-	})
 }
 
 func waitForShutdown(tradingBot *bot.Bot) {

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bot/internal/config"
-	"bot/internal/database"
+	"bot/internal/core/config"
+	"bot/internal/core/database"
 	"encoding/json"
 	"flag"
 	"fmt"
