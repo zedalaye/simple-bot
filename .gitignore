@@ -4,3 +4,5 @@ bin/
 bot.db
 config.yml
 .env
+.env.*
+*.log
