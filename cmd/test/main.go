@@ -13,6 +13,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const MinQuoteAmount = 10.0
+
 func main() {
 	fmt.Println("=== Bot Test Suite ===")
 
@@ -83,7 +85,7 @@ func main() {
 	// 5. Créer un ordre d'achat limite de 1au prix - offset
 	logger.Info("5. Creating limit buy order...")
 
-	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, 5.0)
+	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, MinQuoteAmount)
 	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
 
 	limitPrice := currentPrice - botConfig.PriceOffset
@@ -91,26 +93,31 @@ func main() {
 
 	buyOrder, err := exchg.PlaceLimitBuyOrder(botConfig.Pair, baseAmount, limitPrice)
 	if err != nil {
-		logger.Fatalf("Failed to place buy order: %v", err)
-	}
-	logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
-		buyOrder.Id, buyOrder.Price, buyOrder.Amount, buyOrder.Status)
-
-	// Attendre un moment pour que l'ordre soit enregistré
-	time.Sleep(2 * time.Second)
-
-	// 6. Annuler l'ordre d'achat
-	logger.Info("6. Cancelling buy order...")
-	_, err = exchg.CancelOrder(buyOrder.Id, botConfig.Pair)
-	if err != nil {
-		logger.Errorf("Failed to cancel buy order: %v", err)
-		// Ne pas arrêter le test, continuer
+		logger.Errorf("Failed to place buy order: %v", err)
 	} else {
-		logger.Infof("✓ Buy order cancelled: ID=%s", buyOrder.Id)
-	}
+		buyOrder, err = exchg.FetchOrder(*buyOrder.Id)
+		if err != nil {
+			logger.Fatalf("Failed to fetch buy order: %v", err)
+		}
+		logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
+			*buyOrder.Id, *buyOrder.Price, *buyOrder.Amount, *buyOrder.Status)
 
-	// Attendre un moment pour que l'annulation soit effective
-	time.Sleep(2 * time.Second)
+		// Attendre un moment pour que l'ordre soit enregistré
+		time.Sleep(2 * time.Second)
+
+		// 6. Annuler l'ordre d'achat
+		logger.Info("6. Cancelling buy order...")
+		_, err = exchg.CancelOrder(*buyOrder.Id, botConfig.Pair)
+		if err != nil {
+			logger.Errorf("Failed to cancel buy order: %v", err)
+			// Ne pas arrêter le test, continuer
+		} else {
+			logger.Infof("✓ Buy order cancelled: ID=%s", *buyOrder.Id)
+		}
+
+		// Attendre un moment pour que l'annulation soit effective
+		time.Sleep(2 * time.Second)
+	}
 
 	//// 7. Vérifier les fonds disponibles dans la devise de base
 	//logger.Info("7. Checking base currency balance...")
@@ -129,7 +136,7 @@ func main() {
 	// 8. Créer un ordre de vente limite au prix + offset
 	logger.Info("7. Creating limit sell order...")
 	sellPrice := currentPrice + botConfig.PriceOffset
-	sellAmountInBaseAsset := buyOrder.Amount
+	sellAmountInBaseAsset := *buyOrder.Amount
 
 	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, botConfig.PriceOffset)
 	logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
@@ -139,19 +146,23 @@ func main() {
 		logger.Errorf("Failed to place sell order: %v", err)
 		// Ne pas arrêter le test, continuer
 	} else {
+		sellOrder, err = exchg.FetchOrder(*sellOrder.Id)
+		if err != nil {
+			logger.Fatalf("Failed to fetch sell order: %v", err)
+		}
 		logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
-			sellOrder.Id, sellOrder.Price, sellOrder.Amount, sellOrder.Status)
+			*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount, *sellOrder.Status)
 
 		// Attendre un moment
 		time.Sleep(2 * time.Second)
 
 		// 9. Annuler l'ordre de vente
 		logger.Info("8. Cancelling sell order...")
-		_, err = exchg.CancelOrder(sellOrder.Id, botConfig.Pair)
+		_, err = exchg.CancelOrder(*sellOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Errorf("Failed to cancel sell order: %v", err)
 		} else {
-			logger.Infof("✓ Sell order cancelled: ID=%s", sellOrder.Id)
+			logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
 		}
 	}
 
