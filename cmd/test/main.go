@@ -167,18 +167,12 @@ func main() {
 }
 
 func getMarketInfo(exchange bot.Exchange, pair string) (string, string, error) {
-	markets, err := exchange.FetchMarkets()
+	market, err := exchange.GetMarket(pair)
 	if err != nil {
 		return "", "", err
 	}
 
-	for _, market := range markets {
-		if market.Symbol == pair {
-			return market.BaseId, market.QuoteId, nil
-		}
-	}
-
-	return "", "", fmt.Errorf("market %s not found", pair)
+	return market.BaseId, market.QuoteId, nil
 }
 
 func checkBalance(exchange bot.Exchange, baseAsset, quoteAsset string) (float64, float64, error) {

@@ -3,6 +3,7 @@ package exchange
 import (
 	"bot/internal/bot"
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 
@@ -85,11 +86,25 @@ type Exchange struct {
 }
 
 func NewExchange(exchangeName string) *Exchange {
-	exchange := ccxt.CreateExchange(exchangeName, map[string]interface{}{
-		"apiKey":          os.Getenv("API_KEY"),
-		"secret":          os.Getenv("API_SECRET"),
-		"enableRateLimit": true,
-	})
+	var exchange ccxt.IExchange
+
+	if exchangeName == "mexc" {
+		exchange = ccxt.CreateExchange("mexc", map[string]interface{}{
+			"apiKey":          os.Getenv("API_KEY"),
+			"secret":          os.Getenv("SECRET"),
+			"enableRateLimit": true,
+		})
+		<-exchange.LoadMarkets()
+	} else if exchangeName == "hyperliquid" {
+		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
+			"walletAddress": os.Getenv("WALLET_ADDRESS"),
+			"privateKey":    os.Getenv("PRIVATE_KEY"),
+		})
+		exchange.SetSandboxMode(os.Getenv("NETWORK") == "testnet")
+		// exchange.SetVerbose(true)
+		<-exchange.LoadMarkets()
+	}
+
 	return &Exchange{exchange}
 }
 
@@ -120,6 +135,7 @@ func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64
 	if err != nil {
 		return bot.Order{}, err
 	}
+	//fmt.Printf("DEBUG. Buy Order=%+v\n", result)
 	return toBotOrder(result), nil
 }
 
@@ -135,33 +151,29 @@ func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float6
 	if err != nil {
 		return bot.Order{}, err
 	}
+	//fmt.Printf("DEBUG. Sell Order=%+v\n", result)
 	return toBotOrder(result), nil
 }
 
-func (e *Exchange) FetchMarkets() ([]bot.Market, error) {
-	var result []ccxt.MarketInterface
-	err := retryWithBackoff(func() error {
-		markets, marketsErr := e.IExchange.FetchMarkets()
-		if marketsErr == nil {
-			result = markets
-		}
-		return marketsErr
-	})
-	if err != nil {
-		return nil, err
+func (e *Exchange) GetMarket(pair string) (bot.Market, error) {
+	switch exch := e.IExchange.(type) {
+	case *ccxt.Mexc:
+		market := exch.Exchange.GetMarket(pair)
+		return toBotMarket(market), nil
+	case *ccxt.Hyperliquid:
+		market := exch.Exchange.GetMarket(pair)
+		return toBotMarket(market), nil
+	default:
+		return bot.Market{}, fmt.Errorf("exchange non supporté pour GetMarket")
 	}
-
-	botMarkets := make([]bot.Market, 0, len(result))
-	for _, market := range result {
-		botMarkets = append(botMarkets, toBotMarket(market))
-	}
-	return botMarkets, nil
 }
 
 func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	var result ccxt.Balances
 	err := retryWithBackoff(func() error {
-		balances, balanceErr := e.IExchange.FetchBalance(map[string]interface{}{})
+		balances, balanceErr := e.IExchange.FetchBalance(map[string]interface{}{
+			"type": "spot",
+		})
 		if balanceErr == nil {
 			result = balances
 		}
@@ -190,6 +202,7 @@ func (e *Exchange) FetchOrder(id string) (bot.Order, error) {
 	if err != nil {
 		return bot.Order{}, err
 	}
+	//fmt.Printf("DEBUG. Fetched Order=%+v\n", result)
 	return toBotOrder(result), nil
 }
 
@@ -237,20 +250,11 @@ func toBotMarket(market ccxt.MarketInterface) bot.Market {
 }
 
 func toBotOrder(order ccxt.Order) bot.Order {
-	status := ""
-	if order.Status != nil {
-		status = *order.Status
-	}
-	timestamp := int64(0)
-	if order.Timestamp != nil {
-		timestamp = *order.Timestamp
-	}
-
 	return bot.Order{
-		Id:        *order.Id,
-		Price:     *order.Price,
-		Amount:    *order.Amount,
-		Status:    status,
-		Timestamp: timestamp,
+		Id:        order.Id,
+		Price:     order.Price,
+		Amount:    order.Amount,
+		Status:    order.Status,
+		Timestamp: order.Timestamp,
 	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 type Exchange interface {
-	FetchMarkets() ([]Market, error)
+	GetMarket(pair string) (Market, error)
 	FetchBalance() (map[string]Balance, error)
 	PlaceLimitBuyOrder(pair string, amount float64, price float64) (Order, error)
 	PlaceLimitSellOrder(pair string, amount float64, price float64) (Order, error)
@@ -32,11 +32,11 @@ type Balance struct {
 }
 
 type Order struct {
-	Id        string
-	Price     float64
-	Amount    float64
-	Status    string
-	Timestamp int64
+	Id        *string
+	Price     *float64
+	Amount    *float64
+	Status    *string
+	Timestamp *int64
 }
 
 type Bot struct {
@@ -67,7 +67,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 func (b *Bot) initializeMarketPrecision() error {
 	logger.Info("Fetching market data...")
-	markets, err := b.exchange.FetchMarkets()
+	market, err := b.exchange.GetMarket(b.config.Pair)
 	if err != nil {
 		return err
 	}
@@ -75,15 +75,10 @@ func (b *Bot) initializeMarketPrecision() error {
 	b.pricePrecision = 0.01
 	b.amountPrecision = 0.000001
 
-	for _, market := range markets {
-		if market.Symbol == b.config.Pair {
-			b.baseAsset = market.BaseId
-			b.quoteAsset = market.QuoteId
-			b.pricePrecision = market.Precision.Price
-			b.amountPrecision = market.Precision.Amount
-			break
-		}
-	}
+	b.baseAsset = market.BaseId
+	b.quoteAsset = market.QuoteId
+	b.pricePrecision = market.Precision.Price
+	b.amountPrecision = market.Precision.Amount
 
 	logger.Infof("Base Asset: %s, Quote Asset: %s", b.baseAsset, b.quoteAsset)
 	logger.Infof("Market precision: price=%v, amount=%v", b.pricePrecision, b.amountPrecision)
@@ -159,10 +154,10 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	orderPrice := b.roundToPrecision(order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(order.Amount, b.amountPrecision)
+	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
+	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
 
-	dbOrder, err := b.db.CreateOrder(order.Id, database.Buy, orderAmount, orderPrice, nil)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, nil)
 	if err != nil {
 		logger.Errorf("Failed to save buy order to database: %v", err)
 		return
@@ -223,10 +218,10 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		return
 	}
 
-	orderPrice := b.roundToPrecision(order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(order.Amount, b.amountPrecision)
+	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
+	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
 
-	dbOrder, err := b.db.CreateOrder(order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
 	if err != nil {
 		logger.Errorf("Failed to save sell order to database: %v", err)
 		return
@@ -243,10 +238,14 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 		return
 	}
 
-	if order.Status == "FILLED" {
-		b.handleFilledOrder(dbOrder, order)
-	} else if b.shouldCancelOrder(order) {
-		b.handleCancelOrder(dbOrder)
+	if order.Status != nil {
+		if *order.Status == "FILLED" {
+			b.handleFilledOrder(dbOrder, order)
+		} else if b.shouldCancelOrder(order) {
+			b.handleCancelOrder(dbOrder)
+		}
+	} else {
+		logger.Errorf("Order Status is not known")
 	}
 }
 
@@ -270,8 +269,8 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
 
 	position, err := b.db.CreatePosition(
-		b.roundToPrecision(order.Price, b.pricePrecision),
-		b.roundToPrecision(order.Amount, b.amountPrecision),
+		b.roundToPrecision(*order.Price, b.pricePrecision),
+		b.roundToPrecision(*order.Amount, b.amountPrecision),
 	)
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
@@ -296,8 +295,8 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 }
 
 func (b *Bot) shouldCancelOrder(order Order) bool {
-	return order.Timestamp > 0 &&
-		time.Since(time.UnixMilli(order.Timestamp)) > b.config.OrderTTL
+	return (order.Timestamp != nil) && (*order.Timestamp > 0) &&
+		time.Since(time.UnixMilli(*order.Timestamp)) > b.config.OrderTTL
 }
 
 func (b *Bot) handleCancelOrder(dbOrder database.Order) {
