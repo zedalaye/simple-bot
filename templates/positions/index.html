@@ -1,0 +1,46 @@
+{{ define "content" }}
+<h2>Open Positions</h2>
+
+{{ if .positions }}
+<p>{{ len .positions }} position(s) found</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Price (USDC)</th>
+        <th>Amount</th>
+        <th>Value (USDC)</th>
+        <th>Created At</th>
+        <th>Updated At</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{ range .positions }}
+    <tr>
+        <td>{{ .ID }}</td>
+        <td>{{ printf "%.2f" .Price }}</td>
+        <td>{{ printf "%.6f" .Amount }}</td>
+        <td>{{ printf "%.2f" .Value }}</td>
+        <td>{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
+        <td>{{ .UpdatedAt.Format "2006-01-02 15:04:05" }}</td>
+    </tr>
+    {{ end }}
+    </tbody>
+</table>
+
+<div style="margin-top: 1rem; padding: 1rem; background-color: #f8f9fa; border-radius: 4px;">
+    <strong>Total Portfolio Value: {{ printf "%.2f" .totalValue }} USDC</strong>
+</div>
+
+{{ else }}
+<div style="text-align: center; padding: 2rem;">
+    <p>No open positions found.</p>
+    <p>The bot will create positions when buy orders are filled.</p>
+</div>
+{{ end }}
+
+<div style="margin-top: 2rem;">
+    <a href="/api/positions" style="text-decoration: none; color: #007bff;">View Raw JSON Data</a>
+</div>
+{{ end }}

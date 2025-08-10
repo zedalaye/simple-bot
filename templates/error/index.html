@@ -1,0 +1,26 @@
+{{ define "content" }}
+<div style="text-align: center; padding: 2rem;">
+    <h2 style="color: #dc3545;">⚠️ Error</h2>
+
+    <div style="
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 1rem;
+            margin: 1rem 0;
+            color: #721c24;
+        ">
+        <p><strong>Error Details:</strong></p>
+        <p>{{ .error }}</p>
+    </div>
+
+    <div style="margin-top: 2rem;">
+        <p>Please try one of the following:</p>
+        <div class="nav-links" style="justify-content: center;">
+            <a href="/">Go to Dashboard</a>
+            <a href="/positions">View Positions</a>
+            <a href="/orders">View Orders</a>
+        </div>
+    </div>
+</div>
+{{ end }}

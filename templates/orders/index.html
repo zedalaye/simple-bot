@@ -1,0 +1,74 @@
+{{ define "content" }}
+<h2>Pending Orders</h2>
+
+{{ if .orders }}
+<p>{{ len .orders }} pending order(s) found</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>External ID</th>
+        <th>Side</th>
+        <th>Price (USDC)</th>
+        <th>Amount</th>
+        <th>Status</th>
+        <th>Position ID</th>
+        <th>Created At</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{ range .orders }}
+    <tr>
+        <td>{{ .ID }}</td>
+        <td><code>{{ .ExternalID }}</code></td>
+        <td>
+                    <span style="
+                        padding: 2px 6px;
+                        border-radius: 3px;
+                        font-size: 0.8em;
+                        color: white;
+                        background-color: {{ if eq .Side "BUY" }}#28a745{{ else }}#dc3545{{ end }};
+            ">
+            {{ .Side }}
+            </span>
+        </td>
+        <td>{{ printf "%.2f" .Price }}</td>
+        <td>{{ printf "%.6f" .Amount }}</td>
+        <td>
+                    <span style="
+                        padding: 2px 6px;
+                        border-radius: 3px;
+                        font-size: 0.8em;
+                        background-color: #ffc107;
+                        color: #212529;
+                    ">
+                        {{ .Status }}
+                    </span>
+        </td>
+        <td>
+            {{ if .PositionID }}
+            <a href="/positions" style="color: #007bff;">{{ .PositionID }}</a>
+            {{ else }}
+            <em>N/A</em>
+            {{ end }}
+        </td>
+        <td>{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
+    </tr>
+    {{ end }}
+    </tbody>
+</table>
+{{ else }}
+<div style="text-align: center; padding: 2rem;">
+    <p>No pending orders found.</p>
+    <p>All orders have been either filled or cancelled.</p>
+</div>
+{{ end }}
+
+<div style="margin-top: 2rem;">
+    <div class="nav-links">
+        <a href="/orders/all">View All Orders</a>
+        <a href="/api/orders">View Raw JSON Data</a>
+    </div>
+</div>
+{{ end }}

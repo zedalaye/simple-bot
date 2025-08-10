@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ if .title }}{{ .title }} - {{ end }}Trading Bot UI</title>
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+    <style>
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .nav-links a {
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .nav-links a:hover {
+            background-color: #f0f0f0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        th, td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .stat-card {
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1><a href="/" style="text-decoration: none;">Simple Bot UI</a></h1>
+    <nav class="nav-links">
+        <a href="/">Dashboard</a>
+        <a href="/positions">Positions</a>
+        <a href="/orders">Pending Orders</a>
+        <a href="/orders/all">All Orders</a>
+    </nav>
+</header>
+<main>
+    {{ template "content" . }}
+</main>
+<footer>
+    <p>&copy; 2025 Simple Bot</p>
+</footer>
+</body>
+</html>

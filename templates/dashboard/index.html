@@ -1,0 +1,43 @@
+{{ define "content" }}
+<h2>Dashboard - Bot Statistics</h2>
+
+{{ if .stats }}
+<div class="stats-grid">
+    {{ range $key, $value := .stats }}
+    <div class="stat-card">
+        <div class="stat-value">{{ $value }}</div>
+        <div>{{ $key }}</div>
+    </div>
+    {{ end }}
+</div>
+
+<h3>Detailed View</h3>
+<table>
+    <thead>
+    <tr>
+        <th>Metric</th>
+        <th>Value</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{ range $key, $value := .stats }}
+    <tr>
+        <td>{{ $key }}</td>
+        <td>{{ $value }}</td>
+    </tr>
+    {{ end }}
+    </tbody>
+</table>
+{{ else }}
+<p>No statistics available.</p>
+{{ end }}
+
+<div style="margin-top: 2rem;">
+    <h3>Quick Actions</h3>
+    <div class="nav-links">
+        <a href="/positions">View Positions</a>
+        <a href="/orders">View Pending Orders</a>
+        <a href="/api/stats">Raw JSON Data</a>
+    </div>
+</div>
+{{ end }}
