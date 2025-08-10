@@ -12,6 +12,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -31,6 +33,12 @@ func main() {
 	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Charge le fichier .env pour obtenir les API Keys
+	err = godotenv.Load(fileConfig.EnvFilePaths()...)
+	if err != nil {
+		logger.Warn("No .env file found, using system environment variables")
 	}
 
 	// Conversion vers la configuration du bot

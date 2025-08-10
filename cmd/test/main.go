@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// Charge le fichier .env pour obtenir les API Keys
-	err = godotenv.Load()
+	err = godotenv.Load(fileConfig.EnvFilePaths()...)
 	if err != nil {
 		logger.Warn("No .env file found, using system environment variables")
 	}

@@ -13,6 +13,7 @@ import (
 type FileConfig struct {
 	Exchange struct {
 		Name string `yaml:"name" json:"name"`
+		Env  string `yaml:"env" json:"env"`
 		// Note: API credentials should come from environment variables for security
 	} `yaml:"exchange" json:"exchange"`
 
@@ -44,8 +45,10 @@ func LoadConfig(filename string) (*FileConfig, error) {
 	defaultConfig := &FileConfig{
 		Exchange: struct {
 			Name string `yaml:"name" json:"name"`
+			Env  string `yaml:"env" json:"env"`
 		}{
 			Name: "mexc",
+			Env:  ".env.mexc",
 		},
 		Trading: struct {
 			Pair            string  `yaml:"pair" json:"pair"`
@@ -70,7 +73,7 @@ func LoadConfig(filename string) (*FileConfig, error) {
 		Database: struct {
 			Path string `yaml:"path" json:"path"`
 		}{
-			Path: "bot.db",
+			Path: "bot-mexc.db",
 		},
 		Logging: struct {
 			Level string `yaml:"level" json:"level"`
@@ -133,7 +136,8 @@ func createDefaultConfigFile(filename string, defaultConfig *FileConfig) (*FileC
 # 
 # Exchange configuration
 exchange:
-  name: mexc  # Supported: mexc, binance, etc.
+  name: mexc               # Supported: mexc, hyperliquid, binance, etc.
+  env: .env.mexc           # The file containing secrets, undefine if secrets are already in environment variabless
 
 # Trading parameters
 trading:
@@ -167,7 +171,7 @@ logging:
 
 	fmt.Printf("Created default configuration file: %s\n", filename)
 	fmt.Println("Please review and adjust the settings, then restart the bot.")
-	fmt.Println("Remember to set API_KEY and API_SECRET environment variables.")
+	fmt.Println("Remember to make exchange related secrets (like API_KEY and API_SECRET) available through environment variables or a .env file")
 
 	return defaultConfig, nil
 }
@@ -217,6 +221,21 @@ type BotConfig struct {
 	OrderTTL        time.Duration
 	BuyInterval     time.Duration
 	CheckInterval   time.Duration
+}
+
+func (fc *FileConfig) EnvFilePaths() []string {
+	var envFiles []string
+
+	info, err := os.Stat(".env")
+	if err == nil {
+		envFiles = append(envFiles, info.Name())
+	}
+
+	if fc.Exchange.Env != "" {
+		envFiles = append(envFiles, fc.Exchange.Env)
+	}
+
+	return envFiles
 }
 
 func (fc *FileConfig) ToBotConfig() BotConfig {
