@@ -99,6 +99,7 @@ func NewExchange(exchangeName string) *Exchange {
 		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
 			"walletAddress": os.Getenv("WALLET_ADDRESS"),
 			"privateKey":    os.Getenv("PRIVATE_KEY"),
+			"defaultType":   "spot",
 		})
 		exchange.SetSandboxMode(os.Getenv("NETWORK") == "testnet")
 		// exchange.SetVerbose(true)
@@ -171,9 +172,7 @@ func (e *Exchange) GetMarket(pair string) (bot.Market, error) {
 func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	var result ccxt.Balances
 	err := retryWithBackoff(func() error {
-		balances, balanceErr := e.IExchange.FetchBalance(map[string]interface{}{
-			"type": "spot",
-		})
+		balances, balanceErr := e.IExchange.FetchBalance()
 		if balanceErr == nil {
 			result = balances
 		}
