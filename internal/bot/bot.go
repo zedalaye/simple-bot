@@ -103,11 +103,8 @@ func (b *Bot) run() {
 	buyTicker := time.NewTicker(b.config.BuyInterval)
 	defer buyTicker.Stop()
 
-	priceCheckTicker := time.NewTicker(b.config.CheckInterval)
-	defer priceCheckTicker.Stop()
-
-	orderCheckTicker := time.NewTicker(b.config.CheckInterval)
-	defer orderCheckTicker.Stop()
+	checkTicker := time.NewTicker(b.config.CheckInterval)
+	defer checkTicker.Stop()
 
 	for {
 		select {
@@ -116,9 +113,8 @@ func (b *Bot) run() {
 			return
 		case <-buyTicker.C:
 			b.handleBuySignal()
-		case <-priceCheckTicker.C:
+		case <-checkTicker.C:
 			b.handlePriceCheck()
-		case <-orderCheckTicker.C:
 			b.handleOrderCheck()
 		}
 	}
