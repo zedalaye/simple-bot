@@ -60,7 +60,7 @@ func LoadConfig(filename string) (*FileConfig, error) {
 			Pair:            "BTC/USDC",
 			QuoteAmount:     50.0,
 			PriceOffset:     200.0,
-			ProfitThreshold: 1.015,
+			ProfitThreshold: 1.020,
 			OrderTTL:        18,
 		},
 		Intervals: struct {
@@ -144,7 +144,7 @@ trading:
   pair: BTC/USDC           # Trading pair
   quote_amount: 50.0       # Amount in quote currency (USDC) per buy order
   price_offset: 200.0      # Price difference for limit orders (USDC)
-  profit_threshold: 1.015  # Profit threshold (1.5% = 1.015)
+  profit_threshold: 1.02   # Profit threshold (2.0% = 1.020) to make ~$1 profit per $50 trade
   order_ttl: 18            # Hours
 
 # Timing intervals
