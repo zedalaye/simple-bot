@@ -90,6 +90,11 @@ func (b *Bot) Start() error {
 	if stats, err := b.db.GetStats(); err == nil {
 		logger.Infof("Bot statistics: %+v", stats)
 	}
+
+	//logger.Debug("Triggering initial actions")
+	//b.handleBuySignal()
+
+	logger.Debug("Starting bot goroutine...")
 	go b.run()
 	return nil
 }
