@@ -141,8 +141,8 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	limitPrice := currentPrice - b.config.PriceOffset
-	baseAmount := b.config.QuoteAmount / limitPrice
+	limitPrice := b.roundToPrecision(currentPrice-b.config.PriceOffset, b.pricePrecision)
+	baseAmount := b.roundToPrecision(b.config.QuoteAmount/limitPrice, b.amountPrecision)
 
 	order, err := b.exchange.PlaceLimitBuyOrder(b.config.Pair, baseAmount, limitPrice)
 	if err != nil {
@@ -150,8 +150,8 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
+	orderPrice := *order.Price
+	orderAmount := *order.Amount
 
 	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, nil)
 	if err != nil {
@@ -207,15 +207,15 @@ func (b *Bot) handleOrderCheck() {
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
-	limitPrice := currentPrice + b.config.PriceOffset
+	limitPrice := b.roundToPrecision(currentPrice+b.config.PriceOffset, b.pricePrecision)
 	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
 		return
 	}
 
-	orderPrice := b.roundToPrecision(*order.Price, b.pricePrecision)
-	orderAmount := b.roundToPrecision(*order.Amount, b.amountPrecision)
+	orderPrice := *order.Price
+	orderAmount := *order.Amount
 
 	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
 	if err != nil {
@@ -264,10 +264,7 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 	logger.Infof("Buy Order Filled: %v %s at %v %s (ID=%v)",
 		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
 
-	position, err := b.db.CreatePosition(
-		b.roundToPrecision(*order.Price, b.pricePrecision),
-		b.roundToPrecision(*order.Amount, b.amountPrecision),
-	)
+	position, err := b.db.CreatePosition(*order.Price, *order.Amount)
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
 	} else {
