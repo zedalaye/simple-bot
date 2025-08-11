@@ -190,7 +190,39 @@ func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	return botBalances, nil
 }
 
-func (e *Exchange) FetchOrder(id string) (bot.Order, error) {
+func withFetchOHLCVOptions(timeframe string, since *int64, limit int64) ccxt.FetchOHLCVOptions {
+	return func(opts *ccxt.FetchOHLCVOptionsStruct) {
+		opts.Timeframe = &timeframe
+		if since != nil {
+			opts.Since = since
+		}
+		opts.Limit = &limit
+	}
+}
+
+func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]bot.Candle, error) {
+	var result []ccxt.OHLCV
+	err := retryWithBackoff(func() error {
+		ohlcv, ohlcvErr := e.IExchange.FetchOHLCV(pair,
+			withFetchOHLCVOptions(timeframe, since, limit),
+		)
+		if ohlcvErr == nil {
+			result = ohlcv
+		}
+		return ohlcvErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	botCandles := make([]bot.Candle, len(result))
+	for i, ohlcv := range result {
+		botCandles[i] = toBotCandle(ohlcv)
+	}
+	return botCandles, nil
+}
+
+func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	var result ccxt.Order
 	err := retryWithBackoff(func() error {
 		order, orderErr := e.IExchange.FetchOrder(id, ccxt.WithFetchOrderSymbol(symbol))
@@ -256,5 +288,16 @@ func toBotOrder(order ccxt.Order) bot.Order {
 		Amount:    order.Amount,
 		Status:    order.Status,
 		Timestamp: order.Timestamp,
+	}
+}
+
+func toBotCandle(ohlcv ccxt.OHLCV) bot.Candle {
+	return bot.Candle{
+		Timestamp: ohlcv.Timestamp,
+		Open:      ohlcv.Open,
+		High:      ohlcv.High,
+		Low:       ohlcv.Low,
+		Close:     ohlcv.Close,
+		Volume:    ohlcv.Volume,
 	}
 }
