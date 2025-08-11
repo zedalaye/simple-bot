@@ -95,7 +95,7 @@ func main() {
 	if err != nil {
 		logger.Errorf("Failed to place buy order: %v", err)
 	} else {
-		buyOrder, err = exchg.FetchOrder(*buyOrder.Id)
+		buyOrder, err = exchg.FetchOrder(*buyOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Fatalf("Failed to fetch buy order: %v", err)
 		}
@@ -146,7 +146,7 @@ func main() {
 		logger.Errorf("Failed to place sell order: %v", err)
 		// Ne pas arrêter le test, continuer
 	} else {
-		sellOrder, err = exchg.FetchOrder(*sellOrder.Id)
+		sellOrder, err = exchg.FetchOrder(*sellOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Fatalf("Failed to fetch sell order: %v", err)
 		}

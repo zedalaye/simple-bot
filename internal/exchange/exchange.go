@@ -193,7 +193,7 @@ func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 func (e *Exchange) FetchOrder(id string) (bot.Order, error) {
 	var result ccxt.Order
 	err := retryWithBackoff(func() error {
-		order, orderErr := e.IExchange.FetchOrder(id)
+		order, orderErr := e.IExchange.FetchOrder(id, ccxt.WithFetchOrderSymbol(symbol))
 		if orderErr == nil {
 			result = order
 		}

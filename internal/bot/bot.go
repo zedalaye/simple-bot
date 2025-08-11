@@ -12,7 +12,7 @@ type Exchange interface {
 	FetchBalance() (map[string]Balance, error)
 	PlaceLimitBuyOrder(pair string, amount float64, price float64) (Order, error)
 	PlaceLimitSellOrder(pair string, amount float64, price float64) (Order, error)
-	FetchOrder(id string) (Order, error)
+	FetchOrder(id string, symbol string) (Order, error)
 	CancelOrder(id string, symbol string) (Order, error)
 	GetPrice(pair string) (float64, error)
 }
@@ -232,7 +232,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {
-	order, err := b.exchange.FetchOrder(dbOrder.ExternalID)
+	order, err := b.exchange.FetchOrder(dbOrder.ExternalID, b.config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to fetch Order (ID=%v): %v", dbOrder.ExternalID, err)
 		return
