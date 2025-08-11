@@ -97,9 +97,7 @@ func (b *Bot) initializeMarketPrecision() error {
 
 func (b *Bot) Start() error {
 	logger.Info("Starting bot...")
-	if stats, err := b.db.GetStats(); err == nil {
-		logger.Infof("Bot statistics: %+v", stats)
-	}
+	b.ShowStatistics()
 
 	//logger.Debug("Triggering initial actions")
 	//b.handleBuySignal()
@@ -188,7 +186,7 @@ func (b *Bot) handlePriceCheck() {
 	}
 
 	currentPrice = b.roundToPrecision(currentPrice, b.pricePrecision)
-	logger.Debugf("Current price: %v", currentPrice)
+	logger.Infof("Current price: %v", currentPrice)
 
 	positions, err := b.db.GetAllPositions()
 	if err != nil {
@@ -216,9 +214,7 @@ func (b *Bot) handleOrderCheck() {
 		b.processOrder(dbOrder)
 	}
 
-	if stats, err := b.db.GetStats(); err == nil {
-		logger.Debugf("Bot statistics: %+v", stats)
-	}
+	b.ShowStatistics()
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
@@ -326,9 +322,15 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 	}
 }
 
-func (b *Bot) ShowFinalStats() {
+func (b *Bot) ShowStatistics() {
 	if stats, err := b.db.GetStats(); err == nil {
-		logger.Infof("Final statistics: %+v", stats)
+		logger.Infof("Statistics: Positions[Active=%d, Value=%.2f], Orders[Pending=%d, Filled=%d, Cancelled=%d]",
+			stats["active_positions"],
+			stats["total_positions_value"],
+			stats["pending_orders"],
+			stats["filled_orders"],
+			stats["cancelled_orders"],
+		)
 	}
 }
 

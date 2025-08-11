@@ -322,9 +322,9 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get total positions value: %w", err)
 	}
 	if totalValue.Valid {
-		stats["total_positions_value_usdc"] = totalValue.Float64
+		stats["total_positions_value"] = totalValue.Float64
 	} else {
-		stats["total_positions_value_usdc"] = 0.0
+		stats["total_positions_value"] = 0.0
 	}
 
 	return stats, nil

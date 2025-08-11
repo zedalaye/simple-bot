@@ -89,6 +89,6 @@ func waitForShutdown(tradingBot *bot.Bot) {
 	tradingBot.Stop()
 	time.Sleep(1 * time.Second)
 
-	tradingBot.ShowFinalStats()
+	tradingBot.ShowStatistics()
 	logger.Info("Simple Bot Stopped. See Ya!")
 }
