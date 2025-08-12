@@ -12,7 +12,7 @@ import (
 
 const (
 	maxRetries     = 5
-	baseRetryDelay = 100 * time.Millisecond
+	baseRetryDelay = 1000 * time.Millisecond
 )
 
 // MexcErrorResponse représente la structure d'erreur JSON de MEXC
@@ -71,7 +71,7 @@ func retryWithBackoff(operation func() error) error {
 		}
 
 		// Calculer le délai avec backoff exponentiel + jitter
-		delay := baseRetryDelay * time.Duration(1<<attempt) // 100ms, 200ms, 400ms
+		delay := baseRetryDelay * time.Duration(1<<attempt) // 1000ms, 2000ms, 4000ms
 		jitter := time.Duration(float64(delay) * 0.1)       // 10% de jitter
 		totalDelay := delay + jitter
 
