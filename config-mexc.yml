@@ -10,7 +10,7 @@ trading:
   pair: BTC/USDC           # Trading pair
   quote_amount: 50.0       # Amount in USDC per buy order
   price_offset: 200.0      # Price difference for limit orders (USDC)
-  profit_threshold: 1.02   # Profit threshold (1.5% = 1.015)
+  profit_threshold: 1.02   # Profit threshold (2% = 1.020)
   order_ttl: 18            # Hours
 
 # Timing intervals
