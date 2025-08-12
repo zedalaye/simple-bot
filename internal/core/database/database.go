@@ -279,9 +279,11 @@ func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price float
 }
 
 func (db *DB) GetOrder(id int) (*Order, error) {
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      WHERE id = ?`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		WHERE id = ?
+	`
 	row := db.conn.QueryRow(query, id)
 
 	var order Order
@@ -300,9 +302,11 @@ func (db *DB) GetOrder(id int) (*Order, error) {
 }
 
 func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      WHERE external_id = ?`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		WHERE external_id = ?
+	`
 	row := db.conn.QueryRow(query, externalID)
 
 	var order Order
@@ -321,10 +325,12 @@ func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
 }
 
 func (db *DB) GetPendingOrders() ([]Order, error) {
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      WHERE status = ? 
-		      ORDER BY created_at ASC`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		WHERE status = ? 
+		ORDER BY created_at ASC
+	`
 	rows, err := db.conn.Query(query, Pending)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pending orders: %w", err)
@@ -352,10 +358,12 @@ func (db *DB) GetPendingOrders() ([]Order, error) {
 }
 
 func (db *DB) UpdateOrderStatus(externalID string, status OrderStatus) error {
-	query := `UPDATE orders SET 
-			    status = ?, 
-			    updated_at = CURRENT_TIMESTAMP 
-		      WHERE external_id = ?`
+	query := `
+		UPDATE orders SET 
+			status = ?, 
+			updated_at = CURRENT_TIMESTAMP 
+		WHERE external_id = ?
+	`
 	_, err := db.conn.Exec(query, status, externalID)
 	if err != nil {
 		return fmt.Errorf("failed to update order status: %w", err)
@@ -364,9 +372,11 @@ func (db *DB) UpdateOrderStatus(externalID string, status OrderStatus) error {
 }
 
 func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      WHERE status = ? AND created_at < ?`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		WHERE status = ? AND created_at < ?
+	`
 	rows, err := db.conn.Query(query, Pending, olderThan)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get old orders: %w", err)
@@ -446,9 +456,11 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 
 // GetAllOrders récupère tous les ordres (pas seulement pending)
 func (db *DB) GetAllOrders() ([]Order, error) {
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      ORDER BY created_at DESC`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		ORDER BY created_at DESC
+	`
 	rows, err := db.conn.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all orders: %w", err)
@@ -501,9 +513,11 @@ func (db *DB) GetPositionWithSellOrders(positionID int) (*Position, []Order, err
 		return nil, nil, err
 	}
 
-	query := `SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
-		      FROM orders 
-		      WHERE position_id = ? AND side = ?`
+	query := `
+		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		FROM orders 
+		WHERE position_id = ? AND side = ?
+	`
 	rows, err := db.conn.Query(query, positionID, Sell)
 	if err != nil {
 		return position, nil, fmt.Errorf("failed to get sell orders for position: %w", err)
