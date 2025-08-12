@@ -246,17 +246,20 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 	}
 
 	if order.Status != nil {
-		if *order.Status == "FILLED" {
-			b.handleFilledOrder(dbOrder, order)
-		} else if b.shouldCancelOrder(order) {
-			b.handleCancelOrder(dbOrder)
+		if *order.Status == "closed" {
+			b.handleClosedOrder(dbOrder, order)
+		} else {
+			logger.Infof("Order status: %v", *order.Status)
+			if b.shouldCancelOrder(order) {
+				b.handleCancelOrder(dbOrder)
+			}
 		}
 	} else {
 		logger.Errorf("Order Status is not known")
 	}
 }
 
-func (b *Bot) handleFilledOrder(dbOrder database.Order, order Order) {
+func (b *Bot) handleClosedOrder(dbOrder database.Order, order Order) {
 	err := b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Filled)
 	if err != nil {
 		logger.Errorf("Failed to update order status in database: %v", err)
