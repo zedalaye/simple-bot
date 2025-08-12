@@ -195,10 +195,29 @@ func (b *Bot) handlePriceCheck() {
 		logger.Errorf("Failed to get open positions from database: %v", err)
 		return
 	}
+	logger.Debugf("Found %d open positions", len(positions))
+
+	trailingOffset := b.config.PriceOffset         // 200 $
+	minProfitThreshold := b.config.ProfitThreshold // 1.02
 
 	for _, pos := range positions {
-		if currentPrice >= pos.Price*b.config.ProfitThreshold {
-			b.placeSellOrder(pos, currentPrice)
+		// Mettre à jour le prix maximum observé
+		if currentPrice > pos.MaxPrice {
+			err := b.db.UpdatePositionMaxPrice(pos.ID, currentPrice)
+			if err != nil {
+				logger.Errorf("Failed to update max price for position %v: %v", pos.ID, err)
+				continue
+			}
+			pos.MaxPrice = currentPrice
+			logger.Infof("Updated max price for position %v to %v", pos.ID, pos.MaxPrice)
+		}
+
+		// Vérifier le profit minimum
+		if currentPrice >= pos.Price*minProfitThreshold {
+			// Vendre si le prix tombe en dessous de maxPrice - trailingOffset
+			if currentPrice <= pos.MaxPrice-trailingOffset {
+				b.placeSellOrder(pos, currentPrice)
+			}
 		}
 	}
 
