@@ -1,6 +1,7 @@
 package database
 
 import (
+	"bot/internal/logger"
 	"database/sql"
 	"fmt"
 	"log"
@@ -44,6 +45,50 @@ type Order struct {
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
+type Migration struct {
+	ID   int
+	Name string
+	SQL  string
+}
+
+var migrations = []Migration{
+	{
+		ID:   1,
+		Name: "init_schema",
+		SQL: `
+			CREATE TABLE IF NOT EXISTS positions (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				price REAL NOT NULL,
+				amount REAL NOT NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE TABLE IF NOT EXISTS orders (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_id TEXT UNIQUE NOT NULL,
+				side TEXT NOT NULL CHECK(side IN ('BUY', 'SELL')),
+				amount REAL NOT NULL,
+				price REAL NOT NULL,
+				status TEXT NOT NULL CHECK(status IN ('PENDING', 'FILLED', 'CANCELLED')),
+				position_id INTEGER,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY(position_id) REFERENCES positions(id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_orders_external_id ON orders(external_id);
+			CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+			CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);
+        `,
+	},
+	{
+		ID:   2,
+		Name: "add_max_price",
+		SQL: `
+            ALTER TABLE positions ADD COLUMN max_price REAL DEFAULT 0.0;
+        `,
+	},
+}
+
 type DB struct {
 	conn *sql.DB
 }
@@ -55,8 +100,9 @@ func NewDB(dbPath string) (*DB, error) {
 	}
 
 	db := &DB{conn: conn}
-	if err := db.createTables(); err != nil {
-		return nil, fmt.Errorf("failed to create tables: %w", err)
+	if err := db.applyMigrations(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to apply migrations: %v", err)
 	}
 
 	return db, nil
@@ -66,35 +112,44 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
-func (db *DB) createTables() error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS positions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			price REAL NOT NULL,
-			amount REAL NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS orders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			external_id TEXT UNIQUE NOT NULL,
-			side TEXT NOT NULL CHECK(side IN ('BUY', 'SELL')),
-			amount REAL NOT NULL,
-			price REAL NOT NULL,
-			status TEXT NOT NULL CHECK(status IN ('PENDING', 'FILLED', 'CANCELLED')),
-			position_id INTEGER,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(position_id) REFERENCES positions(id)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_orders_external_id ON orders(external_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at)`,
+func (db *DB) applyMigrations() error {
+	_, err := db.conn.Exec(`
+        CREATE TABLE IF NOT EXISTS migrations (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `)
+	if err != nil {
+		return fmt.Errorf("failed to create migrations table: %v", err)
 	}
 
-	for _, query := range queries {
-		if _, err := db.conn.Exec(query); err != nil {
-			return fmt.Errorf("failed to execute query: %s, error: %w", query, err)
+	applied := make(map[int]bool)
+	rows, err := db.conn.Query(`SELECT id FROM migrations`)
+	if err != nil {
+		return fmt.Errorf("failed to query migrations: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("failed to scan migration id: %v", err)
+		}
+		applied[id] = true
+	}
+
+	for _, migration := range migrations {
+		if !applied[migration.ID] {
+			logger.Infof("Applying migration %d: %s", migration.ID, migration.Name)
+			_, err := db.conn.Exec(migration.SQL)
+			if err != nil {
+				return fmt.Errorf("failed to apply migration %d (%s): %v", migration.ID, migration.Name, err)
+			}
+			_, err = db.conn.Exec(`INSERT INTO migrations (id, name) VALUES (?, ?);`, migration.ID, migration.Name)
+			if err != nil {
+				return fmt.Errorf("failed to record migration %d (%s): %v", migration.ID, migration.Name, err)
+			}
+			logger.Infof("Migration %d (%s) applied successfully", migration.ID, migration.Name)
 		}
 	}
 
