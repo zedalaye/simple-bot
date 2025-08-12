@@ -252,11 +252,14 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 	if order.Status != nil {
 		if *order.Status == "closed" {
 			b.handleClosedOrder(dbOrder, order)
-		} else {
-			logger.Infof("Order status: %v", *order.Status)
+		} else if *order.Status == "canceled" {
+			b.handleCanceledOrder(dbOrder, order)
+		} else if *order.Status == "open" {
 			if b.shouldCancelOrder(order) {
 				b.handleCancelOrder(dbOrder)
 			}
+		} else {
+			logger.Warnf("Unsupported Order Status: %v", *order.Status)
 		}
 	} else {
 		logger.Errorf("Order Status is not known")
@@ -276,6 +279,16 @@ func (b *Bot) handleClosedOrder(dbOrder database.Order, order Order) {
 	case database.Sell:
 		b.handleFilledSellOrder(dbOrder, order)
 	}
+}
+
+func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
+	err := b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Cancelled)
+	if err != nil {
+		logger.Errorf("Failed to update order status in database: %v", err)
+		return
+	}
+
+	logger.Infof("Order %v Cancelled (cancelled manually on exchange)", order.Id)
 }
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
