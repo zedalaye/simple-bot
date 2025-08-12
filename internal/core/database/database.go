@@ -155,6 +155,33 @@ func (db *DB) GetAllPositions() ([]Position, error) {
 	return positions, nil
 }
 
+func (db *DB) GetOpenPositions() ([]Position, error) {
+	query := `SELECT p.id, p.price, p.amount, p.created_at, p.updated_at 
+		      FROM positions p
+		      WHERE not exists (
+		        SELECT * FROM orders o 
+		        WHERE o.position_id = p.id and o.status = 'PENDING'
+		      )
+		      ORDER BY created_at DESC`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get open positions: %w", err)
+	}
+	defer rows.Close()
+
+	var positions []Position
+	for rows.Next() {
+		var pos Position
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.CreatedAt, &pos.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan position: %w", err)
+		}
+		positions = append(positions, pos)
+	}
+
+	return positions, nil
+}
+
 func (db *DB) DeletePosition(id int) error {
 	query := `DELETE FROM positions WHERE id = ?`
 	_, err := db.conn.Exec(query, id)
