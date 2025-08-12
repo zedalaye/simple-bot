@@ -29,6 +29,7 @@ type Position struct {
 	ID        int       `json:"id"`
 	Price     float64   `json:"price"`
 	Amount    float64   `json:"amount"`
+	MaxPrice  float64   `json:"max_price"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -173,13 +174,15 @@ func (db *DB) CreatePosition(price, amount float64) (*Position, error) {
 }
 
 func (db *DB) GetPosition(id int) (*Position, error) {
-	query := `SELECT id, price, amount, created_at, updated_at 
-			  FROM positions 
-		      WHERE id = ?`
+	query := `
+		SELECT id, price, amount, max_price, created_at, updated_at 
+		FROM positions 
+		WHERE id = ?
+	`
 	row := db.conn.QueryRow(query, id)
 
 	var pos Position
-	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.CreatedAt, &pos.UpdatedAt)
+	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get position: %w", err)
 	}
@@ -188,9 +191,11 @@ func (db *DB) GetPosition(id int) (*Position, error) {
 }
 
 func (db *DB) GetAllPositions() ([]Position, error) {
-	query := `SELECT id, price, amount, created_at, updated_at 
-		      FROM positions 
-		      ORDER BY created_at DESC`
+	query := `
+		SELECT id, price, amount, max_price, created_at, updated_at 
+		FROM positions 
+		ORDER BY created_at DESC
+	`
 	rows, err := db.conn.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
@@ -200,7 +205,7 @@ func (db *DB) GetAllPositions() ([]Position, error) {
 	var positions []Position
 	for rows.Next() {
 		var pos Position
-		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.CreatedAt, &pos.UpdatedAt)
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -211,13 +216,15 @@ func (db *DB) GetAllPositions() ([]Position, error) {
 }
 
 func (db *DB) GetOpenPositions() ([]Position, error) {
-	query := `SELECT p.id, p.price, p.amount, p.created_at, p.updated_at 
-		      FROM positions p
-		      WHERE not exists (
-		        SELECT * FROM orders o 
-		        WHERE o.position_id = p.id and o.status = 'PENDING'
-		      )
-		      ORDER BY created_at DESC`
+	query := `
+		SELECT p.id, p.price, p.amount, p.max_price, p.created_at, p.updated_at 
+		FROM positions p
+		WHERE not exists (
+			SELECT * FROM orders o 
+			WHERE o.position_id = p.id and o.status = 'PENDING'
+		)
+		ORDER BY created_at DESC
+	`
 	rows, err := db.conn.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open positions: %w", err)
@@ -227,7 +234,7 @@ func (db *DB) GetOpenPositions() ([]Position, error) {
 	var positions []Position
 	for rows.Next() {
 		var pos Position
-		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.CreatedAt, &pos.UpdatedAt)
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -237,11 +244,20 @@ func (db *DB) GetOpenPositions() ([]Position, error) {
 	return positions, nil
 }
 
+func (db *DB) UpdatePositionMaxPrice(id int, maxPrice float64) error {
+	query := `UPDATE positions SET max_price = ? WHERE id = ?`
+	_, err := db.conn.Exec(query, maxPrice, id)
+	if err != nil {
+		return fmt.Errorf("failed to update max_price for position %d: %v", id, err)
+	}
+	return nil
+}
+
 func (db *DB) DeletePosition(id int) error {
 	query := `DELETE FROM positions WHERE id = ?`
 	_, err := db.conn.Exec(query, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete position: %w", err)
+		return fmt.Errorf("failed to delete position: %d: %w", id, err)
 	}
 	return nil
 }
