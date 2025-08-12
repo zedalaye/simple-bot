@@ -101,6 +101,8 @@ func (b *Bot) Start() error {
 
 	//logger.Debug("Triggering initial actions")
 	//b.handleBuySignal()
+	b.handleOrderCheck()
+	b.handlePriceCheck()
 
 	logger.Debug("Starting bot goroutine...")
 	go b.run()
