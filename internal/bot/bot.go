@@ -190,9 +190,9 @@ func (b *Bot) handlePriceCheck() {
 	currentPrice = b.roundToPrecision(currentPrice, b.pricePrecision)
 	logger.Infof("Current price: %v", currentPrice)
 
-	positions, err := b.db.GetAllPositions()
+	positions, err := b.db.GetOpenPositions()
 	if err != nil {
-		logger.Errorf("Failed to get positions from database: %v", err)
+		logger.Errorf("Failed to get open positions from database: %v", err)
 		return
 	}
 
@@ -201,6 +201,8 @@ func (b *Bot) handlePriceCheck() {
 			b.placeSellOrder(pos, currentPrice)
 		}
 	}
+
+	b.ShowStatistics()
 }
 
 func (b *Bot) handleOrderCheck() {
