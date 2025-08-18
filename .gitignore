@@ -1,7 +1,8 @@
 .idea/
 bin/
 !bin/.keep
-bot.db
+*.db
+*.db.backup
 config.yml
 .env
 .env.*
