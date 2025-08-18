@@ -8,7 +8,8 @@ import (
 )
 
 type Exchange interface {
-	GetMarket(pair string) (Market, error)
+	GetMarket(pair string) Market
+	GetMarketsList() []Market
 	FetchBalance() (map[string]Balance, error)
 	PlaceLimitBuyOrder(pair string, amount float64, price float64) (Order, error)
 	PlaceLimitSellOrder(pair string, amount float64, price float64) (Order, error)
@@ -77,10 +78,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 func (b *Bot) initializeMarketPrecision() error {
 	logger.Info("Fetching market data...")
-	market, err := b.exchange.GetMarket(b.config.Pair)
-	if err != nil {
-		return err
-	}
+	market := b.exchange.GetMarket(b.config.Pair)
 
 	b.pricePrecision = 0.01
 	b.amountPrecision = 0.000001

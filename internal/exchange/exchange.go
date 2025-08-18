@@ -157,17 +157,18 @@ func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float6
 	return toBotOrder(result), nil
 }
 
-func (e *Exchange) GetMarket(pair string) (bot.Market, error) {
-	switch exch := e.IExchange.(type) {
-	case *ccxt.Mexc:
-		market := exch.Exchange.GetMarket(pair)
-		return toBotMarket(market), nil
-	case *ccxt.Hyperliquid:
-		market := exch.Exchange.GetMarket(pair)
-		return toBotMarket(market), nil
-	default:
-		return bot.Market{}, fmt.Errorf("exchange non supporté pour GetMarket")
+func (e *Exchange) GetMarket(pair string) bot.Market {
+	market := e.IExchange.GetMarket(pair)
+	return toBotMarket(market)
+}
+
+func (e *Exchange) GetMarketsList() []bot.Market {
+	markets := e.IExchange.GetMarketsList()
+	result := make([]bot.Market, len(markets))
+	for i, market := range markets {
+		result[i] = toBotMarket(market)
 	}
+	return result
 }
 
 func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {

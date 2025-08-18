@@ -54,10 +54,7 @@ func main() {
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
 	// Récupérer les informations du marché
-	baseAsset, quoteAsset, err := getMarketInfo(exchg, botConfig.Pair)
-	if err != nil {
-		logger.Fatalf("Failed to get market info: %v", err)
-	}
+	baseAsset, quoteAsset := getMarketInfo(exchg, botConfig.Pair)
 	logger.Infof("✓ Market info: %s/%s", baseAsset, quoteAsset)
 
 	// 3. Vérifier les fonds disponibles dans la devise de cotation
@@ -177,13 +174,9 @@ func main() {
 	logger.Info("✓ All tests completed successfully!")
 }
 
-func getMarketInfo(exchange bot.Exchange, pair string) (string, string, error) {
-	market, err := exchange.GetMarket(pair)
-	if err != nil {
-		return "", "", err
-	}
-
-	return market.BaseId, market.QuoteId, nil
+func getMarketInfo(exchange bot.Exchange, pair string) (string, string) {
+	market := exchange.GetMarket(pair)
+	return market.BaseId, market.QuoteId
 }
 
 func checkBalance(exchange bot.Exchange, baseAsset, quoteAsset string) (float64, float64, error) {
