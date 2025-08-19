@@ -3,7 +3,7 @@ module bot
 go 1.24.5
 
 require (
-	github.com/ccxt/ccxt/go/v4 v4.5.0 // direct
+	github.com/ccxt/ccxt/go/v4 v4.5.1 // direct
 	github.com/gin-contrib/multitemplate v1.1.1 // direct
 	github.com/gin-gonic/gin v1.10.1 // direct
 	github.com/joho/godotenv v1.5.1 // direct
