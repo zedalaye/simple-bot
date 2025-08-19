@@ -93,14 +93,16 @@ func (b *Bot) initializeMarketPrecision() error {
 	return nil
 }
 
-func (b *Bot) Start() error {
+func (b *Bot) Start(buyAtLaunch bool) error {
 	logger.Info("Starting bot...")
 	b.ShowStatistics()
 
-	//logger.Debug("Triggering initial actions")
-	//b.handleBuySignal()
 	b.handleOrderCheck()
 	b.handlePriceCheck()
+
+	if buyAtLaunch {
+		b.handleBuySignal()
+	}
 
 	logger.Debug("Starting bot goroutine...")
 	go b.run()

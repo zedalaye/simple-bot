@@ -21,6 +21,7 @@ func main() {
 
 	// Paramètres de ligne de commande
 	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	buyAtLaunch := flag.Bool("buy-at-launch", false, "Immediately place a buy order after startup")
 	flag.Parse()
 
 	// Chargement de la configuration
@@ -70,7 +71,7 @@ func main() {
 		logger.Fatalf("Failed to create bot: %v", err)
 	}
 
-	err = tradingBot.Start()
+	err = tradingBot.Start(*buyAtLaunch)
 	if err != nil {
 		logger.Fatalf("Failed to start bot: %v", err)
 	}
