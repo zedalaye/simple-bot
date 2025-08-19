@@ -138,7 +138,8 @@ func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64
 		return bot.Order{}, err
 	}
 	//fmt.Printf("DEBUG. Buy Order=%+v\n", result)
-	return toBotOrder(result), nil
+	return e.FetchOrder(*result.Id, pair)
+	//return toBotOrder(result), nil
 }
 
 func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float64) (bot.Order, error) {
@@ -154,7 +155,8 @@ func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float6
 		return bot.Order{}, err
 	}
 	//fmt.Printf("DEBUG. Sell Order=%+v\n", result)
-	return toBotOrder(result), nil
+	return e.FetchOrder(*result.Id, pair)
+	// return toBotOrder(result), nil
 }
 
 func (e *Exchange) GetMarket(pair string) bot.Market {
@@ -174,7 +176,10 @@ func (e *Exchange) GetMarketsList() []bot.Market {
 func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	var result ccxt.Balances
 	err := retryWithBackoff(func() error {
-		balances, balanceErr := e.IExchange.FetchBalance()
+		params := map[string]interface{}{
+			"type": "spot",
+		}
+		balances, balanceErr := e.IExchange.FetchBalance(params)
 		if balanceErr == nil {
 			result = balances
 		}
