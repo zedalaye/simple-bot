@@ -53,6 +53,10 @@ func main() {
 	}
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
+	//for _, market := range exchg.GetMarketsList() {
+	//	logger.Infof("%s: BaseId=%s, QuoteId=%s", market.Symbol, market.BaseId, market.QuoteId)
+	//}
+
 	// Récupérer les informations du marché
 	baseAsset, quoteAsset := getMarketInfo(exchg, botConfig.Pair)
 	logger.Infof("✓ Market info: %s/%s", baseAsset, quoteAsset)
