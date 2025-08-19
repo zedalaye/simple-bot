@@ -3,7 +3,6 @@ package exchange
 import (
 	"bot/internal/bot"
 	"encoding/json"
-	"fmt"
 	"os"
 	"time"
 
