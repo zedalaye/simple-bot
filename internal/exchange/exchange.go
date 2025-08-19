@@ -94,8 +94,6 @@ func NewExchange(exchangeName string) *Exchange {
 			"secret":          os.Getenv("SECRET"),
 			"enableRateLimit": true,
 		})
-		//exchange.SetVerbose(true)
-		<-exchange.LoadMarkets()
 	} else if exchangeName == "hyperliquid" {
 		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
 			"walletAddress": os.Getenv("WALLET_ADDRESS"),
@@ -103,8 +101,10 @@ func NewExchange(exchangeName string) *Exchange {
 			"defaultType":   "spot",
 		})
 		exchange.SetSandboxMode(os.Getenv("NETWORK") == "testnet")
-		//exchange.SetVerbose(true)
-		<-exchange.LoadMarkets()
+	}
+
+	if exchange != nil {
+		exchange.LoadMarkets()
 	}
 
 	return &Exchange{exchange}
