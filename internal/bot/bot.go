@@ -4,6 +4,7 @@ import (
 	"bot/internal/core/config"
 	"bot/internal/core/database"
 	"bot/internal/logger"
+	"bot/internal/telegram"
 	"fmt"
 	"math"
 	"strconv"
@@ -170,6 +171,10 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
+	telegram.SendMessage(fmt.Sprintf("Buy Order : %s %s at %s %s",
+		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
+	))
+
 	logger.Infof("Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
 		order.Id, dbOrder.ID)
@@ -254,6 +259,10 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		return
 	}
 
+	telegram.SendMessage(fmt.Sprintf("Sell Order : %f %s at %f %s",
+		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset,
+	))
+
 	logger.Infof("Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
 		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
 }
@@ -304,10 +313,19 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 		return
 	}
 
+	telegram.SendMessage(fmt.Sprintf("Order %s Cancelled (manually on exchange) : %s %s at %s %s",
+		*order.Id,
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+	))
+
 	logger.Infof("Order %v Cancelled (cancelled manually on exchange)", order.Id)
 }
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
+	telegram.SendMessage(fmt.Sprintf("Buy Order Filled : %s %s at %s %s",
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+	))
+
 	logger.Infof("Buy Order Filled: %s %s at %s %s (ID=%v)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
@@ -322,6 +340,10 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
+	telegram.SendMessage(fmt.Sprintf("Sell Order Filled : %s %s at %s %s",
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+	))
+
 	logger.Infof("Sell Order Filled: %s %s at %s %s (ID=%s)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		*order.Id)
@@ -342,11 +364,16 @@ func (b *Bot) shouldCancelOrder(order Order) bool {
 }
 
 func (b *Bot) handleCancelOrder(dbOrder database.Order) {
-	_, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
+	order, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to Cancel Order (ID=%v): %v", dbOrder.ExternalID, err)
 		return
 	}
+
+	telegram.SendMessage(fmt.Sprintf("Order %s Cancelled (too old) : %s %s at %s %s",
+		*order.Id,
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+	))
 
 	logger.Infof("Order %v Cancelled (too old)", dbOrder.ExternalID)
 

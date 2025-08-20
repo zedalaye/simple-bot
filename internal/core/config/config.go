@@ -231,8 +231,16 @@ func (fc *FileConfig) EnvFilePaths() []string {
 		envFiles = append(envFiles, info.Name())
 	}
 
+	info, err = os.Stat(".env.tg")
+	if err == nil {
+		envFiles = append(envFiles, info.Name())
+	}
+
 	if fc.Exchange.Env != "" {
-		envFiles = append(envFiles, fc.Exchange.Env)
+		info, err = os.Stat(fc.Exchange.Env)
+		if err == nil {
+			envFiles = append(envFiles, fc.Exchange.Env)
+		}
 	}
 
 	return envFiles
