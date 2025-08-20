@@ -3,6 +3,7 @@ package exchange
 import (
 	"bot/internal/bot"
 	"encoding/json"
+	"math"
 	"os"
 	"time"
 
@@ -260,28 +261,41 @@ func (e *Exchange) CancelOrder(id string, symbol string) (bot.Order, error) {
 
 func toBotMarket(market ccxt.MarketInterface) bot.Market {
 	pricePrecision := 0.01
+	priceDecimals := 2
+
 	amountPrecision := 0.000001
+	amountDecimals := 6
+
 	if market.Info != nil {
 		if precision, ok := market.Info["precision"].(map[string]interface{}); ok {
 			if pp, ok := precision["price"].(float64); ok {
 				pricePrecision = pp
+				priceDecimals = -int(math.Log10(pricePrecision))
 			}
 			if ap, ok := precision["amount"].(float64); ok {
 				amountPrecision = ap
+				amountDecimals = -int(math.Log10(amountPrecision))
 			}
 		}
+
 	}
 
 	return bot.Market{
-		Symbol:  *market.Symbol,
-		BaseId:  *market.BaseId,
-		QuoteId: *market.QuoteId,
+		Symbol:     *market.Symbol,
+		BaseId:     *market.BaseId,
+		BaseAsset:  *market.BaseCurrency,
+		QuoteId:    *market.QuoteId,
+		QuoteAsset: *market.QuoteCurrency,
 		Precision: struct {
-			Price  float64
-			Amount float64
+			Price          float64
+			PriceDecimals  int
+			Amount         float64
+			AmountDecimals int
 		}{
-			Price:  pricePrecision,
-			Amount: amountPrecision,
+			Price:          pricePrecision,
+			PriceDecimals:  priceDecimals,
+			Amount:         amountPrecision,
+			AmountDecimals: amountDecimals,
 		},
 	}
 }

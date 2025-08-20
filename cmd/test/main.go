@@ -58,7 +58,9 @@ func main() {
 	//}
 
 	// Récupérer les informations du marché
-	baseAsset, quoteAsset := getMarketInfo(exchg, botConfig.Pair)
+	market := exchg.GetMarket(botConfig.Pair)
+	baseAsset := market.BaseAsset
+	quoteAsset := market.QuoteAsset
 	logger.Infof("✓ Market info: %s/%s", baseAsset, quoteAsset)
 
 	// 3. Vérifier les fonds disponibles dans la devise de cotation
@@ -67,8 +69,8 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to check balances: %v", err)
 	}
-	logger.Infof("✓ %s balance: %.6f", baseAsset, baseBalance)
-	logger.Infof("✓ %s balance: %.6f", quoteAsset, quoteBalance)
+	logger.Infof("✓ %s balance: %s", baseAsset, market.FormatAmount(baseBalance))
+	logger.Infof("✓ %s balance: %s", quoteAsset, market.FormatAmount(quoteBalance))
 
 	if quoteBalance < botConfig.QuoteAmount {
 		logger.Warnf("⚠️  Warning: Insufficient %s balance (%.6f < %.2f)",
@@ -81,7 +83,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to get current price: %v", err)
 	}
-	logger.Infof("✓ Current %s price: %.2f %s", baseAsset, currentPrice, quoteAsset)
+	logger.Infof("✓ Current %s price: %s %s", baseAsset, market.FormatPrice(currentPrice), quoteAsset)
 
 	// 5. Créer un ordre d'achat limite de 1au prix - offset
 	logger.Info("5. Creating limit buy order...")
@@ -176,11 +178,6 @@ func main() {
 	logger.Infof("%s balance: %.6f", quoteAsset, quoteBalance)
 	logger.Infof("%s balance: %.6f", baseAsset, baseBalance)
 	logger.Info("✓ All tests completed successfully!")
-}
-
-func getMarketInfo(exchange bot.Exchange, pair string) (string, string) {
-	market := exchange.GetMarket(pair)
-	return market.BaseId, market.QuoteId
 }
 
 func checkBalance(exchange bot.Exchange, baseAsset, quoteAsset string) (float64, float64, error) {

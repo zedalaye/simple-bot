@@ -4,6 +4,9 @@ import (
 	"bot/internal/core/config"
 	"bot/internal/core/database"
 	"bot/internal/logger"
+	"fmt"
+	"math"
+	"strconv"
 	"time"
 )
 
@@ -20,12 +23,16 @@ type Exchange interface {
 }
 
 type Market struct {
-	Symbol    string
-	BaseId    string
-	QuoteId   string
-	Precision struct {
-		Price  float64
-		Amount float64
+	Symbol     string
+	BaseAsset  string
+	BaseId     string
+	QuoteAsset string
+	QuoteId    string
+	Precision  struct {
+		Price          float64
+		PriceDecimals  int
+		Amount         float64
+		AmountDecimals int
 	}
 }
 
@@ -51,14 +58,11 @@ type Candle struct {
 }
 
 type Bot struct {
-	config          config.BotConfig
-	db              *database.DB
-	exchange        Exchange
-	pricePrecision  float64
-	amountPrecision float64
-	baseAsset       string
-	quoteAsset      string
-	done            chan bool
+	config   config.BotConfig
+	db       *database.DB
+	exchange Exchange
+	market   Market
+	done     chan bool
 }
 
 func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
@@ -78,18 +82,10 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 func (b *Bot) initializeMarketPrecision() error {
 	logger.Info("Fetching market data...")
-	market := b.exchange.GetMarket(b.config.Pair)
+	b.market = b.exchange.GetMarket(b.config.Pair)
 
-	b.pricePrecision = 0.01
-	b.amountPrecision = 0.000001
-
-	b.baseAsset = market.BaseId
-	b.quoteAsset = market.QuoteId
-	b.pricePrecision = market.Precision.Price
-	b.amountPrecision = market.Precision.Amount
-
-	logger.Infof("Base Asset: %s, Quote Asset: %s", b.baseAsset, b.quoteAsset)
-	logger.Infof("Market precision: price=%v, amount=%v", b.pricePrecision, b.amountPrecision)
+	logger.Infof("Base Asset: %s, Quote Asset: %s", b.market.BaseAsset, b.market.QuoteAsset)
+	logger.Infof("Market precision: price=%f, amount=%f", b.market.Precision.Price, b.market.Precision.Amount)
 	return nil
 }
 
@@ -144,7 +140,7 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	quoteAssetBalance, ok := balance[b.quoteAsset]
+	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
 	if !ok || (quoteAssetBalance.Free < b.config.QuoteAmount) {
 		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
 		return
@@ -156,8 +152,8 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	limitPrice := b.roundToPrecision(currentPrice-b.config.PriceOffset, b.pricePrecision)
-	baseAmount := b.roundToPrecision(b.config.QuoteAmount/limitPrice, b.amountPrecision)
+	limitPrice := b.roundToPrecision(currentPrice-b.config.PriceOffset, b.market.Precision.Price)
+	baseAmount := b.roundToPrecision(b.config.QuoteAmount/limitPrice, b.market.Precision.Amount)
 
 	order, err := b.exchange.PlaceLimitBuyOrder(b.config.Pair, baseAmount, limitPrice)
 	if err != nil {
@@ -174,8 +170,9 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	logger.Infof("Limit Buy Order placed: %v %s at %v %s (ID=%v, DB_ID=%v)",
-		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, order.Id, dbOrder.ID)
+	logger.Infof("Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
+		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
+		order.Id, dbOrder.ID)
 }
 
 func (b *Bot) handlePriceCheck() {
@@ -187,7 +184,7 @@ func (b *Bot) handlePriceCheck() {
 		return
 	}
 
-	currentPrice = b.roundToPrecision(currentPrice, b.pricePrecision)
+	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
 	logger.Infof("Current price: %v", currentPrice)
 
 	positions, err := b.db.GetOpenPositions()
@@ -241,7 +238,7 @@ func (b *Bot) handleOrderCheck() {
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
-	limitPrice := b.roundToPrecision(currentPrice+b.config.PriceOffset, b.pricePrecision)
+	limitPrice := b.roundToPrecision(currentPrice+b.config.PriceOffset, b.market.Precision.Price)
 	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
@@ -257,8 +254,8 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		return
 	}
 
-	logger.Infof("Limit Sell Order placed: %v %s at %v %s (ID=%v, DB_ID=%v, Position=%v)",
-		orderAmount, b.baseAsset, orderPrice, b.quoteAsset, order.Id, dbOrder.ID, pos.ID)
+	logger.Infof("Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
+		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {
@@ -311,8 +308,9 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 }
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
-	logger.Infof("Buy Order Filled: %v %s at %v %s (ID=%v)",
-		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
+	logger.Infof("Buy Order Filled: %s %s at %s %s (ID=%v)",
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+		order.Id)
 
 	position, err := b.db.CreatePosition(*order.Price, *order.Amount)
 	if err != nil {
@@ -324,8 +322,9 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
-	logger.Infof("Sell Order Filled: %v %s at %v %s (ID=%v)",
-		order.Amount, b.baseAsset, order.Price, b.quoteAsset, order.Id)
+	logger.Infof("Sell Order Filled: %s %s at %s %s (ID=%s)",
+		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
+		*order.Id)
 
 	if dbOrder.PositionID != nil {
 		err := b.db.DeletePosition(*dbOrder.PositionID)
@@ -376,4 +375,64 @@ func (b *Bot) ShowStatistics() {
 func (b *Bot) roundToPrecision(value, precision float64) float64 {
 	factor := 1 / precision
 	return float64(int64(value*factor)) / factor
+}
+
+func (m *Market) FormatAmount(amount float64) string {
+	return strconv.FormatFloat(amount, 'f', m.Precision.AmountDecimals, 64)
+}
+
+func (m *Market) FormatPrice(price float64) string {
+	return strconv.FormatFloat(price, 'f', m.Precision.PriceDecimals, 64)
+}
+
+// getDailyPrices récupère les prix de clôture quotidiens pour une période donnée
+func (b *Bot) getDailyPrices(pair string, limit int64) ([]float64, error) {
+	candles, err := b.exchange.FetchCandles(pair, "1d", nil, limit)
+	if err != nil {
+		logger.Errorf("Failed to fetch OHLCV data: %v", err)
+		return nil, err
+	}
+
+	// Extraire les prix de clôture (index 4 dans chaque kline)
+	prices := make([]float64, len(candles))
+	for i, candle := range candles {
+		prices[i] = candle.Close
+	}
+	return prices, nil
+}
+
+// calculateVolatility calcule la volatilité quotidienne à partir des prix de clôture
+func (b *Bot) calculateVolatility(pair string, period int64) (float64, error) {
+	prices, err := b.getDailyPrices(pair, period)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(prices) < 2 {
+		return 0, fmt.Errorf("not enough price data for volatility calculation")
+	}
+
+	// Calculer les rendements quotidiens
+	returns := make([]float64, len(prices)-1)
+	for i := 1; i < len(prices); i++ {
+		returns[i-1] = (prices[i] - prices[i-1]) / prices[i-1]
+	}
+
+	// Calculer la moyenne des rendements
+	var sum float64
+	for _, r := range returns {
+		sum += r
+	}
+	mean := sum / float64(len(returns))
+
+	// Calculer la variance
+	var variance float64
+	for _, r := range returns {
+		variance += math.Pow(r-mean, 2)
+	}
+	variance /= float64(len(returns))
+
+	// Volatilité = écart-type (racine carrée de la variance)
+	volatility := math.Sqrt(variance)
+	return volatility * 100, nil // Convertir en pourcentage
 }
