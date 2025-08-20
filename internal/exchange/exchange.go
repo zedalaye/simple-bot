@@ -244,18 +244,18 @@ func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 }
 
 func (e *Exchange) CancelOrder(id string, symbol string) (bot.Order, error) {
-	var result ccxt.Order
+	//var result ccxt.Order
 	err := retryWithBackoff(func() error {
-		order, orderErr := e.IExchange.CancelOrder(id, ccxt.WithCancelOrderSymbol(symbol))
-		if orderErr == nil {
-			result = order
-		}
+		_, orderErr := e.IExchange.CancelOrder(id, ccxt.WithCancelOrderSymbol(symbol))
+		//if orderErr == nil {
+		//	result = order
+		//}
 		return orderErr
 	})
 	if err != nil {
 		return bot.Order{}, err
 	}
-	return e.FetchOrder(*result.Id, symbol)
+	return e.FetchOrder(id, symbol)
 	//return toBotOrder(result), nil
 }
 
