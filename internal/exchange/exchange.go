@@ -256,7 +256,8 @@ func (e *Exchange) CancelOrder(id string, symbol string) (bot.Order, error) {
 	if err != nil {
 		return bot.Order{}, err
 	}
-	return toBotOrder(result), nil
+	return e.FetchOrder(*result.Id, symbol)
+	//return toBotOrder(result), nil
 }
 
 func toBotMarket(market ccxt.MarketInterface) bot.Market {
