@@ -171,9 +171,13 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	telegram.SendMessage(fmt.Sprintf("Buy Order : %s %s at %s %s",
-		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("ℹ️ New Buy Order: %d (%s)\n", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
+	message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", orderAmount*orderPrice, b.market.QuoteAsset)
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
@@ -259,9 +263,13 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		return
 	}
 
-	telegram.SendMessage(fmt.Sprintf("Sell Order : %f %s at %f %s",
-		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("ℹ️ New Sell Order: %d (%s)\n", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
+	message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", orderAmount*orderPrice, b.market.QuoteAsset)
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
 		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
@@ -313,18 +321,29 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 		return
 	}
 
-	telegram.SendMessage(fmt.Sprintf("Order %s Cancelled (manually on exchange) : %s %s at %s %s",
-		*order.Id,
-		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("🚫 Order Cancelled: %d (%s)\n", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
+	if dbOrder.Side == database.Buy {
+		message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+	} else {
+		message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+	}
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Order %v Cancelled (cancelled manually on exchange)", order.Id)
 }
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
-	telegram.SendMessage(fmt.Sprintf("Buy Order Filled : %s %s at %s %s",
-		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("✅ Buy Order Filled: %s\n", *order.Id)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", *order.Amount**order.Price, b.market.QuoteAsset)
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Buy Order Filled: %s %s at %s %s (ID=%v)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
@@ -340,9 +359,21 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
-	telegram.SendMessage(fmt.Sprintf("Sell Order Filled : %s %s at %s %s",
-		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("✅ Sell Order Filled: %s\n", *order.Id)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("📈 Sell Price: %s %s\n", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", *order.Amount**order.Price, b.market.QuoteAsset)
+
+	if dbOrder.PositionID != nil {
+		position, err := b.db.GetPosition(*dbOrder.PositionID)
+		if err == nil {
+			win := (*order.Amount * *order.Price) - (position.Price * position.Amount)
+			message += fmt.Sprintf("🤑 Profit: %.2f %s\n", win, b.market.QuoteAsset)
+		}
+	}
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Sell Order Filled: %s %s at %s %s (ID=%s)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
@@ -364,16 +395,23 @@ func (b *Bot) shouldCancelOrder(order Order) bool {
 }
 
 func (b *Bot) handleCancelOrder(dbOrder database.Order) {
-	order, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
+	_, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to Cancel Order (ID=%v): %v", dbOrder.ExternalID, err)
 		return
 	}
 
-	telegram.SendMessage(fmt.Sprintf("Order %s Cancelled (too old) : %s %s at %s %s",
-		*order.Id,
-		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
-	))
+	message := ""
+	message += fmt.Sprintf("🚫 Old Order Cancelled: %d (%s)\n", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
+	if dbOrder.Side == database.Buy {
+		message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+	} else {
+		message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+	}
+	message += fmt.Sprintf("💲 Value: %.2f %s\n", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
+
+	telegram.SendMessage(message)
 
 	logger.Infof("Order %v Cancelled (too old)", dbOrder.ExternalID)
 
