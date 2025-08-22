@@ -92,10 +92,10 @@ func (b *Bot) initializeMarketPrecision() error {
 
 func (b *Bot) Start(buyAtLaunch bool) error {
 	logger.Info("Starting bot...")
-	b.ShowStatistics()
 
 	b.handleOrderCheck()
 	b.handlePriceCheck()
+	b.ShowStatistics()
 
 	if buyAtLaunch {
 		b.handleBuySignal()
@@ -128,6 +128,7 @@ func (b *Bot) run() {
 		case <-checkTicker.C:
 			b.handlePriceCheck()
 			b.handleOrderCheck()
+			b.ShowStatistics()
 		}
 	}
 }
@@ -172,10 +173,10 @@ func (b *Bot) handleBuySignal() {
 	}
 
 	message := ""
-	message += fmt.Sprintf("ℹ️ New Buy Order: %d (%s)\n", dbOrder.ID, *order.Id)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
-	message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", orderAmount*orderPrice, b.market.QuoteAsset)
+	message += fmt.Sprintf("ℹ️ New Buy Order: %d (%s)", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
+	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
 
 	telegram.SendMessage(message)
 
@@ -226,8 +227,6 @@ func (b *Bot) handlePriceCheck() {
 			}
 		}
 	}
-
-	b.ShowStatistics()
 }
 
 func (b *Bot) handleOrderCheck() {
@@ -242,8 +241,6 @@ func (b *Bot) handleOrderCheck() {
 	for _, dbOrder := range pendingOrders {
 		b.processOrder(dbOrder)
 	}
-
-	b.ShowStatistics()
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
@@ -264,10 +261,10 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("ℹ️ New Sell Order: %d (%s)\n", dbOrder.ID, *order.Id)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
-	message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", orderAmount*orderPrice, b.market.QuoteAsset)
+	message += fmt.Sprintf("ℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
+	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
 
 	telegram.SendMessage(message)
 
@@ -322,14 +319,14 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🚫 Order Cancelled: %d (%s)\n", dbOrder.ID, dbOrder.ExternalID)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("🚫 Order Cancelled: %d (%s)", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
 	if dbOrder.Side == database.Buy {
-		message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	} else {
-		message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	}
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
 
 	telegram.SendMessage(message)
 
@@ -338,10 +335,10 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
 	message := ""
-	message += fmt.Sprintf("✅ Buy Order Filled: %s\n", *order.Id)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
-	message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", *order.Amount**order.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("✅ Buy Order Filled: %s", *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
 	telegram.SendMessage(message)
 
@@ -360,16 +357,16 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	message := ""
-	message += fmt.Sprintf("✅ Sell Order Filled: %s\n", *order.Id)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
-	message += fmt.Sprintf("📈 Sell Price: %s %s\n", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", *order.Amount**order.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("✅ Sell Order Filled: %s", *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
 	if dbOrder.PositionID != nil {
 		position, err := b.db.GetPosition(*dbOrder.PositionID)
 		if err == nil {
 			win := (*order.Amount * *order.Price) - (position.Price * position.Amount)
-			message += fmt.Sprintf("🤑 Profit: %.2f %s\n", win, b.market.QuoteAsset)
+			message += fmt.Sprintf("\n🤑 Profit: %.2f %s", win, b.market.QuoteAsset)
 		}
 	}
 
@@ -402,14 +399,14 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🚫 Old Order Cancelled: %d (%s)\n", dbOrder.ID, dbOrder.ExternalID)
-	message += fmt.Sprintf("💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
+	message += fmt.Sprintf("🚫 Old Order Cancelled: %d (%s)", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
 	if dbOrder.Side == database.Buy {
-		message += fmt.Sprintf("📉 Buy Price: %s %s\n", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	} else {
-		message += fmt.Sprintf("📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
+		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	}
-	message += fmt.Sprintf("💲 Value: %.2f %s\n", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
 
 	telegram.SendMessage(message)
 
