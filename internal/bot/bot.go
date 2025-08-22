@@ -365,8 +365,11 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	if dbOrder.PositionID != nil {
 		position, err := b.db.GetPosition(*dbOrder.PositionID)
 		if err == nil {
-			win := (*order.Amount * *order.Price) - (position.Price * position.Amount)
-			message += fmt.Sprintf("\n🤑 Profit: %.2f %s", win, b.market.QuoteAsset)
+			buyValue := position.Price * position.Amount
+			sellValue := *order.Amount * *order.Price
+			win := sellValue - buyValue
+			winPercent := (win / buyValue) * 100
+			message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
 		}
 	}
 
