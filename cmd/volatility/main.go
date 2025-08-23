@@ -5,29 +5,30 @@ import (
 	"bot/internal/exchange"
 	"bot/internal/logger"
 	"flag"
-	"fmt"
 	"github.com/joho/godotenv"
 	"log"
 	"math"
+	"os"
 	"time"
 )
 
 func main() {
-	fmt.Println("=== Bot Volatility ===")
+	log.SetOutput(os.Stdout)
+	log.Printf("=== Bot Volatility ===")
 
 	// Paramètres de ligne de commande
 	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
 	flag.Parse()
 
 	// 1. Charger la configuration du bot
-	fmt.Println("1. Loading bot configuration...")
+	log.Println("1. Loading bot configuration...")
 	fileConfig, err := config.LoadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// Initialiser le logger pour les tests
-	err = logger.InitLogger(fileConfig.GetLogLevel(), "")
+	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}

@@ -1,7 +1,7 @@
 package telegram
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -9,17 +9,17 @@ import (
 
 var httpPostForm = http.PostForm
 
-func SendMessage(message string) {
+func SendMessage(message string) error {
 	if os.Getenv("TELEGRAM") != "1" {
-		return
+		return nil
 	}
 
 	if os.Getenv("TELEGRAM_BOT_TOKEN") == "" {
-		log.Fatal("Missing environment variable: TELEGRAM_BOT_TOKEN")
+		return fmt.Errorf("missing environment variable: TELEGRAM_BOT_TOKEN")
 	}
 
 	if os.Getenv("TELEGRAM_CHAT_ID") == "" {
-		log.Fatal("Missing environment variable: TELEGRAM_CHAT_ID")
+		return fmt.Errorf("missing environment variable: TELEGRAM_CHAT_ID")
 	}
 
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -33,10 +33,12 @@ func SendMessage(message string) {
 
 	response, err := httpPostForm(endpoint, data)
 	if err != nil {
-		log.Println("Error sending Telegram message:", err)
+		return err
 	}
 
 	if response.StatusCode != 200 {
-		log.Println("Error sending Telegram message:", response.Status)
+		return fmt.Errorf("failed to send Telegram message (Status=%v)", response.Status)
 	}
+
+	return nil
 }

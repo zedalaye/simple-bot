@@ -3,6 +3,7 @@ package main
 import (
 	"bot/internal/core/config"
 	"bot/internal/core/database"
+	"bot/internal/logger"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	var (
 		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
 		command    = flag.String("cmd", "stats", "Command to execute: stats, positions, orders, export")
@@ -26,9 +29,14 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
 	db, err := database.NewDB(fileConfig.Database.Path)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logger.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
@@ -51,7 +59,7 @@ func main() {
 func showStats(db *database.DB, format string) {
 	stats, err := db.GetStats()
 	if err != nil {
-		log.Fatalf("Failed to get stats: %v", err)
+		logger.Fatalf("Failed to get stats: %v", err)
 	}
 
 	switch format {
@@ -69,7 +77,7 @@ func showStats(db *database.DB, format string) {
 func showPositions(db *database.DB, format string) {
 	positions, err := db.GetAllPositions()
 	if err != nil {
-		log.Fatalf("Failed to get positions: %v", err)
+		logger.Fatalf("Failed to get positions: %v", err)
 	}
 
 	switch format {
@@ -100,7 +108,7 @@ func showPositions(db *database.DB, format string) {
 func showOrders(db *database.DB, format string) {
 	orders, err := db.GetPendingOrders()
 	if err != nil {
-		log.Fatalf("Failed to get orders: %v", err)
+		logger.Fatalf("Failed to get orders: %v", err)
 	}
 
 	switch format {
@@ -137,7 +145,7 @@ func exportData(db *database.DB) {
 
 	positions, err := db.GetAllPositions()
 	if err != nil {
-		log.Printf("Warning: Failed to export positions: %v", err)
+		logger.Warnf("Warning: Failed to export positions: %v", err)
 	} else {
 		export["positions"] = positions
 	}
@@ -145,14 +153,14 @@ func exportData(db *database.DB) {
 	// Pour l'export, on récupère aussi les ordres pending
 	orders, err := db.GetPendingOrders()
 	if err != nil {
-		log.Printf("Warning: Failed to export orders: %v", err)
+		logger.Warnf("Warning: Failed to export orders: %v", err)
 	} else {
 		export["pending_orders"] = orders
 	}
 
 	stats, err := db.GetStats()
 	if err != nil {
-		log.Printf("Warning: Failed to export stats: %v", err)
+		logger.Warnf("Warning: Failed to export stats: %v", err)
 	} else {
 		export["statistics"] = stats
 	}
@@ -162,12 +170,12 @@ func exportData(db *database.DB) {
 	filename := fmt.Sprintf("bot_export_%s.json", time.Now().Format("2006-01-02_15-04-05"))
 	data, err := json.MarshalIndent(export, "", "  ")
 	if err != nil {
-		log.Fatalf("Failed to marshal export data: %v", err)
+		logger.Fatalf("Failed to marshal export data: %v", err)
 	}
 
 	err = os.WriteFile(filename, data, 0644)
 	if err != nil {
-		log.Fatalf("Failed to write export file: %v", err)
+		logger.Fatalf("Failed to write export file: %v", err)
 	}
 
 	fmt.Printf("Data exported to: %s\n", filename)

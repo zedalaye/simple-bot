@@ -3,11 +3,13 @@ package main
 import (
 	"bot/internal/core/config"
 	"bot/internal/core/database"
+	"bot/internal/logger"
 	"bot/internal/web"
 	"flag"
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -45,6 +47,8 @@ func createRenderer() multitemplate.Renderer {
 }
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
 	flag.Parse()
 
@@ -54,15 +58,20 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
 	// Initialize database
 	db, err := database.NewDB(fileConfig.Database.Path)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logger.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer func(db *database.DB) {
 		err := db.Close()
 		if err != nil {
-			log.Fatalf("Failed to close database: %v", err)
+			logger.Fatalf("Failed to close database: %v", err)
 		}
 	}(db)
 
@@ -79,8 +88,8 @@ func main() {
 	web.RegisterHandlers(router, db)
 
 	// Start server
-	log.Println("Starting Web UI on :8080")
+	logger.Infof("Starting Web UI on :8080")
 	if err := router.Run(":8080"); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		logger.Fatalf("Failed to start server: %v", err)
 	}
 }

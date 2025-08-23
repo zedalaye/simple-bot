@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -16,7 +17,8 @@ import (
 const MinQuoteAmount = 10.0
 
 func main() {
-	fmt.Println("=== Bot Test Suite ===")
+	log.SetOutput(os.Stdout)
+	log.Println("=== Bot Test Suite ===")
 
 	// Paramètres de ligne de commande
 	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
@@ -30,7 +32,7 @@ func main() {
 	}
 
 	// Initialiser le logger pour les tests
-	err = logger.InitLogger(fileConfig.GetLogLevel(), "")
+	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}

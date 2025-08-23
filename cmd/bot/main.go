@@ -17,6 +17,7 @@ import (
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
 	log.Println("Starting Simple Bot")
 
 	// Paramètres de ligne de commande

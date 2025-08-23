@@ -178,7 +178,10 @@ func (b *Bot) handleBuySignal() {
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
 
-	telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
@@ -266,7 +269,10 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
 
-	telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
 		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
@@ -328,7 +334,10 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	}
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
 
-	telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Order %v Cancelled (cancelled manually on exchange)", order.Id)
 }
@@ -340,7 +349,10 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
-	telegram.SendMessage(message)
+	err := telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Buy Order Filled: %s %s at %s %s (ID=%v)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
@@ -373,7 +385,10 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		}
 	}
 
-	telegram.SendMessage(message)
+	err := telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Sell Order Filled: %s %s at %s %s (ID=%s)",
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
@@ -411,7 +426,10 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 	}
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
 
-	telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send notification to Telegram: %v", err)
+	}
 
 	logger.Infof("Order %v Cancelled (too old)", dbOrder.ExternalID)
 

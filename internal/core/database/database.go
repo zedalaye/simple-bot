@@ -4,7 +4,6 @@ import (
 	"bot/internal/logger"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -500,7 +499,7 @@ func (db *DB) CleanupOldData(olderThanDays int) error {
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
-		log.Printf("Cleaned up %d old orders", rowsAffected)
+		logger.Infof("Cleaned up %d old orders", rowsAffected)
 	}
 
 	return nil
