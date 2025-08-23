@@ -6,8 +6,11 @@ RUN mkdir /go
 ENV GOPATH=/go
 
 WORKDIR /app
-COPY . .
+
+COPY go.mod go.sum ./
 RUN go mod download
+
+COPY . ./
 RUN CGO_ENABLED=1 GOOS=linux make
 
 FROM alpine:edge
@@ -17,4 +20,5 @@ WORKDIR /app
 COPY --from=build /app/templates/ /app/templates/
 COPY --from=build /app/bin/* .
 
+EXPOSE 8080/tcp
 CMD ["./web"]
