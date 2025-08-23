@@ -214,6 +214,7 @@ func validateConfig(config *FileConfig) error {
 }
 
 type BotConfig struct {
+	ExchangeName    string
 	Pair            string
 	QuoteAmount     float64
 	PriceOffset     float64
@@ -248,6 +249,7 @@ func (fc *FileConfig) EnvFilePaths() []string {
 
 func (fc *FileConfig) ToBotConfig() BotConfig {
 	return BotConfig{
+		ExchangeName:    fc.Exchange.Name,
 		Pair:            fc.Trading.Pair,
 		QuoteAmount:     fc.Trading.QuoteAmount,
 		PriceOffset:     fc.Trading.PriceOffset,

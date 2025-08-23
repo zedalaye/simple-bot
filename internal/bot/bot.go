@@ -85,6 +85,7 @@ func (b *Bot) initializeMarketPrecision() error {
 	logger.Info("Fetching market data...")
 	b.market = b.exchange.GetMarket(b.config.Pair)
 
+	logger.Infof("Exchange: %s", b.config.ExchangeName)
 	logger.Infof("Base Asset: %s, Quote Asset: %s", b.market.BaseAsset, b.market.QuoteAsset)
 	logger.Infof("Market precision: price=%f, amount=%f", b.market.Precision.Price, b.market.Precision.Amount)
 	return nil
@@ -173,7 +174,7 @@ func (b *Bot) handleBuySignal() {
 	}
 
 	message := ""
-	message += fmt.Sprintf("ℹ️ New Buy Order: %d (%s)", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("ℹ️ [%s] New Buy Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
@@ -183,7 +184,8 @@ func (b *Bot) handleBuySignal() {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
+	logger.Infof("[%s] Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
+		b.config.ExchangeName,
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
 		order.Id, dbOrder.ID)
 }
@@ -198,7 +200,7 @@ func (b *Bot) handlePriceCheck() {
 	}
 
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
-	logger.Infof("Current price: %v", currentPrice)
+	logger.Infof("[%s] Current price: %v", b.config.ExchangeName, currentPrice)
 
 	positions, err := b.db.GetOpenPositions()
 	if err != nil {
@@ -219,7 +221,7 @@ func (b *Bot) handlePriceCheck() {
 				continue
 			}
 			pos.MaxPrice = currentPrice
-			logger.Infof("Updated max price for position %v to %v", pos.ID, pos.MaxPrice)
+			logger.Infof("[%s] Updated max price for position %v to %v", b.config.ExchangeName, pos.ID, pos.MaxPrice)
 		}
 
 		// Vérifier le profit minimum
@@ -264,7 +266,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("ℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("ℹ️ [%s] New Sell Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
@@ -274,7 +276,8 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
+	logger.Infof("[%s] Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
+		b.config.ExchangeName,
 		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
 }
 
@@ -325,7 +328,7 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🚫 Order Cancelled: %d (%s)", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
 	if dbOrder.Side == database.Buy {
 		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
@@ -339,12 +342,12 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Order %v Cancelled (cancelled manually on exchange)", order.Id)
+	logger.Infof("[%s] Order %v Cancelled (cancelled manually on exchange)", b.config.ExchangeName, order.Id)
 }
 
 func (b *Bot) handleFilledBuyOrder(order Order) {
 	message := ""
-	message += fmt.Sprintf("✅ Buy Order Filled: %s", *order.Id)
+	message += fmt.Sprintf("✅ [%s] Buy Order Filled: %s", b.config.ExchangeName, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
@@ -362,14 +365,15 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
 	} else {
-		logger.Infof("Position created: ID=%v, Price=%v, Amount=%v",
+		logger.Infof("[%s] Position created: ID=%v, Price=%v, Amount=%v",
+			b.config.ExchangeName,
 			position.ID, position.Price, position.Amount)
 	}
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	message := ""
-	message += fmt.Sprintf("✅ Sell Order Filled: %s", *order.Id)
+	message += fmt.Sprintf("✅ [%s] Sell Order Filled: %s", b.config.ExchangeName, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
@@ -390,7 +394,8 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Sell Order Filled: %s %s at %s %s (ID=%s)",
+	logger.Infof("[%s] Sell Order Filled: %s %s at %s %s (ID=%s)",
+		b.config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		*order.Id)
 
@@ -417,7 +422,7 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🚫 Old Order Cancelled: %d (%s)", dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("🚫 [%s] Old Order Cancelled: %d (%s)", b.config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
 	if dbOrder.Side == database.Buy {
 		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
@@ -431,7 +436,7 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Order %v Cancelled (too old)", dbOrder.ExternalID)
+	logger.Infof("[%s] Order %v Cancelled (too old)", b.config.ExchangeName, dbOrder.ExternalID)
 
 	err = b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Cancelled)
 	if err != nil {
@@ -445,7 +450,8 @@ func (b *Bot) handleCancelOrder(dbOrder database.Order) {
 
 func (b *Bot) ShowStatistics() {
 	if stats, err := b.db.GetStats(); err == nil {
-		logger.Infof("Statistics: Positions[Active=%d, Value=%.2f], Orders[Pending=%d, Filled=%d, Cancelled=%d]",
+		logger.Infof("[%s] Positions[Active=%d, Value=%.2f], Orders[Pending=%d, Filled=%d, Cancelled=%d]",
+			b.config.ExchangeName,
 			stats["active_positions"],
 			stats["total_positions_value"],
 			stats["pending_orders"],
