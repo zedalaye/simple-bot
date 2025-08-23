@@ -1,0 +1,6 @@
+bin/
+.env*
+*.db
+*.db.backup
+*.yml
+Dockerfile
