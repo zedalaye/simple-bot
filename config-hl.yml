@@ -3,7 +3,7 @@
 # Exchange configuration
 exchange:
   name: hyperliquid  # Supported: mexc, binance, etc.
-  env: .env.hl
+  env: .env.hl       # API Keys for exchange
 
 # Trading parameters
 trading:
