@@ -3,6 +3,7 @@ package main
 import (
 	"bot/internal/bot"
 	"bot/internal/core/config"
+	"bot/internal/core/database"
 	"bot/internal/exchange"
 	"bot/internal/logger"
 	"flag"
@@ -47,6 +48,18 @@ func main() {
 	logger.Debugf("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
 		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
 
+	db, err := database.NewDB(fileConfig.Database.Path)
+	if err != nil {
+		logger.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer func(db *database.DB) {
+		err := db.Close()
+		if err != nil {
+			logger.Fatalf("Failed to close database: %v", err)
+		}
+	}(db)
+	logger.Info("Database initialized successfully")
+
 	// 2. Créer l'instance de l'exchange
 	logger.Info("2. Creating exchange instance...")
 	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
@@ -86,6 +99,29 @@ func main() {
 		logger.Fatalf("Failed to get current price: %v", err)
 	}
 	logger.Infof("✓ Current %s price: %s %s", baseAsset, market.FormatPrice(currentPrice), quoteAsset)
+
+	//orders, err := db.GetAllOrders()
+	//if err != nil {
+	//	logger.Errorf("Failed to get all orders: %v", err)
+	//} else {
+	//	for _, dbOrder := range orders {
+	//		exchgOrder, err := exchg.FetchOrder(dbOrder.ExternalID, botConfig.Pair)
+	//		if err != nil {
+	//			logger.Errorf("Failed to fetch order from exchange: %v", err)
+	//		} else {
+	//			logger.Infof("Order %s, FeeRate=%f, Fee=%f", *exchgOrder.Id, *exchgOrder.FeeRate, *exchgOrder.Fee)
+	//		}
+	//	}
+	//}
+
+	trades, err := exchg.FetchTrades(botConfig.Pair, nil, 500)
+	if err != nil {
+		logger.Fatalf("Failed to fetch trades: %v", err)
+	} else {
+		for _, trade := range trades {
+			logger.Infof("Trade %s (%s), FeeToken=%s, Fee=%.9f", *trade.Id, *trade.OrderId, *trade.FeeToken, *trade.Fee)
+		}
+	}
 
 	// 5. Créer un ordre d'achat limite de 1au prix - offset
 	logger.Info("5. Creating limit buy order...")
