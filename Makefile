@@ -1,9 +1,9 @@
 # Makefile pour simplifier la compilation
 
-.PHONY: build-all build-bot build-admin build-test build-volatility clean run-bot run-admin run-test run-volatility
+.PHONY: build-all build-bot build-admin build-test build-volatility build-fix-cycles clean run-bot run-admin run-test run-volatility run-fix-cycles
 
 # Construire tous les binaires
-build-all: build-bot build-admin build-test build-web build-volatility
+build-all: build-bot build-admin build-test build-web build-volatility build-fix-cycles
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -12,14 +12,17 @@ build-bot:
 build-admin:
 	go build -o bin/admin ./cmd/admin
 
+build-web:
+	go build -o bin/web ./cmd/web
+
 build-test:
 	go build -o bin/test ./cmd/test
 
 build-volatility:
 	go build -o bin/volatility ./cmd/volatility
 
-build-web:
-	go build -o bin/web ./cmd/web
+build-fix-cycles:
+	go build -o bin/fix-cycles ./cmd/fix-cycles
 
 # Nettoyer les binaires
 clean:
@@ -40,6 +43,9 @@ run-test:
 
 run-volatility:
 	DEBUG=true go run ./cmd/volatility
+
+run-fix-cycles:
+	DEBUG=true go run ./cmd/fix-cycles
 
 # Tests
 # test:
