@@ -39,10 +39,19 @@ type Order struct {
 	Side       OrderSide   `json:"side"`
 	Amount     float64     `json:"amount"`
 	Price      float64     `json:"price"`
+	Fees       float64     `json:"fees"`
 	Status     OrderStatus `json:"status"`
 	PositionID *int        `json:"position_id,omitempty"` // Pour lier les ordres de vente aux positions
 	CreatedAt  time.Time   `json:"created_at"`
 	UpdatedAt  time.Time   `json:"updated_at"`
+}
+
+type Cycle struct {
+	ID        int       `json:"id"`
+	BuyOrder  Order     `json:"buy_order"`
+	SellOrder *Order    `json:"sell_order,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Migration struct {
@@ -86,6 +95,28 @@ var migrations = []Migration{
 		SQL: `
             ALTER TABLE positions ADD COLUMN max_price REAL DEFAULT 0.0;
         `,
+	},
+	{
+		ID:   3,
+		Name: "add_order_fees",
+		SQL: `
+			ALTER TABLE orders ADD COLUMN fees REAL DEFAULT 0.0;
+		`,
+	},
+	{
+		ID:   4,
+		Name: "create_cycles",
+		SQL: `
+			CREATE TABLE IF NOT EXISTS cycles (
+			    id INTEGER PRIMARY KEY AUTOINCREMENT,
+			    buy_order_id INTEGER NOT NULL,
+			    sell_order_id INTEGER,
+			    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY(buy_order_id) REFERENCES orders(id),
+				FOREIGN KEY(sell_order_id) REFERENCES orders(id) on delete set null
+			);
+		`,
 	},
 }
 
@@ -262,9 +293,9 @@ func (db *DB) DeletePosition(id int) error {
 }
 
 // Orders
-func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price float64, positionID *int) (*Order, error) {
-	query := `INSERT INTO orders (external_id, side, amount, price, status, position_id) VALUES (?, ?, ?, ?, ?, ?)`
-	result, err := db.conn.Exec(query, externalID, side, amount, price, Pending, positionID)
+func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price, fees float64, positionID *int) (*Order, error) {
+	query := `INSERT INTO orders (external_id, side, amount, price, fees, status, position_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	result, err := db.conn.Exec(query, externalID, side, amount, price, fees, Pending, positionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
@@ -279,7 +310,7 @@ func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price float
 
 func (db *DB) GetOrder(id int) (*Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		WHERE id = ?
 	`
@@ -287,7 +318,8 @@ func (db *DB) GetOrder(id int) (*Order, error) {
 
 	var order Order
 	var positionID sql.NullInt64
-	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+		&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order: %w", err)
 	}
@@ -302,7 +334,7 @@ func (db *DB) GetOrder(id int) (*Order, error) {
 
 func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		WHERE external_id = ?
 	`
@@ -310,7 +342,8 @@ func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
 
 	var order Order
 	var positionID sql.NullInt64
-	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+		&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order by external id: %w", err)
 	}
@@ -325,7 +358,7 @@ func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
 
 func (db *DB) GetPendingOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		WHERE status = ? 
 		ORDER BY created_at ASC
@@ -340,7 +373,8 @@ func (db *DB) GetPendingOrders() ([]Order, error) {
 	for rows.Next() {
 		var order Order
 		var positionID sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
@@ -370,9 +404,23 @@ func (db *DB) UpdateOrderStatus(externalID string, status OrderStatus) error {
 	return nil
 }
 
+func (db *DB) UpdateOrderPosition(id int, positionId int) error {
+	query := `
+		UPDATE orders SET 
+			position_id = ?, 
+			updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?
+	`
+	_, err := db.conn.Exec(query, positionId, id)
+	if err != nil {
+		return fmt.Errorf("failed to update order position: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		WHERE status = ? AND created_at < ?
 	`
@@ -386,7 +434,8 @@ func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	for rows.Next() {
 		var order Order
 		var positionID sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
@@ -400,6 +449,185 @@ func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	}
 
 	return orders, nil
+}
+
+// Cycles
+func (db *DB) CreateCycle(buyOrderId int) (*Cycle, error) {
+	query := `INSERT INTO cycles (buy_order_id) VALUES (?)`
+	result, err := db.conn.Exec(query, buyOrderId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cycle: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return db.GetCycle(int(id))
+}
+
+func (db *DB) GetCycle(id int) (*Cycle, error) {
+	query := `
+		SELECT id, buy_order_id, sell_order_id, created_at, updated_at 
+		FROM cycles 
+		WHERE id = ?
+	`
+	row := db.conn.QueryRow(query, id)
+
+	var cycle Cycle
+	var buyOrderId int64
+	var sellOrderId sql.NullInt64
+	err := row.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &cycle.CreatedAt, &cycle.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycle: %w", err)
+	}
+
+	buyOrder, err := db.GetOrder(int(buyOrderId))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycle: %w", err)
+	}
+	cycle.BuyOrder = *buyOrder
+
+	if sellOrderId.Valid {
+		id := int(sellOrderId.Int64)
+		sellOrder, err := db.GetOrder(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cycle: %w", err)
+		}
+		cycle.SellOrder = sellOrder
+	}
+
+	return &cycle, nil
+}
+
+func (db *DB) GetCycleForBuyOrder(buyOrderId int) (*Cycle, error) {
+	var cycleId sql.NullInt64
+	err := db.conn.QueryRow(`SELECT id from cycles WHERE buy_order_id = ?`, buyOrderId).Scan(&cycleId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycle id for buy order: %w", err)
+	}
+	if cycleId.Valid {
+		return db.GetCycle(int(cycleId.Int64))
+	} else {
+		return nil, fmt.Errorf("failed to get cycle id for buy order: %w", err)
+	}
+}
+
+func (db *DB) GetCycleForBuyOrderPosition(buyOrderPositionId int) (*Cycle, error) {
+	var cycleId sql.NullInt64
+	query := `
+		SELECT c.id 
+		FROM cycles c 
+		JOIN orders bo ON c.buy_order_id = bo.id 
+		WHERE bo.position_id= ?
+	`
+	err := db.conn.QueryRow(query, buyOrderPositionId).Scan(&cycleId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycle id for buy order by position: %w", err)
+	}
+	if cycleId.Valid {
+		return db.GetCycle(int(cycleId.Int64))
+	} else {
+		return nil, fmt.Errorf("failed to get cycle id for buy order by position: %w", err)
+	}
+}
+
+func (db *DB) GetCycleForSellOrder(sellOrderId int) (*Cycle, error) {
+	var cycleId sql.NullInt64
+	err := db.conn.QueryRow(`SELECT id from cycles WHERE sell_order_id = ?`, sellOrderId).Scan(&cycleId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycle id for buy order: %w", err)
+	}
+	if cycleId.Valid {
+		return db.GetCycle(int(cycleId.Int64))
+	} else {
+		return nil, fmt.Errorf("failed to get cycle id for buy order: %w", err)
+	}
+}
+
+func (db *DB) UpdateCycleSellOrder(id int, sellOrderId int) error {
+	query := `
+		UPDATE cycles SET 
+			sell_order_id = ?, 
+			updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?
+	`
+	_, err := db.conn.Exec(query, sellOrderId, id)
+	if err != nil {
+		return fmt.Errorf("failed to update cycle sell order: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) UpdateCycleSellOrderForBuyOrder(buyOrderId int, sellOrderId int) error {
+	query := `
+		UPDATE cycles SET 
+			sell_order_id = ?, 
+			updated_at = CURRENT_TIMESTAMP 
+		WHERE buy_order_id = ?
+	`
+	_, err := db.conn.Exec(query, sellOrderId, buyOrderId)
+	if err != nil {
+		return fmt.Errorf("failed to update cycle sell order: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) ForceCycleTimestamps(id int, createdAt time.Time, updatedAt time.Time) error {
+	query := `
+		UPDATE cycles SET 
+			created_at = ?,
+			updated_at = ?
+		WHERE id = ?
+	`
+	_, err := db.conn.Exec(query, createdAt, updatedAt, id)
+	if err != nil {
+		return fmt.Errorf("failed to force cycle timestamps: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetAllCycles() ([]Cycle, error) {
+	query := `
+		SELECT id, buy_order_id, sell_order_id, created_at, updated_at
+		FROM cycles 
+		ORDER BY created_at DESC
+	`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cycles: %w", err)
+	}
+	defer rows.Close()
+
+	var cycles []Cycle
+	for rows.Next() {
+		var cycle Cycle
+		var buyOrderId int64
+		var sellOrderId sql.NullInt64
+		err := rows.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &cycle.CreatedAt, &cycle.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan position: %w", err)
+		}
+
+		buyOrder, err := db.GetOrder(int(buyOrderId))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cycle: %w", err)
+		}
+		cycle.BuyOrder = *buyOrder
+
+		if sellOrderId.Valid {
+			id := int(sellOrderId.Int64)
+			sellOrder, err := db.GetOrder(id)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get cycle: %w", err)
+			}
+			cycle.SellOrder = sellOrder
+		}
+		cycles = append(cycles, cycle)
+	}
+
+	return cycles, nil
 }
 
 // Méthodes utilitaires
@@ -456,7 +684,7 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 // GetAllOrders récupère tous les ordres (pas seulement pending)
 func (db *DB) GetAllOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		ORDER BY created_at DESC
 	`
@@ -470,7 +698,8 @@ func (db *DB) GetAllOrders() ([]Order, error) {
 	for rows.Next() {
 		var order Order
 		var positionID sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
@@ -513,7 +742,7 @@ func (db *DB) GetPositionWithSellOrders(positionID int) (*Position, []Order, err
 	}
 
 	query := `
-		SELECT id, external_id, side, amount, price, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
 		FROM orders 
 		WHERE position_id = ? AND side = ?
 	`
@@ -527,7 +756,8 @@ func (db *DB) GetPositionWithSellOrders(positionID int) (*Position, []Order, err
 	for rows.Next() {
 		var order Order
 		var posID sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Status, &posID, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+			&order.Status, &posID, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return position, nil, fmt.Errorf("failed to scan sell order: %w", err)
 		}

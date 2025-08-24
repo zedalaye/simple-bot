@@ -45,6 +45,7 @@ type Order struct {
 	Id        *string
 	Price     *float64
 	Amount    *float64
+	Fee       *float64
 	Status    *string
 	Timestamp *int64
 }
@@ -167,7 +168,7 @@ func (b *Bot) handleBuySignal() {
 	orderPrice := *order.Price
 	orderAmount := *order.Amount
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, nil)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, 0.0, nil)
 	if err != nil {
 		logger.Errorf("Failed to save buy order to database: %v", err)
 		return
@@ -259,7 +260,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	orderPrice := *order.Price
 	orderAmount := *order.Amount
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, &pos.ID)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, &pos.ID)
 	if err != nil {
 		logger.Errorf("Failed to save sell order to database: %v", err)
 		return
