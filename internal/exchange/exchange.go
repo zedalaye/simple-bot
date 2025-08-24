@@ -227,6 +227,40 @@ func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, lim
 	return botCandles, nil
 }
 
+func withFetchTradeOptions(since *int64, limit int64) ccxt.FetchTradesOptions {
+	return func(opts *ccxt.FetchTradesOptionsStruct) {
+		if since != nil {
+			opts.Since = since
+		}
+		opts.Limit = &limit
+	}
+}
+
+func (e *Exchange) FetchTrades(pair string, since *int64, limit int64) ([]bot.Trade, error) {
+	var result []ccxt.Trade
+	e.IExchange.SetVerbose(true)
+	err := retryWithBackoff(func() error {
+		trades, tradeErr := e.IExchange.FetchTrades(pair,
+			withFetchTradeOptions(since, limit),
+		)
+		if tradeErr == nil {
+			result = trades
+		}
+		return tradeErr
+	})
+	e.IExchange.SetVerbose(false)
+	if err != nil {
+		return nil, err
+	}
+
+	botTrades := make([]bot.Trade, len(result))
+	for i, trade := range result {
+		//fmt.Printf("DEBUG. Trade=%+v\n", trade)
+		botTrades[i] = toBotTrade(trade)
+	}
+	return botTrades, nil
+}
+
 func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	var result ccxt.Order
 	err := retryWithBackoff(func() error {
@@ -239,7 +273,7 @@ func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	if err != nil {
 		return bot.Order{}, err
 	}
-	//fmt.Printf("DEBUG. Fetched Order=%+v\n", result)
+	// fmt.Printf("DEBUG. Fetched Order=%+v\n", result)
 	return toBotOrder(result), nil
 }
 
@@ -305,6 +339,7 @@ func toBotOrder(order ccxt.Order) bot.Order {
 		Id:        order.Id,
 		Price:     order.Price,
 		Amount:    order.Amount,
+		Fee:       order.Fee.Cost,
 		Status:    order.Status,
 		Timestamp: order.Timestamp,
 	}
@@ -318,5 +353,32 @@ func toBotCandle(ohlcv ccxt.OHLCV) bot.Candle {
 		Low:       ohlcv.Low,
 		Close:     ohlcv.Close,
 		Volume:    ohlcv.Volume,
+	}
+}
+
+func toBotTrade(trade ccxt.Trade) bot.Trade {
+
+	var feeToken *string = nil
+	if trade.Info != nil {
+		if fee, ok := trade.Info["fee"].(map[string]interface{}); ok {
+			if ft, ok := fee["currency"].(string); ok {
+				feeToken = &ft
+			}
+		}
+	}
+
+	return bot.Trade{
+		Id:           trade.Id,
+		Timestamp:    trade.Timestamp,
+		Symbol:       trade.Symbol,
+		OrderId:      trade.Order,
+		Type:         trade.Type,
+		Side:         trade.Side,
+		TakerOrMaker: trade.TakerOrMaker,
+		Price:        trade.Price,
+		Amount:       trade.Amount,
+		Cost:         trade.Cost,
+		Fee:          trade.Fee.Cost,
+		FeeToken:     feeToken,
 	}
 }
