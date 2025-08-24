@@ -190,8 +190,14 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
+	dbCycle, err := b.db.CreateCycle(dbOrder.ID)
+	if err != nil {
+		logger.Errorf("Failed to create cycle to database: %v", err)
+	}
+
 	message := ""
-	message += fmt.Sprintf("ℹ️ [%s] New Buy Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("🌀 New Cycle on %s [%d]", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("\nℹ️ Buy Order %s [%d]", *order.Id, dbOrder.ID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
@@ -266,6 +272,11 @@ func (b *Bot) handleOrderCheck() {
 }
 
 func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
+	dbCycle, err := b.db.GetCycleForBuyOrderPosition(pos.ID)
+	if err != nil {
+		logger.Errorf("Failed to get cycle from buy order position %v: %v", pos.ID, err)
+	}
+
 	limitPrice := b.roundToPrecision(currentPrice+b.config.PriceOffset, b.market.Precision.Price)
 	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
 	if err != nil {
@@ -282,8 +293,14 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		return
 	}
 
+	err = b.db.UpdateCycleSellOrder(dbCycle.ID, dbOrder.ID)
+	if err != nil {
+		logger.Errorf("Failed to update cycle sell order: %v", err)
+	}
+
 	message := ""
-	message += fmt.Sprintf("ℹ️ [%s] New Sell Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("\nℹ️ [%s] New Sell Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
@@ -331,7 +348,7 @@ func (b *Bot) handleClosedOrder(dbOrder database.Order, order Order) {
 
 	switch dbOrder.Side {
 	case database.Buy:
-		b.handleFilledBuyOrder(order)
+		b.handleFilledBuyOrder(dbOrder, order)
 	case database.Sell:
 		b.handleFilledSellOrder(dbOrder, order)
 	}
@@ -362,14 +379,20 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	logger.Infof("[%s] Order %v Cancelled (cancelled manually on exchange)", b.config.ExchangeName, order.Id)
 }
 
-func (b *Bot) handleFilledBuyOrder(order Order) {
+func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
+	dbCycle, err := b.db.GetCycleForBuyOrder(dbOrder.ID)
+	if err != nil {
+		logger.Errorf("Failed to get cycle from buy order %v: %v", dbOrder.ID, err)
+	}
+
 	message := ""
-	message += fmt.Sprintf("✅ [%s] Buy Order Filled: %s", b.config.ExchangeName, *order.Id)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("\n✅ [%s] Buy Order Filled: %s", b.config.ExchangeName, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
-	err := telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
 	if err != nil {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
@@ -382,6 +405,10 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
 	} else {
+		err = b.db.UpdateOrderPosition(dbOrder.ID, position.ID)
+		if err != nil {
+			logger.Errorf("Failed to update order position in database: %v", err)
+		}
 		logger.Infof("[%s] Position created: ID=%v, Price=%v, Amount=%v",
 			b.config.ExchangeName,
 			position.ID, position.Price, position.Amount)
@@ -389,8 +416,14 @@ func (b *Bot) handleFilledBuyOrder(order Order) {
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
+	dbCycle, err := b.db.GetCycleForSellOrder(dbOrder.ID)
+	if err != nil {
+		logger.Errorf("Failed to get cycle from sell order %v: %v", dbOrder.ID, err)
+	}
+
 	message := ""
-	message += fmt.Sprintf("✅ [%s] Sell Order Filled: %s", b.config.ExchangeName, *order.Id)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] COMPLETE", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("\n✅ [%s] Sell Order Filled: %s", b.config.ExchangeName, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
@@ -406,7 +439,7 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		}
 	}
 
-	err := telegram.SendMessage(message)
+	err = telegram.SendMessage(message)
 	if err != nil {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
