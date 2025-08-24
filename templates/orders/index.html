@@ -1,74 +1,98 @@
-{{ define "content" }}
-<h2>Pending Orders</h2>
-
-{{ if .orders }}
-<p>{{ len .orders }} pending order(s) found</p>
-
-<table>
-    <thead>
-    <tr>
-        <th>ID</th>
-        <th>External ID</th>
-        <th>Side</th>
-        <th>Price (USDC)</th>
-        <th>Amount</th>
-        <th>Status</th>
-        <th>Position ID</th>
-        <th>Created At</th>
-    </tr>
-    </thead>
-    <tbody>
-    {{ range .orders }}
-    <tr>
-        <td>{{ .ID }}</td>
-        <td><code>{{ .ExternalID }}</code></td>
-        <td>
-                    <span style="
-                        padding: 2px 6px;
-                        border-radius: 3px;
-                        font-size: 0.8em;
-                        color: white;
-                        background-color: {{ if eq .Side "BUY" }}#28a745{{ else }}#dc3545{{ end }};
-            ">
-            {{ .Side }}
-            </span>
-        </td>
-        <td>{{ printf "%.2f" .Price }}</td>
-        <td>{{ printf "%.6f" .Amount }}</td>
-        <td>
-                    <span style="
-                        padding: 2px 6px;
-                        border-radius: 3px;
-                        font-size: 0.8em;
-                        background-color: #ffc107;
-                        color: #212529;
-                    ">
-                        {{ .Status }}
-                    </span>
-        </td>
-        <td>
-            {{ if .PositionID }}
-            <a href="/positions" style="color: #007bff;">{{ .PositionID }}</a>
-            {{ else }}
-            <em>N/A</em>
-            {{ end }}
-        </td>
-        <td>{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
-    </tr>
-    {{ end }}
-    </tbody>
-</table>
-{{ else }}
-<div style="text-align: center; padding: 2rem;">
-    <p>No pending orders found.</p>
-    <p>All orders have been either filled or cancelled.</p>
-</div>
-{{ end }}
-
-<div style="margin-top: 2rem;">
-    <div class="nav-links">
-        <a href="/orders/all">View All Orders</a>
-        <a href="/api/orders">View Raw JSON Data</a>
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="text-gradient mb-0">
+        <i class="bi bi-list-ul me-2"></i>{{.pageTitle}}
+    </h1>
+    <div>
+        <span class="badge bg-primary me-2">{{len .orders}} ordres</span>
+        <div class="btn-group me-2" role="group">
+            <a href="/orders" class="btn btn-outline-secondary {{if eq .orderType "pending"}}active{{end}}">
+            En Attente
+            </a>
+            <a href="/orders/all" class="btn btn-outline-secondary {{if eq .orderType "all"}}active{{end}}">
+            Tous
+            </a>
+        </div>
+        <a href="{{.currentURL}}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
+        </a>
     </div>
 </div>
-{{ end }}
+
+{{if .orders}}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                <tr>
+                    <th><i class="bi bi-hash me-1"></i>ID</th>
+                    <th><i class="bi bi-link-45deg me-1"></i>ID Externe</th>
+                    <th><i class="bi bi-arrow-left-right me-1"></i>Type</th>
+                    <th><i class="bi bi-currency-euro me-1"></i>Prix</th>
+                    <th><i class="bi bi-pie-chart me-1"></i>Quantité</th>
+                    <th><i class="bi bi-currency-euro me-1"></i>Frais</th>
+                    <th><i class="bi bi-flag me-1"></i>Statut</th>
+                    <th><i class="bi bi-calendar me-1"></i>Créé le</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range .orders}}
+                <tr>
+                    <td><strong>#{{.ID}}</strong></td>
+                    <td>
+                        <code class="small">{{.ExternalID}}</code>
+                    </td>
+                    <td>
+                        {{if eq .Side "BUY"}}
+                        <span class="badge bg-primary">
+                                    <i class="bi bi-arrow-down-circle me-1"></i>Achat
+                                </span>
+                        {{else}}
+                        <span class="badge bg-warning">
+                                    <i class="bi bi-arrow-up-circle me-1"></i>Vente
+                                </span>
+                        {{end}}
+                    </td>
+                    <td class="fw-bold">{{printf "%.2f" .Price}}</td>
+                    <td>{{printf "%.6f" .Amount}}</td>
+                    <td class="text-muted">{{printf "%.2f" .Fees}}</td>
+                    <td>
+                        {{if eq .Status "PENDING"}}
+                        <span class="badge bg-info">
+                                    <i class="bi bi-clock me-1"></i>En attente
+                                </span>
+                        {{else if eq .Status "FILLED"}}
+                        <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>Exécuté
+                                </span>
+                        {{else}}
+                        <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle me-1"></i>Annulé
+                                </span>
+                        {{end}}
+                    </td>
+                    <td>{{.CreatedAt.Format "02/01/2006 15:04"}}</td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{else}}
+<div class="card shadow-sm">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-list-ul display-1 text-muted mb-3"></i>
+        <h4 class="text-muted">Aucun ordre trouvé</h4>
+        <p class="text-muted">
+            {{if eq .orderType "pending"}}
+            Aucun ordre en attente pour le moment.
+            {{else}}
+            Aucun ordre dans la base de données.
+            {{end}}
+        </p>
+    </div>
+</div>
+{{end}}
+{{end}}

@@ -1,43 +1,104 @@
-{{ define "content" }}
-<h2>Dashboard - Bot Statistics</h2>
-
-{{ if .stats }}
-<div class="stats-grid">
-    {{ range $key, $value := .stats }}
-    <div class="stat-card">
-        <div class="stat-value">{{ $value }}</div>
-        <div>{{ $key }}</div>
-    </div>
-    {{ end }}
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="text-gradient mb-0">
+        <i class="bi bi-speedometer2 me-2"></i>Dashboard
+    </h1>
+    <a href="/" class="btn btn-outline-primary">
+        <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
+    </a>
 </div>
 
-<h3>Detailed View</h3>
-<table>
-    <thead>
-    <tr>
-        <th>Metric</th>
-        <th>Value</th>
-    </tr>
-    </thead>
-    <tbody>
-    {{ range $key, $value := .stats }}
-    <tr>
-        <td>{{ $key }}</td>
-        <td>{{ $value }}</td>
-    </tr>
-    {{ end }}
-    </tbody>
-</table>
-{{ else }}
-<p>No statistics available.</p>
-{{ end }}
-
-<div style="margin-top: 2rem;">
-    <h3>Quick Actions</h3>
-    <div class="nav-links">
-        <a href="/positions">View Positions</a>
-        <a href="/orders">View Pending Orders</a>
-        <a href="/api/stats">Raw JSON Data</a>
+<!-- Statistiques -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-primary mb-2">
+                    <i class="bi bi-currency-euro"></i>{{printf "%.2f" .stats.total_positions_value}}
+                </div>
+                <h6 class="card-subtitle text-muted">Valeur Positions</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-info mb-2">{{.stats.cycles_count}}</div>
+                <h6 class="card-subtitle text-muted">Total Cycles</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-warning mb-2">{{.stats.active_cycles_count}}</div>
+                <h6 class="card-subtitle text-muted">Cycles Actifs</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-success mb-2">{{.stats.completed_cycles_count}}</div>
+                <h6 class="card-subtitle text-muted">Cycles Terminés</h6>
+            </div>
+        </div>
     </div>
 </div>
-{{ end }}
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-success mb-2">
+                    <i class="bi bi-currency-euro"></i>{{printf "%.2f" .avgProfit}}
+                </div>
+                <h6 class="card-subtitle text-muted">Profit Moyen/Cycle</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-success mb-2">
+                    <i class="bi bi-currency-euro"></i>{{printf "%.2f" .totalProfit}}
+                </div>
+                <h6 class="card-subtitle text-muted">Profit Total</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-primary mb-2">{{.stats.pending_orders}}</div>
+                <h6 class="card-subtitle text-muted">Ordres En Attente</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="display-6 text-info mb-2">{{printf "%.1f" .successRate}}%</div>
+                <h6 class="card-subtitle text-muted">Taux de Réussite</h6>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alertes et informations -->
+{{if gt .stats.pending_orders 10}}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    Attention : Vous avez {{.stats.pending_orders}} ordres en attente.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{{end}}
+
+{{if eq .stats.active_cycles_count 0}}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    <i class="bi bi-info-circle me-2"></i>
+    Aucun cycle actif en cours. Le bot est en attente d'opportunités.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{{end}}
+{{end}}
