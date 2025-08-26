@@ -1,7 +1,9 @@
 .idea/
+.vscode/
 bin/
 !bin/.keep
 *.db
+*.db-journal
 *.db.backup
 config.yml
 .env
