@@ -2,20 +2,20 @@
 # 
 # Exchange configuration
 exchange:
-  name: hyperliquid  # Supported: mexc, binance, etc.
-  env: .env.hl       # API Keys for exchange
+  name: hyperliquid        # Supported: mexc, binance, etc.
+  env: .env.hl             # API Keys for exchange
 
 # Trading parameters
 trading:
   pair: UBTC/USDC          # Trading pair
   quote_amount: 11.0       # Amount in USDC per buy order
-  price_offset: 200.0      # Price difference for limit orders (USDC)
+  price_offset: 700.0      # Price difference for limit orders (USDC)
   profit_threshold: 1.02   # Profit threshold (2.0% = 1.02)
-  order_ttl: 18            # Hours
+  order_ttl: 120           # Hours
 
 # Timing intervals
 intervals:
-  buy_interval_hours: 6     # Hours between buy attempts
+  buy_interval_hours: 9     # Hours between buy attempts
   check_interval_minutes: 5 # Minutes between price/order checks
 
 # Database configuration

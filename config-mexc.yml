@@ -9,18 +9,18 @@ exchange:
 trading:
   pair: BTC/USDC           # Trading pair
   quote_amount: 50.0       # Amount in USDC per buy order
-  price_offset: 200.0      # Price difference for limit orders (USDC)
+  price_offset: 700.0      # Price difference for limit orders (USDC)
   profit_threshold: 1.02   # Profit threshold (2% = 1.020)
-  order_ttl: 18            # Hours
+  order_ttl: 120           # Hours
 
 # Timing intervals
 intervals:
-  buy_interval_hours: 4     # Hours between buy attempts
+  buy_interval_hours: 9     # Hours between buy attempts
   check_interval_minutes: 5 # Minutes between price/order checks
 
 # Database configuration
 database:
-  path: bot.db             # SQLite database file path
+  path: bot-mexc.db        # SQLite database file path
 
 # Logging configuration
 logging:
