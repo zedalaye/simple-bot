@@ -52,11 +52,13 @@ func main() {
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
 	// 1 mois
-	since := time.Now().AddDate(0, -1, 0).UnixMilli()
-	candles, err := exchg.FetchCandles(botConfig.Pair, "1d", &since, 500)
+	since := time.Now().AddDate(0, -6, 0).UnixMilli()
+	candles, err := exchg.FetchCandles(botConfig.Pair, "4h", &since, 500)
 	if err != nil {
 		logger.Fatalf("Failed to fetch candles: %v", err)
 	}
+
+	logger.Infof("Got %d candles", len(candles))
 
 	// Extrait les prix de clôture
 	prices := make([]float64, len(candles))
