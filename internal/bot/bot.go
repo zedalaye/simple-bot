@@ -232,9 +232,6 @@ func (b *Bot) handlePriceCheck() {
 	}
 	logger.Debugf("Found %d open positions", len(positions))
 
-	trailingOffset := b.config.PriceOffset         // 200 $
-	minProfitThreshold := b.config.ProfitThreshold // 1.02
-
 	for _, pos := range positions {
 		// Mettre à jour le prix maximum observé
 		if currentPrice > pos.MaxPrice {
@@ -248,9 +245,9 @@ func (b *Bot) handlePriceCheck() {
 		}
 
 		// Vérifier le profit minimum
-		if currentPrice >= pos.Price*minProfitThreshold {
-			// Vendre si le prix tombe en dessous de maxPrice - trailingOffset
-			if currentPrice <= pos.MaxPrice-trailingOffset {
+		if currentPrice >= pos.Price*b.config.ProfitThreshold {
+			// Vendre si le prix tombe de 0.5% par rapport à maxPrice
+			if currentPrice < (pos.MaxPrice * 0.995) {
 				b.placeSellOrder(pos, currentPrice)
 			}
 		}
@@ -277,7 +274,8 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 		logger.Errorf("Failed to get cycle from buy order position %v: %v", pos.ID, err)
 	}
 
-	limitPrice := b.roundToPrecision(currentPrice+b.config.PriceOffset, b.market.Precision.Price)
+	// pour rester maker, on place un ordre juste un peu plus haut que currentPrice
+	limitPrice := b.roundToPrecision(currentPrice+200.0, b.market.Precision.Price)
 	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
