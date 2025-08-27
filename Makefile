@@ -1,9 +1,13 @@
 # Makefile pour simplifier la compilation
 
-.PHONY: build-all build-bot build-admin build-test build-volatility build-fix-cycles clean run-bot run-admin run-test run-volatility run-fix-cycles
+.PHONY: build-all \
+        build-bot build-admin build-test build-volatility \
+        build-fix-cycles \
+        clean \
+        run-bot run-admin run-web run-test
 
 # Construire tous les binaires
-build-all: build-bot build-admin build-test build-web build-volatility build-fix-cycles
+build-all: build-bot build-admin build-web build-volatility
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -40,12 +44,6 @@ run-web:
 
 run-test:
 	DEBUG=true go run ./cmd/test
-
-run-volatility:
-	DEBUG=true go run ./cmd/volatility
-
-run-fix-cycles:
-	DEBUG=true go run ./cmd/fix-cycles
 
 # Tests
 # test:
