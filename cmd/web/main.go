@@ -6,6 +6,7 @@ import (
 	"bot/internal/logger"
 	"bot/internal/web"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 )
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	// Initialize database
-	db, err := database.NewDB(fileConfig.Database.Path)
+	db, err := database.NewDB(fmt.Sprintf("file:%s?mode=ro", fileConfig.Database.Path))
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
