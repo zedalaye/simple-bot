@@ -4,6 +4,8 @@ bin/
 !bin/.keep
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.db.backup
 config.yml
 .env
