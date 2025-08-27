@@ -76,6 +76,11 @@ func main() {
 			buyPosition++
 			buyPositionId := buyPosition
 			nonCancelledOrders[i].PositionID = &buyPositionId
+
+			err = db.UpdateOrderPosition(order.ID, buyPositionId)
+			if err != nil {
+				logger.Fatalf("Failed to update buy order position : %v", err)
+			}
 		}
 	}
 
