@@ -130,6 +130,11 @@ func NewDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	_, err = conn.Exec("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		return nil, fmt.Errorf("failed to activate WAL for database: %w", err)
+	}
+
 	db := &DB{conn: conn}
 	if err := db.applyMigrations(); err != nil {
 		conn.Close()
