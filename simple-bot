@@ -1,0 +1,140 @@
+#!/bin/bash
+
+# Script pour lancer bot + webui pour un exchange donné
+# Usage: ./simple-bot [mexc|hl|all] [action]
+# Actions: up, down, restart, logs, status, backup
+
+EXCHANGE=${1:-mexc}
+ACTION=${2:-up}
+
+launch_exchange() {
+    local ex=$1
+    local port=$2
+    local project="bot-$ex"
+
+    echo "=== Lancement de $ex (port $port) ==="
+    EXCHANGE=$ex WEB_PORT=$port docker compose -p $project up -d
+}
+
+stop_exchange() {
+    local ex=$1
+    local project="bot-$ex"
+
+    echo "=== Arrêt de $ex ==="
+    EXCHANGE=$ex docker compose -p $project down
+}
+
+logs_exchange() {
+    local ex=$1
+    local project="bot-$ex"
+
+    echo "=== Logs de $ex ==="
+    EXCHANGE=$ex docker compose -p $project logs -f
+}
+
+status_all() {
+    echo "=== Status des containers ==="
+    docker ps --filter "name=bot-" --filter "name=webui-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+}
+
+backup_db() {
+    local ex=$1
+    local date=$(date +"%Y%m%d_%H%M%S")
+    mkdir -p $ex/backup
+
+    echo "=== Backup de la base de données de $ex (at $date) ==="
+    sqlite3 $ex/db/bot.db ".backup '$ex/backup/bot.db.backup.$date'"
+}
+
+case $EXCHANGE in
+    mexc)
+        export EXCHANGE=mexc
+        export WEB_PORT=8080
+        ;;
+    hl|hyperliquid)
+        export EXCHANGE=hl
+        export WEB_PORT=8081
+        ;;
+    all)
+        case $ACTION in
+            up)
+                launch_exchange "mexc" "8080"
+                launch_exchange "hl" "8081"
+                status_all
+                exit 0
+                ;;
+            down)
+                stop_exchange "mexc"
+                stop_exchange "hl"
+                exit 0
+                ;;
+            status)
+                status_all
+                exit 0
+                ;;
+            restart)
+                echo "=== Restart ALL ==="
+                stop_exchange "mexc"
+                stop_exchange "hl"
+                sleep 2
+                launch_exchange "mexc" "8080"
+                launch_exchange "hl" "8081"
+                status_all
+                exit 0
+                ;;
+            logs)
+                echo "Utilisez: $0 mexc logs  ou  $0 hl logs"
+                exit 1
+                ;;
+            backup)
+                echo "=== Restart ALL ==="
+                backup_db "mexc"
+                backup_db "hl"
+                exit 0
+                ;;
+        esac
+        ;;
+    *)
+        echo "Usage: $0 [mexc|hl|all] [up|down|restart|logs|status|backup]"
+        echo "Examples:"
+        echo "  $0 mexc up      # Lance bot + webui MEXC"
+        echo "  $0 hl up        # Lance bot + webui Hyperliquid"
+        echo "  $0 all up       # Lance MEXC ET Hyperliquid"
+        echo "  $0 all down     # Arrête tout"
+        echo "  $0 all status   # Status de tous les containers"
+        echo "  $0 mexc logs    # Logs MEXC"
+        exit 1
+        ;;
+esac
+
+echo "Exchange: $EXCHANGE"
+echo "Web Port: $WEB_PORT"
+echo "Action: $ACTION"
+
+case $ACTION in
+    up)
+        launch_exchange $EXCHANGE $WEB_PORT
+        ;;
+    down)
+        stop_exchange $EXCHANGE
+        ;;
+    restart)
+        stop_exchange $EXCHANGE
+        sleep 2
+        launch_exchange $EXCHANGE $WEB_PORT
+        ;;
+    logs)
+        logs_exchange $EXCHANGE
+        ;;
+    status)
+        status_all
+        ;;
+    backup)
+       backup_db $EXCHANGE
+       ;;
+    *)
+        echo "Action non reconnue: $ACTION"
+        echo "Actions disponibles: up, down, restart, logs, status, backup"
+        exit 1
+        ;;
+esac

@@ -2,12 +2,9 @@
 .vscode/
 bin/
 !bin/.keep
-*.db
-*.db-journal
-*.db-shm
-*.db-wal
-*.db.backup
-config.yml
+storage/**/db/bot.db
+storage/**/db/bot.db-*
+!storage/**/db/.keep
 .env
 .env.*
 *.log

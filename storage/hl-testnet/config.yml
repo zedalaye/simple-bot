@@ -1,0 +1,30 @@
+# Trading Bot Configuration
+# 
+# Exchange configuration
+exchange:
+  name: hyperliquid         # Supported: mexc, hyperliquid, binance, etc.
+  env: .env                 # The file containing secrets, undefine if secrets are already in environment variables
+
+# Trading parameters
+trading:
+  pair: HYPE/USDC           # Trading pair
+  quote_amount: 10.0        # Amount in USDC per buy order
+  price_offset: 5.0         # Price difference for limit orders (USDC)
+  profit_threshold: 1.015   # Profit threshold (2.0% = 1.02)
+  order_ttl: 18             # Hours
+
+# Timing intervals
+intervals:
+  buy_interval_hours: 4     # Hours between buy attempts
+  check_interval_minutes: 5 # Minutes between price/order checks
+
+# Database configuration
+database:
+  path: db/bot.db           # SQLite database file path
+
+# Logging configuration
+logging:
+  level: info               # Levels: debug, info, warn, error
+  file: ""                  # Optional log file (empty = stdout only)
+
+# Note: Set API_KEY and API_SECRET environment variables for exchange access
