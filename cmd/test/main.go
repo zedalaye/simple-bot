@@ -7,7 +7,6 @@ import (
 	"bot/internal/exchange"
 	"bot/internal/logger"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -16,6 +15,17 @@ import (
 )
 
 const MinQuoteAmount = 10.0
+
+var step = 0
+
+func logStep(fmt string, v ...any) {
+	step = step + 1
+	if logger.IsInitialized() {
+		logger.Infof("%d. "+fmt, append([]any{step}, v...)...)
+	} else {
+		log.Printf("%d. "+fmt, append([]any{step}, v...)...)
+	}
+}
 
 func main() {
 	log.SetOutput(os.Stdout)
@@ -26,28 +36,32 @@ func main() {
 	flag.Parse()
 
 	// 1. Charger la configuration du bot
-	fmt.Println("1. Loading bot configuration...")
+	logStep("Loading bot configuration...")
 	fileConfig, err := config.LoadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// Initialiser le logger pour les tests
+	logStep("Initialize logger...")
 	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 
 	// Charge le fichier .env pour obtenir les API Keys
+	logStep("Load .env...")
 	err = godotenv.Load(fileConfig.EnvFilePaths()...)
 	if err != nil {
 		logger.Warn("No .env file found, using system environment variables")
 	}
 
+	logStep("Prepare configuration...")
 	botConfig := fileConfig.ToBotConfig()
-	logger.Debugf("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
+	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
 		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
 
+	logStep("Load or initialize database...")
 	db, err := database.NewDB(fileConfig.Database.Path)
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
@@ -59,27 +73,30 @@ func main() {
 		}
 	}(db)
 	logger.Info("Database initialized successfully")
+	logger.Info("✓ Database initialized successfully")
 
 	// 2. Créer l'instance de l'exchange
-	logger.Info("2. Creating exchange instance...")
+	logStep("Creating exchange instance...")
 	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
 	if exchg == nil {
 		logger.Fatalf("Failed to create %s exchange instance", fileConfig.Exchange.Name)
 	}
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
+	// logStep("Load all markets list...")
 	//for _, market := range exchg.GetMarketsList() {
 	//	logger.Infof("%s: BaseId=%s, QuoteId=%s", market.Symbol, market.BaseId, market.QuoteId)
 	//}
 
 	// Récupérer les informations du marché
+	logStep("Get Market Info...")
 	market := exchg.GetMarket(botConfig.Pair)
 	baseAsset := market.BaseAsset
 	quoteAsset := market.QuoteAsset
 	logger.Infof("✓ Market info: %s/%s", baseAsset, quoteAsset)
 
 	// 3. Vérifier les fonds disponibles dans la devise de cotation
-	logger.Info("3. Checking quote currency balance...")
+	logStep("Checking quote currency balance...")
 	baseBalance, quoteBalance, err := checkBalance(exchg, baseAsset, quoteAsset)
 	if err != nil {
 		logger.Fatalf("Failed to check balances: %v", err)
@@ -93,13 +110,14 @@ func main() {
 	}
 
 	// 4. Vérifier le prix de la devise de base
-	logger.Info("4. Fetching current price...")
+	logStep("Fetching current price...")
 	currentPrice, err := exchg.GetPrice(botConfig.Pair)
 	if err != nil {
 		logger.Fatalf("Failed to get current price: %v", err)
 	}
 	logger.Infof("✓ Current %s price: %s %s", baseAsset, market.FormatPrice(currentPrice), quoteAsset)
 
+	//logStep("Load all known orders...")
 	//orders, err := db.GetAllOrders()
 	//if err != nil {
 	//	logger.Errorf("Failed to get all orders: %v", err)
@@ -114,17 +132,18 @@ func main() {
 	//	}
 	//}
 
-	trades, err := exchg.FetchTrades(botConfig.Pair, nil, 500)
-	if err != nil {
-		logger.Fatalf("Failed to fetch trades: %v", err)
-	} else {
-		for _, trade := range trades {
-			logger.Infof("Trade %s (%s), FeeToken=%s, Fee=%.9f", *trade.Id, *trade.OrderId, *trade.FeeToken, *trade.Fee)
-		}
-	}
+	//logStep("Load all known trades...")
+	//trades, err := exchg.FetchTrades(botConfig.Pair, nil, 500)
+	//if err != nil {
+	//	logger.Fatalf("Failed to fetch trades: %v", err)
+	//} else {
+	//	for _, trade := range trades {
+	//		logger.Infof("✓ Trade %s (%s), FeeToken=%s, Fee=%.9f", *trade.Id, *trade.OrderId, *trade.FeeToken, *trade.Fee)
+	//	}
+	//}
 
 	// 5. Créer un ordre d'achat limite de 1au prix - offset
-	logger.Info("5. Creating limit buy order...")
+	logStep("Create limit buy order...")
 
 	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, MinQuoteAmount)
 	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
@@ -147,7 +166,7 @@ func main() {
 		time.Sleep(2 * time.Second)
 
 		// 6. Annuler l'ordre d'achat
-		logger.Info("6. Cancelling buy order...")
+		logStep("Cancel buy order...")
 		_, err = exchg.CancelOrder(*buyOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Errorf("Failed to cancel buy order: %v", err)
@@ -161,7 +180,7 @@ func main() {
 	}
 
 	//// 7. Vérifier les fonds disponibles dans la devise de base
-	//logger.Info("7. Checking base currency balance...")
+	//logStep("Checking base currency balance...")
 	//baseBalance, err := checkBalance(exchange, baseAsset)
 	//if err != nil {
 	//	logger.Fatalf("Failed to check base balance: %v", err)
@@ -175,7 +194,7 @@ func main() {
 	//}
 
 	// 8. Créer un ordre de vente limite au prix + offset
-	logger.Info("7. Creating limit sell order...")
+	logStep("Create limit sell order...")
 	sellPrice := currentPrice + botConfig.PriceOffset
 	sellAmountInBaseAsset := *buyOrder.Amount
 
@@ -198,7 +217,7 @@ func main() {
 		time.Sleep(2 * time.Second)
 
 		// 9. Annuler l'ordre de vente
-		logger.Info("8. Cancelling sell order...")
+		logStep("Cancel sell order...")
 		_, err = exchg.CancelOrder(*sellOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Errorf("Failed to cancel sell order: %v", err)
