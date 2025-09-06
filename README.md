@@ -11,24 +11,45 @@ This bot also uses a SQLite 3 database to store positions and track orders.
 
 ## The all-in-one script that uses Docker
 
-Make sure [docker](https://www.docker.com/get-started/) is installed.
+Make sure [docker](https://www.docker.com/get-started/) is installed with the `docker compose` plugin
 
-Create or adapt the `config.yml` and `.env` file (for exchange secrets), see below.
+For each exchange you want to use, create a directory structure within the `storage` folder:
 
-Make sure `config.yml` references the right `.env` and specifies a database name like `bot.db`
+```
+/storage/mexc   # For the MEXC Exchange
+  /db/bot.db    # Will be created if it does not exist
+  config.yml
+  .env          # Define API_KEY and SECRET
+
+/storage/hl     # For the Hyperliquid Exchange
+  /db/bot.db    # Will be created if it does not exist
+  config.yml
+  .env          # Define WALLET_ADDRESS and PRIVATE_KEY
+
+/storage/
+  .env.tg       # To send notifications through a Telgram Bot Instance  
+```
+
+Create or adapt the `config.yml` and `.env` files (for exchange secrets), see below.
+
+Make sure `config.yml` references the right `.env` and specifies a database name like `db/bot.db`
 
 ```bash
-$ ./run.sh <config.yml> [bot]
+$ ./simple-bot [*mexc*|hl|all] up
 ```
 
 The syntax is :
 
 ```
-./run.sh [config.yml] [command]
-Accepted commands are: bot (default), web, admin [subcommand] [format]
-admin command requires a subcommand and accept a format parameter
- subcommands:   stats, orders, positions, export
- formats:       table, json
+$ ./simple-bot -h
+Usage: ./simple-bot [mexc|hl|all] [up|down|restart|logs|status|backup]
+Examples:
+  ./simple-bot mexc up      # bot + webui MEXC
+  ./simple-bot hl up        # bot + webui Hyperliquid
+  ./simple-bot all up       # MEXC *et* Hyperliquid
+  ./simple-bot all down     # Stop everything
+  ./simple-bot all status   # Status of all containers
+  ./simple-bot mexc logs    # Logs MEXC
 ```
 
 ## Build the bot manually
@@ -42,8 +63,10 @@ $ make
 The bot can also been built using docker.
 
 ```bash
-$ docker build -t simple-bot .
+$ docker build -t zedalaye/simple-bot .
 ```
+
+(or `make build-image`)
 
 Executables are built into `/bin`
 
@@ -53,7 +76,7 @@ The main executable is `/bin/bot`
 
 ### For MEXC
 
-Adjust bot parameters in `config-mexc.yml` and create a `.env.mexc` file containing :
+Adjust bot parameters in `storage/mexc/config.yml` and create a `storage/mexc/.env` file containing :
 
 ```env
 API_KEY=<MEXC API Key for this bot>
@@ -61,12 +84,12 @@ SECRET=<MEXC API Key "Secret">
 ```
 
 ```bash
-$ ./bin/bot --config config-mexc.yml
+$ ./bin/bot --bot-dir storage/mexc
 ```
 
 ### For Hyperliquid
 
-Adjust bot parameters in `config-hl.yml` and create a `.env.hl` file containing secrets :
+Adjust bot parameters in `storage/hl/config.yml` and create a `storage/hl/.env` file containing secrets :
 
 ```env
 WALLET_ADDRESS=<YOUR Wallet Address on Arbitrum Blockchain>
@@ -74,12 +97,12 @@ PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bot>
 ```
 
 ```bash
-$ ./bin/bot --config-hl.yml
+$ ./bin/bot --bot-dir storage/hl
 ```
 
 ## Receive notifications on Telegram
 
-Follow [this guide](https://dev.to/climentea/push-notifications-from-server-with-telegram-bot-api-32b3) to create a `.env.tg` file :
+Follow [this guide](https://dev.to/climentea/push-notifications-from-server-with-telegram-bot-api-32b3) to create a `storage/.env.tg` file :
 
 *TL;DR*
 
@@ -103,14 +126,10 @@ TELEGRAM_BOT_TOKEN=<Bot token provided by Bot Father>
 TELEGRAM_CHAT_ID=<Chat ID>
 ```
 
-When the `.env.tg` file is available, Telegram notifications are automatically enabled.
+When the `storage/.env.tg` file is available, Telegram notifications are automatically enabled.
 
 ## Start the Web UI
 
 ```bash
-$ ./bin/web --config <the config file.yml>
-```
-
-```bash
-$ ./run.sh <config.yml> web
+$ ./bin/web --bot-dir storage/<exchange>
 ```
