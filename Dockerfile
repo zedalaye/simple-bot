@@ -1,4 +1,4 @@
-FROM alpine:edge AS build
+FROM alpine:latest AS build
 
 RUN apk add --no-cache --update go gcc g++ make
 
@@ -13,7 +13,7 @@ RUN go mod download
 COPY . ./
 RUN CGO_ENABLED=1 GOOS=linux make
 
-FROM alpine:edge
+FROM alpine:latest
 
 WORKDIR /app
 
