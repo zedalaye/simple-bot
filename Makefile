@@ -2,6 +2,7 @@
 
 .PHONY: build-all \
         build-bot build-admin build-test build-volatility \
+        build-image \
         build-fix-cycles \
         clean \
         run-bot run-admin run-web run-test
@@ -27,6 +28,10 @@ build-volatility:
 
 build-fix-cycles:
 	go build -o bin/fix-cycles ./cmd/fix-cycles
+
+# Construction de l'image docker
+build-image:
+	docker build -t zedalaye/simple-bot .
 
 # Nettoyer les binaires
 clean:
