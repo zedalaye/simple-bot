@@ -12,10 +12,26 @@ import (
 )
 
 func main() {
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
 	log.SetOutput(os.Stdout)
 
-	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	var (
+		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
+		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	)
 	flag.Parse()
+
+	// Changer le répertoire de travail si nécessaire
+	if *botDir != "." {
+		err := os.Chdir(*botDir)
+		if err != nil {
+			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		}
+	}
 
 	// Load configuration
 	fileConfig, err := config.LoadConfig(*configFile)
@@ -39,6 +55,12 @@ func main() {
 			logger.Fatalf("Failed to close database: %v", err)
 		}
 	}(db)
+
+	// Retourne au dossier racine par défaut
+	err = os.Chdir(projectRoot)
+	if err != nil {
+		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
+	}
 
 	// Cycles may only be fixed once
 	existingCycles, err := db.GetAllCycles()

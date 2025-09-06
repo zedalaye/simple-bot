@@ -28,12 +28,29 @@ func logStep(fmt string, v ...any) {
 }
 
 func main() {
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
 	log.SetOutput(os.Stdout)
 	log.Println("=== Bot Test Suite ===")
 
 	// Paramètres de ligne de commande
-	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	var (
+		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
+		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	)
 	flag.Parse()
+
+	// Changer le répertoire de travail si nécessaire
+	if *botDir != "." {
+		logStep("Change bot working directory to %s", *botDir)
+		err := os.Chdir(*botDir)
+		if err != nil {
+			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		}
+	}
 
 	// 1. Charger la configuration du bot
 	logStep("Loading bot configuration...")
@@ -72,8 +89,14 @@ func main() {
 			logger.Fatalf("Failed to close database: %v", err)
 		}
 	}(db)
-	logger.Info("Database initialized successfully")
 	logger.Info("✓ Database initialized successfully")
+
+	// Retourne au dossier racine par défaut
+	logStep("Revert to original root directory...")
+	err = os.Chdir(projectRoot)
+	if err != nil {
+		logger.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
+	}
 
 	// 2. Créer l'instance de l'exchange
 	logStep("Creating exchange instance...")

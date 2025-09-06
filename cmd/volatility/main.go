@@ -13,12 +13,28 @@ import (
 )
 
 func main() {
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
 	log.SetOutput(os.Stdout)
 	log.Printf("=== Bot Volatility ===")
 
 	// Paramètres de ligne de commande
-	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	var (
+		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
+		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+	)
 	flag.Parse()
+
+	// Changer le répertoire de travail si nécessaire
+	if *botDir != "." {
+		err := os.Chdir(*botDir)
+		if err != nil {
+			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		}
+	}
 
 	// 1. Charger la configuration du bot
 	log.Println("1. Loading bot configuration...")
@@ -42,6 +58,12 @@ func main() {
 	botConfig := fileConfig.ToBotConfig()
 	logger.Debugf("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
 		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
+
+	// Retourne au dossier racine par défaut
+	err = os.Chdir(projectRoot)
+	if err != nil {
+		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
+	}
 
 	// 2. Créer l'instance de l'exchange
 	logger.Info("2. Creating exchange instance...")

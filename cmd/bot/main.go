@@ -17,13 +17,29 @@ import (
 )
 
 func main() {
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
 	log.SetOutput(os.Stdout)
 	log.Println("Starting Simple Bot")
 
 	// Paramètres de ligne de commande
-	configFile := flag.String("config", "config.yml", "Path to configuration file (YAML format)")
-	buyAtLaunch := flag.Bool("buy-at-launch", false, "Immediately place a buy order after startup")
+	var (
+		botDir      = flag.String("bot-dir", ".", "Path to the bot directory")
+		configFile  = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+		buyAtLaunch = flag.Bool("buy-at-launch", false, "Immediately place a buy order after startup")
+	)
 	flag.Parse()
+
+	// Changer le répertoire de travail si nécessaire
+	if *botDir != "." {
+		err := os.Chdir(*botDir)
+		if err != nil {
+			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		}
+	}
 
 	// Chargement de la configuration
 	fileConfig, err := config.LoadConfig(*configFile)
@@ -61,6 +77,12 @@ func main() {
 		}
 	}(db)
 	logger.Info("Database initialized successfully")
+
+	// Retourne au dossier racine par défaut
+	err = os.Chdir(projectRoot)
+	if err != nil {
+		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
+	}
 
 	// Configuration de l'exchange
 	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
