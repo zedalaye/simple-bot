@@ -58,6 +58,10 @@ func InitLogger(level string, logFile string) error {
 	return nil
 }
 
+func IsInitialized() bool {
+	return debugLogger != nil && infoLogger != nil && warnLogger != nil && errorLogger != nil
+}
+
 func Debug(v ...interface{}) {
 	if currentLevel <= DEBUG {
 		debugLogger.Println(v...)
