@@ -11,9 +11,9 @@ launch_exchange() {
     local ex=$1
     local project="bot-$ex"
 
-    local port=$(grep 'port:' storage/$ex/config.yml | awk '{print $2}' | tr -d '"')
+    local port=$(grep 'docker:' storage/$ex/config.yml | awk '{print $2}' | tr -d '"')
     if [ -z "$port" ]; then
-        echo "Impossible de trouver le port web dans storage/$ex/config.yml"
+        echo "Impossible de trouver la configuration du mapping des ports webui dans storage/$ex/config.yml"
         exit 1
     fi
 

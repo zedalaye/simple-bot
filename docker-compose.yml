@@ -1,13 +1,13 @@
 services:
   bot:
     image: zedalaye/simple-bot:latest
-    container_name: bot-${EXCHANGE:-mexc}
+    container_name: bot-${EXCHANGE}
     command: /app/bot
     volumes:
-      - ./storage/${EXCHANGE:-mexc}/config.yml:/app/config.yml
-      - ./storage/${EXCHANGE:-mexc}/db/:/app/db/
+      - ./storage/${EXCHANGE}/config.yml:/app/config.yml
+      - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
-      - ./storage/${EXCHANGE:-mexc}/.env
+      - ./storage/${EXCHANGE}/.env
       - ./storage/.env.tg
     restart: unless-stopped
     networks:
@@ -15,20 +15,20 @@ services:
 
   webui:
     image: zedalaye/simple-bot:latest
-    container_name: webui-${EXCHANGE:-mexc}
+    container_name: webui-${EXCHANGE}
     command: /app/web
     volumes:
-      - ./storage/${EXCHANGE:-mexc}/config.yml:/app/config.yml
-      - ./storage/${EXCHANGE:-mexc}/db/:/app/db/
+      - ./storage/${EXCHANGE}/config.yml:/app/config.yml
+      - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
-      - ./storage/${EXCHANGE:-mexc}/.env
+      - ./storage/${EXCHANGE}/.env
     ports:
-      - "${WEB_PORT:-8080}:8080"
+      - "${WEB_PORT:-8080:8080}"
     restart: unless-stopped
     networks:
       - bot-network
 
 networks:
   bot-network:
-    name: ${EXCHANGE:-mexc}-network
+    name: ${EXCHANGE}-network
     driver: bridge

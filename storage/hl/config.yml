@@ -2,7 +2,7 @@
 # 
 # Exchange configuration
 exchange:
-  name: hyperliquid         # Supported: mexc, hyperliquid, binance, etc.
+  name: hyperliquid             # Supported: mexc, hyperliquid, binance, etc.
   
 # Trading parameters
 trading: 
@@ -17,20 +17,21 @@ trading:
   
 # Timing intervals
 intervals:
-  buy_interval_hours: 9     # Hours between buy attempts
-  check_interval_minutes: 5 # Minutes between price/order checks
+  buy_interval_hours: 9         # Hours between buy attempts
+  check_interval_minutes: 5     # Minutes between price/order checks
 
 # Database configuration
 database:
-  path: db/bot.db           # SQLite database file path
+  path: db/bot.db               # SQLite database file path
 
 # Logging configuration
 logging:
-  level: info               # Levels: debug, info, warn, error
-  file: ""                  # Optional log file (empty = stdout only)
+  level: info                   # Levels: debug, info, warn, error
+  file: ""                      # Optional log file (empty = stdout only)
 
 # Web server configuration
 web:
-  port: ":8082"                 # Port for the web interface
+  port: ":8080"                 # Port for the web interface
+  docker: "8082:8080"           # Port mapping for Docker
 
 # Note: Set API_KEY and API_SECRET environment variables for exchange access
