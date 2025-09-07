@@ -21,4 +21,4 @@ COPY --from=build /app/templates/ /app/templates/
 COPY --from=build /app/bin/* .
 
 EXPOSE 8080/tcp
-CMD ["./web"]
+CMD ["./admin"]
