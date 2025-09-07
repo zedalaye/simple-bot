@@ -481,27 +481,19 @@ func (m *Market) FormatPrice(price float64) string {
 	return strconv.FormatFloat(price, 'f', m.Precision.PriceDecimals, 64)
 }
 
-// getDailyPrices récupère les prix de clôture quotidiens pour une période donnée
-func (b *Bot) getDailyPrices(pair string, limit int64) ([]float64, error) {
-	candles, err := b.exchange.FetchCandles(pair, "1d", nil, limit)
+// calculateVolatility calcule la volatilité quotidienne à partir des prix de clôture
+func (b *Bot) calculateVolatility(pair string, period int) (float64, error) {
+	since := time.Now().AddDate(0, 0, -period).UnixMilli()
+	candles, err := b.exchange.FetchCandles(pair, "4h", &since, int64(period*6))
 	if err != nil {
 		logger.Errorf("Failed to fetch OHLCV data: %v", err)
-		return nil, err
+		return 0, err
 	}
 
 	// Extraire les prix de clôture (index 4 dans chaque kline)
 	prices := make([]float64, len(candles))
 	for i, candle := range candles {
 		prices[i] = candle.Close
-	}
-	return prices, nil
-}
-
-// calculateVolatility calcule la volatilité quotidienne à partir des prix de clôture
-func (b *Bot) calculateVolatility(pair string, period int64) (float64, error) {
-	prices, err := b.getDailyPrices(pair, period)
-	if err != nil {
-		return 0, err
 	}
 
 	if len(prices) < 2 {
