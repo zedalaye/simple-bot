@@ -22,10 +22,9 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	var (
-		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
-		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
-		command    = flag.String("cmd", "stats", "Command to execute: stats, positions, orders, export")
-		format     = flag.String("format", "table", "Output format: table, json")
+		botDir  = flag.String("root", ".", "Path to the bot root directory")
+		command = flag.String("cmd", "stats", "Command to execute: stats, positions, orders, export")
+		format  = flag.String("format", "table", "Output format: table, json")
 	)
 	flag.Parse()
 
@@ -38,7 +37,7 @@ func main() {
 	}
 
 	// Chargement de la configuration
-	fileConfig, err := config.LoadConfig(*configFile)
+	fileConfig, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}

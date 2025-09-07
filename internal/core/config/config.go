@@ -10,10 +10,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const CONFIG_FILENAME = "config.yml"
+
 type FileConfig struct {
 	Exchange struct {
 		Name string `yaml:"name" json:"name"`
-		Env  string `yaml:"env" json:"env"`
 		// Note: API credentials should come from environment variables for security
 	} `yaml:"exchange" json:"exchange"`
 
@@ -40,15 +41,13 @@ type FileConfig struct {
 	} `yaml:"logging" json:"logging"`
 }
 
-func LoadConfig(filename string) (*FileConfig, error) {
+func LoadConfig() (*FileConfig, error) {
 	// Configuration par défaut
 	defaultConfig := &FileConfig{
 		Exchange: struct {
 			Name string `yaml:"name" json:"name"`
-			Env  string `yaml:"env" json:"env"`
 		}{
 			Name: "mexc",
-			Env:  ".env.mexc",
 		},
 		Trading: struct {
 			Pair            string  `yaml:"pair" json:"pair"`
@@ -73,7 +72,7 @@ func LoadConfig(filename string) (*FileConfig, error) {
 		Database: struct {
 			Path string `yaml:"path" json:"path"`
 		}{
-			Path: "bot-mexc.db",
+			Path: "db/bot.db",
 		},
 		Logging: struct {
 			Level string `yaml:"level" json:"level"`
@@ -85,30 +84,19 @@ func LoadConfig(filename string) (*FileConfig, error) {
 	}
 
 	// Si le fichier n'existe pas, créer la configuration par défaut
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return createDefaultConfigFile(filename, defaultConfig)
+	if _, err := os.Stat(CONFIG_FILENAME); os.IsNotExist(err) {
+		return createDefaultConfigFile(CONFIG_FILENAME, defaultConfig)
 	}
 
 	// Charger le fichier de configuration
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(CONFIG_FILENAME)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var config FileConfig
-
-	// Déterminer le format basé sur l'extension
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".yml", ".yaml":
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("failed to parse YAML config file: %w", err)
-		}
-	case ".json":
-		// Fallback JSON support (vous devrez importer encoding/json)
-		return nil, fmt.Errorf("JSON support not implemented in this version, please use YAML")
-	default:
-		return nil, fmt.Errorf("unsupported config file format: %s (use .yml or .yaml)", ext)
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML config file: %w", err)
 	}
 
 	// Validation basique
@@ -120,12 +108,6 @@ func LoadConfig(filename string) (*FileConfig, error) {
 }
 
 func createDefaultConfigFile(filename string, defaultConfig *FileConfig) (*FileConfig, error) {
-	// Forcer l'extension YAML si pas spécifiée
-	if !strings.HasSuffix(strings.ToLower(filename), ".yml") &&
-		!strings.HasSuffix(strings.ToLower(filename), ".yaml") {
-		filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + ".yml"
-	}
-
 	_, err := yaml.Marshal(defaultConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal default config: %w", err)
@@ -136,32 +118,31 @@ func createDefaultConfigFile(filename string, defaultConfig *FileConfig) (*FileC
 # 
 # Exchange configuration
 exchange:
-  name: mexc               # Supported: mexc, hyperliquid, binance, etc.
-  env: .env.mexc           # The file containing secrets, undefine if secrets are already in environment variabless
+  name: mexc                 # Supported: mexc, hyperliquid, binance, etc.
 
 # Trading parameters
 trading:
-  pair: BTC/USDC           # Trading pair
-  quote_amount: 50.0       # Amount in quote currency (USDC) per buy order
-  price_offset: 200.0      # Price difference for limit orders (USDC)
-  profit_threshold: 1.02   # Profit threshold (2.0% = 1.020) to make ~$1 profit per $50 trade
-  order_ttl: 18            # Hours
+  pair: BTC/USDC             # Trading pair
+  quote_amount: 50.0         # Amount in quote currency (USDC) per buy order
+  price_offset: 700.0        # Price difference for limit orders (USDC)
+  profit_threshold: 1.02     # Profit threshold (2.0% = 1.020) to make ~$1 profit per $50 trade
+  order_ttl: 18              # Hours
 
 # Timing intervals
 intervals:
-  buy_interval_hours: 4     # Hours between buy attempts
-  check_interval_minutes: 5 # Minutes between price/order checks
+  buy_interval_hours: 24     # Hours between buy attempts
+  check_interval_minutes: 60 # Minutes between price/order checks
 
 # Database configuration
 database:
-  path: bot.db             # SQLite database file path
+  path: db/bot.db            # SQLite database file path
 
 # Logging configuration
 logging:
-  level: info              # Levels: debug, info, warn, error
-  file: ""                 # Optional log file (empty = stdout only)
+  level: info                # Levels: debug, info, warn, error
+  file: ""                   # Optional log file (empty = stdout only)
 
-# Note: Set API_KEY and API_SECRET environment variables for exchange access
+# Note: Set API_KEY and API_SECRET environment variables for exchange access in .env
 `
 
 	err = os.WriteFile(filename, []byte(configWithComments), 0644)
@@ -224,24 +205,26 @@ type BotConfig struct {
 	CheckInterval   time.Duration
 }
 
+func envFileExists(relFileName string) (string, bool) {
+	if path, err := filepath.Abs(relFileName); err == nil {
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	}
+	return "", false
+}
+
 func (fc *FileConfig) EnvFilePaths() []string {
 	var envFiles []string
 
-	info, err := os.Stat(".env")
-	if err == nil {
-		envFiles = append(envFiles, info.Name())
+	if path, ok := envFileExists("./.env"); ok {
+		envFiles = append(envFiles, path)
 	}
-
-	info, err = os.Stat(".env.tg")
-	if err == nil {
-		envFiles = append(envFiles, info.Name())
+	if path, ok := envFileExists("../.env.tg"); ok {
+		envFiles = append(envFiles, path)
 	}
-
-	if fc.Exchange.Env != "" {
-		info, err = os.Stat(fc.Exchange.Env)
-		if err == nil {
-			envFiles = append(envFiles, fc.Exchange.Env)
-		}
+	if path, ok := envFileExists("../.env"); ok {
+		envFiles = append(envFiles, path)
 	}
 
 	return envFiles

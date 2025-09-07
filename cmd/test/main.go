@@ -34,14 +34,14 @@ func main() {
 	}
 
 	log.SetOutput(os.Stdout)
-	log.Println("=== Bot Test Suite ===")
 
 	// Paramètres de ligne de commande
 	var (
-		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
-		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+		botDir = flag.String("root", ".", "Path to the bot directory")
 	)
 	flag.Parse()
+
+	log.Println("=== Bot Test Suite ===")
 
 	// Changer le répertoire de travail si nécessaire
 	if *botDir != "." {
@@ -54,7 +54,7 @@ func main() {
 
 	// 1. Charger la configuration du bot
 	logStep("Loading bot configuration...")
-	fileConfig, err := config.LoadConfig(*configFile)
+	fileConfig, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -70,13 +70,23 @@ func main() {
 	logStep("Load .env...")
 	err = godotenv.Load(fileConfig.EnvFilePaths()...)
 	if err != nil {
-		logger.Warn("No .env file found, using system environment variables")
+		logger.Warn("⚠️ No .env file found, using system environment variables")
 	}
 
 	logStep("Prepare configuration...")
 	botConfig := fileConfig.ToBotConfig()
 	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
 		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
+
+	logStep("Check Telegram Bot configuration")
+	useTelegram := os.Getenv("TELEGRAM") == "1"
+	tgBotToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	tgChatId := os.Getenv("TELEGRAM_CHAT_ID")
+	if useTelegram && tgBotToken != "" && tgChatId != "" {
+		logger.Info("✓ Telegram bot is configured")
+	} else {
+		logger.Warn("⚠️ Telegram bot is not configured properly")
+	}
 
 	logStep("Load or initialize database...")
 	db, err := database.NewDB(fileConfig.Database.Path)

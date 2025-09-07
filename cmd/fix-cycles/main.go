@@ -20,8 +20,7 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	var (
-		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
-		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+		botDir = flag.String("root", ".", "Path to the bot directory")
 	)
 	flag.Parse()
 
@@ -34,7 +33,7 @@ func main() {
 	}
 
 	// Load configuration
-	fileConfig, err := config.LoadConfig(*configFile)
+	fileConfig, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}

@@ -21,8 +21,7 @@ func main() {
 
 	// Paramètres de ligne de commande
 	var (
-		botDir     = flag.String("bot-dir", ".", "Path to the bot directory")
-		configFile = flag.String("config", "config.yml", "Path to configuration file (YAML format)")
+		botDir = flag.String("root", ".", "Path to the bot directory")
 	)
 	flag.Parse()
 
@@ -35,7 +34,7 @@ func main() {
 	}
 
 	// Load configuration
-	fileConfig, err := config.LoadConfig(*configFile)
+	fileConfig, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -63,6 +62,6 @@ func main() {
 		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
 	}
 
-	router := web.SetupServer(db, "8080")
+	router := web.SetupServer(fileConfig.Exchange.Name, db)
 	router.Run(":8080")
 }
