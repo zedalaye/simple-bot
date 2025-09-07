@@ -7,12 +7,15 @@ exchange:
 
 # Trading parameters
 trading:
-  pair: HYPE/USDC           # Trading pair
-  quote_amount: 10.0        # Amount in USDC per buy order
-  price_offset: 5.0         # Price difference for limit orders (USDC)
-  profit_threshold: 1.015   # Profit threshold (2.0% = 1.02)
-  order_ttl: 18             # Hours
-
+  pair: HYPE/USDC               # Trading pair
+  quote_amount: 10.0            # Amount in USDC per buy order
+  price_offset: 5.0             # Price difference for limit orders (USDC)
+  profit_threshold: 0.5         # Base profit threshold (2.0% = 1.02)
+  rsi_period: 1                 # Days of data (1h candles) for RSI calculation
+  rsi_oversold_threshold: 45.0  # RSI threshold for oversold condition (< 30 = buy signal)
+  volatility_period: 7          # Days of data (4h candles) for volatility calculation
+  volatility_adjustment: 50.0   # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
+  
 # Timing intervals
 intervals:
   buy_interval_hours: 4     # Hours between buy attempts
