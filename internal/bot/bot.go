@@ -524,3 +524,52 @@ func (b *Bot) calculateVolatility(pair string, period int) (float64, error) {
 	volatility := math.Sqrt(variance)
 	return volatility * 100, nil // Convertir en pourcentage
 }
+
+// calculateRSI calcule l'indice de force relative (RSI) pour une période donnée
+func (b *Bot) calculateRSI(pair string, period int) (float64, error) {
+	// Récupérer suffisamment de données pour le calcul RSI
+	since := time.Now().AddDate(0, 0, -period).UnixMilli()
+	candles, err := b.exchange.FetchCandles(pair, "1h", &since, int64(period*24)) // 3x la période pour stabilité
+	if err != nil {
+		logger.Errorf("Failed to fetch candles for RSI: %v", err)
+		return 0, err
+	}
+
+	if len(candles) < 2 {
+		return 0, fmt.Errorf("not enough candle data for RSI calculation")
+	}
+
+	// Calculer les gains et pertes
+	gains := make([]float64, len(candles)-1)
+	losses := make([]float64, len(candles)-1)
+
+	for i := 1; i < len(candles); i++ {
+		change := candles[i].Close - candles[i-1].Close
+		if change > 0 {
+			gains[i-1] = change
+			losses[i-1] = 0
+		} else {
+			gains[i-1] = 0
+			losses[i-1] = -change
+		}
+	}
+
+	// Calculer les moyennes mobiles exponentielles des gains et pertes
+	avgGain := gains[0]
+	avgLoss := losses[0]
+
+	for i := 1; i < len(gains); i++ {
+		avgGain = (avgGain*(float64(period*24)-1) + gains[i]) / float64(period*24)
+		avgLoss = (avgLoss*(float64(period*24)-1) + losses[i]) / float64(period*24)
+	}
+
+	// Calculer le RSI
+	if avgLoss == 0 {
+		return 100, nil
+	}
+
+	rs := avgGain / avgLoss
+	rsi := 100 - (100 / (1 + rs))
+
+	return rsi, nil
+}
