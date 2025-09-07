@@ -274,23 +274,15 @@ func (b *Bot) handlePriceCheck() {
 		// Calculer le seuil de profit dynamique basé sur la volatilité
 		// ProfitThreshold est maintenant un pourcentage (2.0 = 2%)
 		// Pendant une faible volatilité, accepter des profits plus faibles (plus agressif)
-		// Pendant une forte volatilité, exiger des profits plus élevés (moins agressif)
-		baseThresholdPercent := b.config.ProfitThreshold / 100.0 // Convertir en décimal (2.0 -> 0.02)
+		// Pendant une forte volatilité, espérer des profits plus élevés (moins agressif)
 
-		// Calculer l'ajustement basé sur la volatilité
-		volatilityFactor := volatility / 100.0 // Convertir en décimal (4.0 -> 0.04)
+		// Calculer l'ajustement basé sur la distance entre la volatilité et le seuil de base
+		// Peut-être négatif si la volatilité est inférieure au seuil de base
+		volatilityFactor := (volatility - b.config.ProfitThreshold) / 100.0 // Convertir en décimal (4.0 -> 0.04)
 		adjustmentPercent := volatilityFactor * (b.config.VolatilityAdjustment / 100.0)
 
 		// Appliquer l'ajustement selon le niveau de volatilité
-		// Utiliser ProfitThreshold comme référence pour distinguer volatilité faible/élevée
-		var dynamicProfitPercent float64
-		if volatility < b.config.ProfitThreshold {
-			// Volatilité < seuil cible: réduire le seuil (plus agressif)
-			dynamicProfitPercent = baseThresholdPercent - adjustmentPercent
-		} else {
-			// Volatilité > seuil cible: augmenter le seuil (moins agressif)
-			dynamicProfitPercent = baseThresholdPercent + adjustmentPercent
-		}
+		dynamicProfitPercent := (b.config.ProfitThreshold / 100.0) + adjustmentPercent
 
 		// S'assurer que le seuil reste raisonnable (entre 0.1% et 15%)
 		if dynamicProfitPercent < 0.001 {
