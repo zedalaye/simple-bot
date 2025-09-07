@@ -6,6 +6,7 @@
     <title>{{.title}}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-LN+7fdVzj6u52u30Kp6M/trliBMCMKTyK833zpbD+pXdCLuTusPj697FH4R/5mcr" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js" integrity="sha384-ndDqU0Gzau9qJ1lfW4pNLlhNTkCfHzAVBReH9diLvGRem5+R9g2FzA8ZGN954O5Q" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
     <style>
         .navbar-brand { font-weight: 600; }
         .stat-card { transition: transform 0.2s; }
@@ -24,7 +25,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-primary shadow-sm">
     <div class="container">
         <a class="navbar-brand" href="/">
-            <i class="bi bi-robot me-2"></i>Trading Bot
+            <i class="bi bi-robot me-2"></i>Simple Bot
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
@@ -56,10 +57,15 @@
                     </ul>
                 </li>
             </ul>
-            <span class="navbar-text">
-                    <i class="bi bi-clock me-1"></i>
-                    <span id="current-time"></span>
+            <span class="navbar-text me-3">
+                <span class="badge badge-outline-light px-2 py-1 border border-light">
+                    {{.exchange}}
                 </span>
+            </span>
+            <span class="navbar-text">
+                <i class="bi bi-clock me-1"></i>
+                <span id="current-time"></span>
+            </span>
         </div>
     </div>
 </nav>
@@ -67,6 +73,12 @@
 <main class="container my-4">
     {{template "content" .}}
 </main>
+
+<footer class="py-3 my-4">
+    <p class="text-center text-body-secondary">Simple Bot - ©2025 PrYCorp -<br/>
+        <small>This bot instance is connected to <em class="text-primary">{{.exchange}}</em></small>
+    </p>
+</footer>
 
 <script>
     // Mise à jour de l'heure toutes les secondes

@@ -97,7 +97,11 @@ func createRenderer() multitemplate.Renderer {
 	return r
 }
 
-func registerHandlers(router *gin.Engine, db *database.DB) {
+func makeTitle(exchangeName string, title string) string {
+	return fmt.Sprintf("%s - %s - Simple Bot by PrY", exchangeName, title)
+}
+
+func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) {
 	// Configuration des templates
 
 	// router.LoadHTMLGlob("templates/*")
@@ -105,9 +109,10 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 	// Page d'erreur générique
 	handleError := func(c *gin.Context, title, active, errMsg string) {
 		c.HTML(http.StatusInternalServerError, "error_index", gin.H{
-			"title":  title,
-			"active": active,
-			"error":  errMsg,
+			"title":    makeTitle(exchangeName, title),
+			"exchange": exchangeName,
+			"active":   active,
+			"error":    errMsg,
 		})
 	}
 
@@ -120,7 +125,8 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 		}
 
 		c.HTML(http.StatusOK, "dashboard_index", gin.H{
-			"title":       "Dashboard - Trading Bot",
+			"title":       makeTitle(exchangeName, "Dashboard"),
+			"exchange":    exchangeName,
 			"active":      "dashboard",
 			"stats":       metrics,
 			"avgProfit":   metrics["avg_profit"],
@@ -157,7 +163,8 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 		}
 
 		c.HTML(http.StatusOK, "positions_index", gin.H{
-			"title":      "Positions - Trading Bot",
+			"title":      makeTitle(exchangeName, "Positions"),
+			"exchange":   exchangeName,
 			"active":     "positions",
 			"positions":  positionsWithValue,
 			"totalValue": totalValue,
@@ -173,7 +180,8 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 		}
 
 		c.HTML(http.StatusOK, "orders_index", gin.H{
-			"title":      "Ordres En Attente - Trading Bot",
+			"title":      makeTitle(exchangeName, "Ordres En Attente"),
+			"exchange":   exchangeName,
 			"active":     "orders",
 			"pageTitle":  "Ordres En Attente",
 			"orders":     orders,
@@ -191,7 +199,8 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 		}
 
 		c.HTML(http.StatusOK, "orders_index", gin.H{
-			"title":      "Tous les Ordres - Trading Bot",
+			"title":      makeTitle(exchangeName, "Tous les Ordres"),
+			"exchange":   exchangeName,
 			"active":     "orders",
 			"pageTitle":  "Tous les Ordres",
 			"orders":     orders,
@@ -209,9 +218,10 @@ func registerHandlers(router *gin.Engine, db *database.DB) {
 		}
 
 		c.HTML(http.StatusOK, "cycles_index", gin.H{
-			"title":  "Cycles - Trading Bot",
-			"active": "cycles",
-			"cycles": cycles,
+			"title":    makeTitle(exchangeName, "Cycles"),
+			"exchange": exchangeName,
+			"active":   "cycles",
+			"cycles":   cycles,
 		})
 	})
 
@@ -301,7 +311,7 @@ func securityHeaders() gin.HandlerFunc {
 }
 
 // Fonction d'initialisation du serveur web
-func SetupServer(db *database.DB, port string) *gin.Engine {
+func SetupServer(exchangeName string, db *database.DB) *gin.Engine {
 	// Mode release pour la production
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -318,7 +328,7 @@ func SetupServer(db *database.DB, port string) *gin.Engine {
 	router.Static("/static", "./static")
 
 	// Enregistrer les handlers
-	registerHandlers(router, db)
+	registerHandlers(router, exchangeName, db)
 
 	return router
 }
