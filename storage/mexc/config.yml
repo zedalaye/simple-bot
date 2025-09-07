@@ -29,7 +29,7 @@ logging:
   level: info                   # Levels: debug, info, warn, error
   file: ""                      # Optional log file (empty = stdout only)
 
-  # Web server configuration
+# Web server configuration
 web:
   port: ":8080"                 # Port for the web interface
   docker: "8081:8080"           # Port mapping for Docker
