@@ -241,6 +241,17 @@ func (b *Bot) handlePriceCheck() {
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
 	logger.Infof("[%s] Current price: %v", b.config.ExchangeName, currentPrice)
 
+	// Calculer la volatilité pour ajuster le seuil de vente
+	volatility, err := b.calculateVolatility(b.config.Pair, b.config.VolatilityPeriod)
+	if err != nil {
+		logger.Errorf("Failed to calculate volatility: %v", err)
+		// Utiliser une valeur par défaut en cas d'erreur
+		volatility = 2.0 // 2% par défaut
+		logger.Infof("[%s] Using default (%.2f%%) volatility !", b.config.ExchangeName, volatility)
+	} else {
+		logger.Infof("[%s] Current volatility: %.2f%%", b.config.ExchangeName, volatility)
+	}
+
 	positions, err := b.db.GetOpenPositions()
 	if err != nil {
 		logger.Errorf("Failed to get open positions from database: %v", err)
@@ -260,10 +271,46 @@ func (b *Bot) handlePriceCheck() {
 			logger.Infof("[%s] Updated max price for position %v to %v", b.config.ExchangeName, pos.ID, pos.MaxPrice)
 		}
 
-		// Vérifier le profit minimum
-		if currentPrice >= pos.Price*b.config.ProfitThreshold {
-			// Vendre si le prix tombe de 0.5% par rapport à maxPrice
+		// Calculer le seuil de profit dynamique basé sur la volatilité
+		// ProfitThreshold est maintenant un pourcentage (2.0 = 2%)
+		// Pendant une faible volatilité, accepter des profits plus faibles (plus agressif)
+		// Pendant une forte volatilité, exiger des profits plus élevés (moins agressif)
+		baseThresholdPercent := b.config.ProfitThreshold / 100.0 // Convertir en décimal (2.0 -> 0.02)
+
+		// Calculer l'ajustement basé sur la volatilité
+		volatilityFactor := volatility / 100.0 // Convertir en décimal (4.0 -> 0.04)
+		adjustmentPercent := volatilityFactor * (b.config.VolatilityAdjustment / 100.0)
+
+		// Appliquer l'ajustement selon le niveau de volatilité
+		// Utiliser ProfitThreshold comme référence pour distinguer volatilité faible/élevée
+		var dynamicProfitPercent float64
+		if volatility < b.config.ProfitThreshold {
+			// Volatilité < seuil cible: réduire le seuil (plus agressif)
+			dynamicProfitPercent = baseThresholdPercent - adjustmentPercent
+		} else {
+			// Volatilité > seuil cible: augmenter le seuil (moins agressif)
+			dynamicProfitPercent = baseThresholdPercent + adjustmentPercent
+		}
+
+		// S'assurer que le seuil reste raisonnable (entre 0.1% et 15%)
+		if dynamicProfitPercent < 0.001 {
+			dynamicProfitPercent = 0.001
+		} else if dynamicProfitPercent > 0.10 {
+			dynamicProfitPercent = 0.10
+		}
+
+		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
+
+		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%)",
+			b.config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.config.ProfitThreshold, volatility)
+
+		// Vérifier le profit minimum avec le seuil dynamique
+		if currentPrice >= pos.Price*dynamicProfitThreshold {
+			// Logique de trailing stop originale : vendre si le prix tombe de 0.5% par rapport au max
 			if currentPrice < (pos.MaxPrice * 0.995) {
+				logger.Infof("[%s] Price dropped 0.5%% from max (%.4f -> %.4f), placing sell order for position %v",
+					b.config.ExchangeName, pos.MaxPrice, currentPrice, pos.ID)
+
 				b.placeSellOrder(pos, currentPrice)
 			}
 		}
