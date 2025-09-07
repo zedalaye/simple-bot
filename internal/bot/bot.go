@@ -99,17 +99,15 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 }
 
 func (b *Bot) initializeMarketPrecision() error {
-	logger.Info("Fetching market data...")
+	logger.Infof("[%s] Fetching market data...", b.config.ExchangeName)
 	b.market = b.exchange.GetMarket(b.config.Pair)
-
-	logger.Infof("Exchange: %s", b.config.ExchangeName)
-	logger.Infof("Base Asset: %s, Quote Asset: %s", b.market.BaseAsset, b.market.QuoteAsset)
-	logger.Infof("Market precision: price=%f, amount=%f", b.market.Precision.Price, b.market.Precision.Amount)
+	logger.Infof("[%s] Base Asset: %s, Quote Asset: %s", b.config.ExchangeName, b.market.BaseAsset, b.market.QuoteAsset)
+	logger.Infof("[%s] Market precision: price=%f, amount=%f", b.config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
 	return nil
 }
 
 func (b *Bot) Start(buyAtLaunch bool) error {
-	logger.Info("Starting bot...")
+	logger.Infof("[%s] Starting bot...", b.config.ExchangeName)
 
 	b.handleOrderCheck()
 	b.handlePriceCheck()
@@ -125,7 +123,7 @@ func (b *Bot) Start(buyAtLaunch bool) error {
 }
 
 func (b *Bot) Stop() {
-	logger.Info("Stopping bot...")
+	logger.Infof("[%s] Stopping bot...", b.config.ExchangeName)
 	close(b.done)
 }
 
@@ -139,7 +137,7 @@ func (b *Bot) run() {
 	for {
 		select {
 		case <-b.done:
-			logger.Info("Bot stopped gracefully")
+			logger.Infof("[%s] Bot stopped gracefully", b.config.ExchangeName)
 			return
 		case <-buyTicker.C:
 			b.handleBuySignal()
@@ -152,7 +150,7 @@ func (b *Bot) run() {
 }
 
 func (b *Bot) handleBuySignal() {
-	logger.Info("Time to place a new Buy Order...")
+	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
 
 	balance, err := b.exchange.FetchBalance()
 	if err != nil {
@@ -298,7 +296,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 
 	message := ""
 	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\nℹ️ [%s] New Sell Order: %d (%s)", b.config.ExchangeName, dbOrder.ID, *order.Id)
+	message += fmt.Sprintf("\nℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
@@ -385,7 +383,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 
 	message := ""
 	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\n✅ [%s] Buy Order Filled: %s", b.config.ExchangeName, *order.Id)
+	message += fmt.Sprintf("\n✅ Buy Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
@@ -395,7 +393,8 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("Buy Order Filled: %s %s at %s %s (ID=%v)",
+	logger.Infof("[%s] Buy Order Filled: %s %s at %s %s (ID=%v)",
+		b.config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
 
@@ -407,7 +406,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		if err != nil {
 			logger.Errorf("Failed to update order position in database: %v", err)
 		}
-		logger.Infof("[%s] Position created: ID=%v, Price=%v, Amount=%v",
+		logger.Infof("[%s] Position created (ID=%v, Price=%v, Amount=%v)",
 			b.config.ExchangeName,
 			position.ID, position.Price, position.Amount)
 	}
