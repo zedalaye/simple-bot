@@ -1,11 +1,5 @@
 .idea/
 .vscode/
 bin/
-.env*
-*.db
-*.db-journal
-*.db-shm
-*.db-wal
-*.db.backup
-*.yml
+storage/
 Dockerfile
