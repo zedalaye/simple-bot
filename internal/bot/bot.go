@@ -152,6 +152,23 @@ func (b *Bot) run() {
 func (b *Bot) handleBuySignal() {
 	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
 
+	// Vérifier le RSI pour confirmer le signal d'achat
+	rsi, err := b.calculateRSI(b.config.Pair, b.config.RSIPeriod)
+	if err != nil {
+		logger.Errorf("Failed to calculate RSI: %v", err)
+		return
+	}
+
+	logger.Infof("[%s] Current RSI: %.2f", b.config.ExchangeName, rsi)
+
+	if rsi >= b.config.RSIOversoldThreshold {
+		logger.Infof("[%s] RSI (%.2f) not oversold (threshold: %.2f), skipping buy signal",
+			b.config.ExchangeName, rsi, b.config.RSIOversoldThreshold)
+		return
+	}
+
+	logger.Infof("[%s] RSI (%.2f) indicates oversold condition, proceeding with buy", b.config.ExchangeName, rsi)
+
 	balance, err := b.exchange.FetchBalance()
 	if err != nil {
 		logger.Errorf("Failed to fetch balances: %v", err)
@@ -198,6 +215,7 @@ func (b *Bot) handleBuySignal() {
 	message += fmt.Sprintf("\nℹ️ Buy Order %s [%d]", *order.Id, dbOrder.ID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n📊 RSI: %.2f", rsi)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
 
 	err = telegram.SendMessage(message)
@@ -205,10 +223,10 @@ func (b *Bot) handleBuySignal() {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("[%s] Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v)",
+	logger.Infof("[%s] Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v, RSI=%.2f)",
 		b.config.ExchangeName,
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
-		order.Id, dbOrder.ID)
+		order.Id, dbOrder.ID, rsi)
 }
 
 func (b *Bot) handlePriceCheck() {
