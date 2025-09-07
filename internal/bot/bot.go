@@ -324,9 +324,8 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 		} else if *order.Status == "canceled" {
 			b.handleCanceledOrder(dbOrder, order)
 		} else if *order.Status == "open" {
-			if b.shouldCancelOrder(order) {
-				b.handleCancelOrder(dbOrder)
-			}
+			// Removed automatic cancel logic - orders will remain active until filled or manually cancelled
+			logger.Debugf("Order %v still open", dbOrder.ExternalID)
 		} else {
 			logger.Warnf("Unsupported Order Status: %v", *order.Status)
 		}
@@ -451,47 +450,8 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		if err != nil {
 			logger.Errorf("Failed to delete position from database: %v", err)
 		} else {
-			logger.Infof("Position deleted: ID=%v", *dbOrder.PositionID)
+			logger.Infof("[%s] Position deleted: ID=%v", b.config.ExchangeName, *dbOrder.PositionID)
 		}
-	}
-}
-
-func (b *Bot) shouldCancelOrder(order Order) bool {
-	return (order.Timestamp != nil) && (*order.Timestamp > 0) &&
-		time.Since(time.UnixMilli(*order.Timestamp)) > b.config.OrderTTL
-}
-
-func (b *Bot) handleCancelOrder(dbOrder database.Order) {
-	_, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.config.Pair)
-	if err != nil {
-		logger.Errorf("Failed to Cancel Order (ID=%v): %v", dbOrder.ExternalID, err)
-		return
-	}
-
-	message := ""
-	message += fmt.Sprintf("🚫 [%s] Old Order Cancelled: %d (%s)", b.config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
-	if dbOrder.Side == database.Buy {
-		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
-	} else {
-		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
-	}
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
-	}
-
-	logger.Infof("[%s] Order %v Cancelled (too old)", b.config.ExchangeName, dbOrder.ExternalID)
-
-	err = b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Cancelled)
-	if err != nil {
-		logger.Errorf("Failed to update cancelled order status in database: %v", err)
-	}
-
-	if dbOrder.Side == database.Sell && dbOrder.PositionID != nil {
-		logger.Infof("Sell order cancelled - Position %v remains active", *dbOrder.PositionID)
 	}
 }
 
