@@ -8,7 +8,7 @@
         run-bot run-admin run-web run-test
 
 # Construire tous les binaires
-build-all: build-bot build-admin build-web build-volatility
+build-all: build-bot build-admin build-web build-test build-volatility
 
 # Construire chaque binaire individuellement
 build-bot:
