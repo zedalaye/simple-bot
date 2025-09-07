@@ -9,8 +9,13 @@ ACTION=${2:-up}
 
 launch_exchange() {
     local ex=$1
-    local port=$2
     local project="bot-$ex"
+
+    local port=$(grep 'port:' storage/$ex/config.yml | awk '{print $2}' | tr -d '"')
+    if [ -z "$port" ]; then
+        echo "Impossible de trouver le port web dans storage/$ex/config.yml"
+        exit 1
+    fi
 
     echo "=== Lancement de $ex (port $port) ==="
     EXCHANGE=$ex WEB_PORT=$port docker compose -p $project up -d
@@ -40,80 +45,125 @@ status_all() {
 backup_db() {
     local ex=$1
     local date=$(date +"%Y%m%d_%H%M%S")
+    local original_dir=$(pwd)
+
+    if [ -d "storage/" ]; then
+        cd storage
+    fi
     mkdir -p $ex/backup
 
     echo "=== Backup de la base de données de $ex (at $date) ==="
     sqlite3 $ex/db/bot.db ".backup '$ex/backup/bot.db.backup.$date'"
+
+    cd $original_dir
 }
 
+run_command() {
+    local ex=$1
+    local cmd=$2
+    shift 2
+    local args="$@"
+    local project="bot-$ex"
+
+    echo "=== Exécution de la commande dans le container $ex: /app/$cmd ==="
+    EXCHANGE=$ex docker compose -p $project exec webui /app/$cmd $args
+}
+
+# Si $EXCHANGE est "all", gère tous les exchanges présents dans storage/
 case $EXCHANGE in
-    mexc)
-        export EXCHANGE=mexc
-        export WEB_PORT=8080
-        ;;
-    hl|hyperliquid)
-        export EXCHANGE=hl
-        export WEB_PORT=8081
-        ;;
     all)
         case $ACTION in
             up)
-                launch_exchange "mexc" "8080"
-                launch_exchange "hl" "8081"
+                echo "=== Launch ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        launch_exchange "$ex"
+                    fi
+                done
                 status_all
                 exit 0
                 ;;
             down)
-                stop_exchange "mexc"
-                stop_exchange "hl"
+                echo "=== Stop ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        stop_exchange "$ex"
+                    fi
+                done
+                exit 0
+                ;;
+            restart)
+                echo "=== Restart ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        stop_exchange "$ex"
+                    fi
+                done
+                sleep 2
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        launch_exchange "$ex"
+                    fi
+                done
+                status_all
                 exit 0
                 ;;
             status)
                 status_all
                 exit 0
                 ;;
-            restart)
-                echo "=== Restart ALL ==="
-                stop_exchange "mexc"
-                stop_exchange "hl"
-                sleep 2
-                launch_exchange "mexc" "8080"
-                launch_exchange "hl" "8081"
-                status_all
+            backup)
+                echo "=== Backup ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        backup_db "$ex"
+                    fi
+                done
                 exit 0
                 ;;
             logs)
-                echo "Utilisez: $0 mexc logs  ou  $0 hl logs"
+                echo "Utilisez: $0 <exchange> logs  (e.g. $0 mexc logs)"
                 exit 1
                 ;;
-            backup)
-                echo "=== Restart ALL ==="
-                backup_db "mexc"
-                backup_db "hl"
-                exit 0
+            run)
+                echo "=== Run Command ALL ==="
+                echo "Utilisez: $0 <exchange> run <command> <args>  (e.g. $0 mexc run admin stats)"
+                exit 1
                 ;;
         esac
         ;;
-    *)
-        echo "Usage: $0 [mexc|hl|all] [up|down|restart|logs|status|backup]"
+    help|-h|--help)
+        echo "Usage: $0 [<exchange>|all] [up|down|restart|logs|status|backup|run]"
         echo "Examples:"
         echo "  $0 mexc up      # Lance bot + webui MEXC"
         echo "  $0 hl up        # Lance bot + webui Hyperliquid"
         echo "  $0 all up       # Lance MEXC ET Hyperliquid"
         echo "  $0 all down     # Arrête tout"
         echo "  $0 all status   # Status de tous les containers"
+        echo "  $0 all backup   # Backup des bases de données"
         echo "  $0 mexc logs    # Logs MEXC"
+        echo "  $0 mexc run     # Lance une commande MEXC"
         exit 1
         ;;
 esac
 
+# Check if $EXCHANGE exists in storage/
+if [ ! -d "storage/$EXCHANGE" ] && [ "$EXCHANGE" != "all" ]; then
+    echo "Exchange inconnu: $EXCHANGE"
+    exit 1
+fi
+
 echo "Exchange: $EXCHANGE"
-echo "Web Port: $WEB_PORT"
 echo "Action: $ACTION"
 
 case $ACTION in
     up)
-        launch_exchange $EXCHANGE $WEB_PORT
+        launch_exchange $EXCHANGE
         ;;
     down)
         stop_exchange $EXCHANGE
@@ -121,17 +171,27 @@ case $ACTION in
     restart)
         stop_exchange $EXCHANGE
         sleep 2
-        launch_exchange $EXCHANGE $WEB_PORT
-        ;;
-    logs)
-        logs_exchange $EXCHANGE
+        launch_exchange $EXCHANGE
         ;;
     status)
         status_all
         ;;
+    logs)
+        logs_exchange $EXCHANGE
+        ;;
     backup)
        backup_db $EXCHANGE
        ;;
+    run)
+        shift 2
+        if [ $# -lt 1 ]; then
+            echo "Usage: $0 $EXCHANGE run <command> <args>"
+            exit 1
+        fi
+        cmd=$1
+        shift
+        run_command $EXCHANGE $cmd "$@"
+        ;;
     *)
         echo "Action non reconnue: $ACTION"
         echo "Actions disponibles: up, down, restart, logs, status, backup"
