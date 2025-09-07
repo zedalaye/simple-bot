@@ -42,6 +42,10 @@ type FileConfig struct {
 		Level string `yaml:"level" json:"level"`
 		File  string `yaml:"file,omitempty" json:"file,omitempty"`
 	} `yaml:"logging" json:"logging"`
+
+	Web struct {
+		Port string `yaml:"port" json:"port"`
+	} `yaml:"web" json:"web"`
 }
 
 func LoadConfig() (*FileConfig, error) {
@@ -89,6 +93,11 @@ func LoadConfig() (*FileConfig, error) {
 		}{
 			Level: "info",
 			File:  "", // Empty means stdout only
+		},
+		Web: struct {
+			Port string `yaml:"port" json:"port"`
+		}{
+			Port: ":8080",
 		},
 	}
 
@@ -154,6 +163,10 @@ logging:
   level: info                   # Levels: debug, info, warn, error
   file: ""                      # Optional log file (empty = stdout only)
 
+# Web server configuration
+web:
+	port: ":8080"                 # Port for the web interface
+
 # Note: Set API_KEY and API_SECRET environment variables for exchange access in .env
 `
 
@@ -191,6 +204,9 @@ func validateConfig(config *FileConfig) error {
 	if config.Database.Path == "" {
 		return fmt.Errorf("database.path cannot be empty")
 	}
+	if config.Web.Port == "" {
+		return fmt.Errorf("web.port cannot be empty")
+	}
 
 	// Validation des niveaux de log
 	validLogLevels := map[string]bool{
@@ -215,6 +231,7 @@ type BotConfig struct {
 	VolatilityAdjustment float64
 	RSIPeriod            int
 	RSIOversoldThreshold float64
+	WebPort              string
 }
 
 func envFileExists(relFileName string) (string, bool) {
@@ -255,6 +272,7 @@ func (fc *FileConfig) ToBotConfig() BotConfig {
 		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
 		RSIPeriod:            fc.Trading.RSIPeriod,
 		RSIOversoldThreshold: fc.Trading.RSIOversoldThreshold,
+		WebPort:              fc.Web.Port,
 	}
 }
 

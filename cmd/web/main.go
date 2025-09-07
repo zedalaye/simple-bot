@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	// Paramètres de ligne de commande
 	var (
 		botDir = flag.String("root", ".", "Path to the bot directory")
+		port   = flag.String("port", "8080", "Port for the web interface")
 	)
 	flag.Parse()
 
@@ -62,6 +64,15 @@ func main() {
 		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
 	}
 
+	// Résoud le port en donnant la priorité à la ligne de commande
+	effectivePort := fileConfig.Web.Port
+	if port != nil {
+		if intPort, err := strconv.Atoi(*port); err == nil {
+			effectivePort = fmt.Sprintf(":%d", intPort)
+		} else {
+			effectivePort = *port
+		}
+	}
 	router := web.SetupServer(fileConfig.Exchange.Name, db)
-	router.Run(":8080")
+	router.Run(effectivePort)
 }

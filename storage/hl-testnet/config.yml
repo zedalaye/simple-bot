@@ -30,4 +30,8 @@ logging:
   level: info               # Levels: debug, info, warn, error
   file: ""                  # Optional log file (empty = stdout only)
 
+  # Web server configuration
+web:
+  port: ":8080"                 # Port for the web interface
+
 # Note: Set API_KEY and API_SECRET environment variables for exchange access
