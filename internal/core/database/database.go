@@ -1123,3 +1123,16 @@ func (db *DB) CalculateProfitStats() (avgProfit float64, totalProfit float64) {
 
 	return avgProfit, totalProfit
 }
+
+// CountTodayBuyOrders counts the number of BUY orders created in the last 24 hours
+func (db *DB) CountTodayBuyOrders() (int, error) {
+	since := time.Now().AddDate(0, 0, -1)
+	query := `
+		SELECT COUNT(*) FROM orders
+		WHERE side = ? AND created_at >= ?
+	`
+	row := db.conn.QueryRow(query, Buy, since)
+	var count int
+	err := row.Scan(&count)
+	return count, err
+}

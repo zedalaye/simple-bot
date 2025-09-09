@@ -150,9 +150,35 @@ func (b *Bot) run() {
 }
 
 func (b *Bot) handleBuySignal() {
-	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
+	// Check daily buy limit
+	todayBuyCount, err := b.db.CountTodayBuyOrders()
+	if err != nil {
+		logger.Errorf("Failed to count today's buy orders: %v", err)
+		return
+	}
+
+	if todayBuyCount >= b.config.MaxBuysPerDay {
+		logger.Infof("[%s] Daily buy limit reached (%d/%d), skipping RSI check",
+			b.config.ExchangeName, todayBuyCount, b.config.MaxBuysPerDay)
+		return
+	}
+
+	// Check available balance
+	balance, err := b.exchange.FetchBalance()
+	if err != nil {
+		logger.Errorf("Failed to fetch balances: %v", err)
+		return
+	}
+
+	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
+	if !ok || (quoteAssetBalance.Free < b.config.QuoteAmount) {
+		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
+		return
+	}
 
 	// Vérifier le RSI pour confirmer le signal d'achat
+	logger.Infof("[%s] Checking RSI for potential buy signal...", b.config.ExchangeName)
+
 	rsi, err := b.calculateRSI(b.config.Pair, b.config.RSIPeriod)
 	if err != nil {
 		logger.Errorf("Failed to calculate RSI: %v", err)
@@ -167,19 +193,8 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	logger.Infof("[%s] RSI (%.2f) indicates oversold condition, proceeding with buy", b.config.ExchangeName, rsi)
-
-	balance, err := b.exchange.FetchBalance()
-	if err != nil {
-		logger.Errorf("Failed to fetch balances: %v", err)
-		return
-	}
-
-	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
-	if !ok || (quoteAssetBalance.Free < b.config.QuoteAmount) {
-		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
-		return
-	}
+	logger.Infof("[%s] RSI (%.2f) indicates oversold condition", b.config.ExchangeName, rsi)
+	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
 
 	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
 	if err != nil {

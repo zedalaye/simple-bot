@@ -19,14 +19,17 @@ type FileConfig struct {
 	} `yaml:"exchange" json:"exchange"`
 
 	Trading struct {
-		Pair                 string  `yaml:"pair" json:"pair"`
+		Pair string `yaml:"pair" json:"pair"`
+		// Buy
 		QuoteAmount          float64 `yaml:"quote_amount" json:"quote_amount"`
+		MaxBuysPerDay        int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
+		RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
+		RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
 		PriceOffset          float64 `yaml:"price_offset" json:"price_offset"`
+		// Sell
 		ProfitThreshold      float64 `yaml:"profit_threshold" json:"profit_threshold"`
 		VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 		VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
-		RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
-		RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
 	} `yaml:"trading" json:"trading"`
 
 	Intervals struct {
@@ -57,23 +60,29 @@ func LoadConfig() (*FileConfig, error) {
 			Name: "mexc",
 		},
 		Trading: struct {
-			Pair                 string  `yaml:"pair" json:"pair"`
+			Pair string `yaml:"pair" json:"pair"`
+			// Buy
 			QuoteAmount          float64 `yaml:"quote_amount" json:"quote_amount"`
+			MaxBuysPerDay        int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
+			RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
+			RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
 			PriceOffset          float64 `yaml:"price_offset" json:"price_offset"`
+			// Sell
 			ProfitThreshold      float64 `yaml:"profit_threshold" json:"profit_threshold"`
 			VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 			VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
-			RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
-			RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
 		}{
-			Pair:                 "BTC/USDC",
+			Pair: "BTC/USDC",
+			// Buy
 			QuoteAmount:          50.0,
+			MaxBuysPerDay:        4,
+			RSIPeriod:            1,
+			RSIOversoldThreshold: 45.0,
 			PriceOffset:          200.0,
+			// Sell
 			ProfitThreshold:      2.0,
 			VolatilityPeriod:     7,
 			VolatilityAdjustment: 50.0,
-			RSIPeriod:            1,
-			RSIOversoldThreshold: 45.0,
 		},
 		Intervals: struct {
 			BuyIntervalHours  int `yaml:"buy_interval_hours" json:"buy_interval_hours"`
@@ -141,13 +150,16 @@ exchange:
 # Trading parameters
 trading:
   pair: BTC/USDC                # Trading pair
-  quote_amount: 50.0            # Amount in quote currency (USDC) per buy order
-  price_offset: 700.0           # Price difference for limit orders (USDC)
+
+	quote_amount: 50.0            # Amount in quote currency (USDC) per buy order
+  max_buys_per_day: 4           # Maximum number of buy orders per 24 hours (1-24)
+	rsi_period: 1                 # Period for RSI calculation
+  rsi_oversold_threshold: 45.0  # RSI threshold for oversold condition (< 45 = buy signal)
+	price_offset: 700.0           # Price difference for limit orders (USDC)
+	
   profit_threshold: 2.0         # Profit threshold percentage (2.0 = 2%) to trigger sell logic
   volatility_period: 7          # Days of data for volatility calculation
   volatility_adjustment: 50.0   # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
-	rsi_period: 1                 # Period for RSI calculation
-  rsi_oversold_threshold: 45.0  # RSI threshold for oversold condition (< 45 = buy signal)
 
 # Timing intervals
 intervals:
@@ -207,6 +219,9 @@ func validateConfig(config *FileConfig) error {
 	if config.Web.Port == "" {
 		return fmt.Errorf("web.port cannot be empty")
 	}
+	if config.Trading.MaxBuysPerDay < 1 || config.Trading.MaxBuysPerDay > 24*60 {
+		return fmt.Errorf("trading.max_buys_per_day must be between 1 and 1440")
+	}
 
 	// Validation des niveaux de log
 	validLogLevels := map[string]bool{
@@ -220,18 +235,23 @@ func validateConfig(config *FileConfig) error {
 }
 
 type BotConfig struct {
-	ExchangeName         string
-	Pair                 string
+	ExchangeName string
+	Pair         string
+	// Scheduling
+	BuyInterval   time.Duration
+	CheckInterval time.Duration
+	// Buy
 	QuoteAmount          float64
-	PriceOffset          float64
-	ProfitThreshold      float64
-	BuyInterval          time.Duration
-	CheckInterval        time.Duration
-	VolatilityPeriod     int
-	VolatilityAdjustment float64
+	MaxBuysPerDay        int
 	RSIPeriod            int
 	RSIOversoldThreshold float64
-	WebPort              string
+	// Sell
+	PriceOffset          float64
+	ProfitThreshold      float64
+	VolatilityPeriod     int
+	VolatilityAdjustment float64
+	// Web UI
+	WebPort string
 }
 
 func envFileExists(relFileName string) (string, bool) {
@@ -261,18 +281,23 @@ func (fc *FileConfig) EnvFilePaths() []string {
 
 func (fc *FileConfig) ToBotConfig() BotConfig {
 	return BotConfig{
-		ExchangeName:         fc.Exchange.Name,
-		Pair:                 fc.Trading.Pair,
+		ExchangeName: fc.Exchange.Name,
+		Pair:         fc.Trading.Pair,
+		// Scheduling
+		BuyInterval:   time.Duration(fc.Intervals.BuyIntervalHours) * time.Hour,
+		CheckInterval: time.Duration(fc.Intervals.CheckIntervalMins) * time.Minute,
+		// Buy
 		QuoteAmount:          fc.Trading.QuoteAmount,
-		PriceOffset:          fc.Trading.PriceOffset,
-		ProfitThreshold:      fc.Trading.ProfitThreshold,
-		BuyInterval:          time.Duration(fc.Intervals.BuyIntervalHours) * time.Hour,
-		CheckInterval:        time.Duration(fc.Intervals.CheckIntervalMins) * time.Minute,
-		VolatilityPeriod:     fc.Trading.VolatilityPeriod,
-		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
+		MaxBuysPerDay:        fc.Trading.MaxBuysPerDay,
 		RSIPeriod:            fc.Trading.RSIPeriod,
 		RSIOversoldThreshold: fc.Trading.RSIOversoldThreshold,
-		WebPort:              fc.Web.Port,
+		PriceOffset:          fc.Trading.PriceOffset,
+		// Sell
+		ProfitThreshold:      fc.Trading.ProfitThreshold,
+		VolatilityPeriod:     fc.Trading.VolatilityPeriod,
+		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
+		// Web UI
+		WebPort: fc.Web.Port,
 	}
 }
 
