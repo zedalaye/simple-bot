@@ -187,13 +187,20 @@ func (b *Bot) handleBuySignal() {
 
 	logger.Infof("[%s] Current RSI: %.2f", b.config.ExchangeName, rsi)
 
-	if rsi >= b.config.RSIOversoldThreshold {
-		logger.Infof("[%s] RSI (%.2f) not oversold (threshold: %.2f), skipping buy signal",
-			b.config.ExchangeName, rsi, b.config.RSIOversoldThreshold)
-		return
+	if b.config.RSIThreshold > 0 && b.config.RSIThreshold < 100 {
+		if rsi > b.config.RSIThreshold {
+			logger.Infof("[%s] RSI (%.2f) is too high (threshold: %.2f), skipping buy signal",
+				b.config.ExchangeName, rsi, b.config.RSIThreshold)
+			return
+		} else {
+			logger.Infof("[%s] RSI (%.2f) is below threashold (%.2f), proceeding with buy signal",
+				b.config.ExchangeName,
+				rsi, b.config.RSIThreshold)
+		}
+	} else {
+		logger.Debug("RSI Threshold is not set. Skipping RSI check")
 	}
 
-	logger.Infof("[%s] RSI (%.2f) indicates oversold condition", b.config.ExchangeName, rsi)
 	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
 
 	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
@@ -202,8 +209,14 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	limitPrice := b.roundToPrecision(currentPrice-b.config.PriceOffset, b.market.Precision.Price)
+	// Calculate dynamic price offset based on RSI: -0.1% + (RSI/100) * 0.8%
+	dynamicOffsetPercent := -0.001 + (rsi/100.0)*0.008
+	dynamicOffset := currentPrice * dynamicOffsetPercent
+	limitPrice := b.roundToPrecision(currentPrice-dynamicOffset, b.market.Precision.Price)
 	baseAmount := b.roundToPrecision(b.config.QuoteAmount/limitPrice, b.market.Precision.Amount)
+
+	logger.Infof("[%s] Dynamic offset: %.4f%% (RSI: %.2f), limit price: %s",
+		b.config.ExchangeName, dynamicOffsetPercent*100, rsi, b.market.FormatPrice(limitPrice))
 
 	order, err := b.exchange.PlaceLimitBuyOrder(b.config.Pair, baseAmount, limitPrice)
 	if err != nil {
@@ -293,11 +306,11 @@ func (b *Bot) handlePriceCheck() {
 
 		// Calculer l'ajustement basé sur la distance entre la volatilité et le seuil de base
 		// Peut-être négatif si la volatilité est inférieure au seuil de base
-		volatilityFactor := (volatility - b.config.ProfitThreshold) / 100.0 // Convertir en décimal (4.0 -> 0.04)
+		volatilityFactor := (volatility - b.config.ProfitTarget) / 100.0 // Convertir en décimal (4.0 -> 0.04)
 		adjustmentPercent := volatilityFactor * (b.config.VolatilityAdjustment / 100.0)
 
 		// Appliquer l'ajustement selon le niveau de volatilité
-		dynamicProfitPercent := (b.config.ProfitThreshold / 100.0) + adjustmentPercent
+		dynamicProfitPercent := (b.config.ProfitTarget / 100.0) + adjustmentPercent
 
 		// S'assurer que le seuil reste raisonnable (entre 0.1% et 15%)
 		if dynamicProfitPercent < 0.001 {
@@ -309,7 +322,7 @@ func (b *Bot) handlePriceCheck() {
 		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
 
 		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%)",
-			b.config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.config.ProfitThreshold, volatility)
+			b.config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.config.ProfitTarget, volatility)
 
 		// Vérifier le profit minimum avec le seuil dynamique
 		if currentPrice >= pos.Price*dynamicProfitThreshold {

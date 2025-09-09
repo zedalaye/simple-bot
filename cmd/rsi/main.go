@@ -55,8 +55,8 @@ func main() {
 	}
 
 	botConfig := fileConfig.ToBotConfig()
-	logger.Debugf("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
-		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
+	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%v, MaxBuys/Day=%d, RSIThreshold=%.2f, ProfitTarget=%.2f, VolatilityAdjustmment=%.2f",
+		botConfig.Pair, botConfig.QuoteAmount, botConfig.MaxBuysPerDay, botConfig.RSIThreshold, botConfig.ProfitTarget, botConfig.VolatilityAdjustment)
 
 	// Retourne au dossier racine par défaut
 	err = os.Chdir(projectRoot)

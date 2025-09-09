@@ -21,13 +21,12 @@ type FileConfig struct {
 	Trading struct {
 		Pair string `yaml:"pair" json:"pair"`
 		// Buy
-		QuoteAmount          float64 `yaml:"quote_amount" json:"quote_amount"`
-		MaxBuysPerDay        int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
-		RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
-		RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
-		PriceOffset          float64 `yaml:"price_offset" json:"price_offset"`
+		QuoteAmount   float64 `yaml:"quote_amount" json:"quote_amount"`
+		MaxBuysPerDay int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
+		RSIPeriod     int     `yaml:"rsi_period" json:"rsi_period"`
+		RSIThreshold  float64 `yaml:"rsi_threshold" json:"rsi_threshold"`
 		// Sell
-		ProfitThreshold      float64 `yaml:"profit_threshold" json:"profit_threshold"`
+		ProfitTarget         float64 `yaml:"profit_target" json:"profit_target"`
 		VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 		VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
 	} `yaml:"trading" json:"trading"`
@@ -62,25 +61,23 @@ func LoadConfig() (*FileConfig, error) {
 		Trading: struct {
 			Pair string `yaml:"pair" json:"pair"`
 			// Buy
-			QuoteAmount          float64 `yaml:"quote_amount" json:"quote_amount"`
-			MaxBuysPerDay        int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
-			RSIPeriod            int     `yaml:"rsi_period" json:"rsi_period"`
-			RSIOversoldThreshold float64 `yaml:"rsi_oversold_threshold" json:"rsi_oversold_threshold"`
-			PriceOffset          float64 `yaml:"price_offset" json:"price_offset"`
+			QuoteAmount   float64 `yaml:"quote_amount" json:"quote_amount"`
+			MaxBuysPerDay int     `yaml:"max_buys_per_day" json:"max_buys_per_day"`
+			RSIPeriod     int     `yaml:"rsi_period" json:"rsi_period"`
+			RSIThreshold  float64 `yaml:"rsi_threshold" json:"rsi_threshold"`
 			// Sell
-			ProfitThreshold      float64 `yaml:"profit_threshold" json:"profit_threshold"`
+			ProfitTarget         float64 `yaml:"profit_target" json:"profit_target"`
 			VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 			VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
 		}{
 			Pair: "BTC/USDC",
 			// Buy
-			QuoteAmount:          50.0,
-			MaxBuysPerDay:        4,
-			RSIPeriod:            1,
-			RSIOversoldThreshold: 45.0,
-			PriceOffset:          200.0,
+			QuoteAmount:   50.0,
+			MaxBuysPerDay: 4,
+			RSIPeriod:     1,
+			RSIThreshold:  70.0,
 			// Sell
-			ProfitThreshold:      2.0,
+			ProfitTarget:         2.0,
 			VolatilityPeriod:     7,
 			VolatilityAdjustment: 50.0,
 		},
@@ -145,39 +142,38 @@ func createDefaultConfigFile(filename string, defaultConfig *FileConfig) (*FileC
 # 
 # Exchange configuration
 exchange:
-  name: mexc                    # Supported: mexc, hyperliquid, binance, etc.
+  name: mexc                     # Supported: mexc, hyperliquid, binance, etc.
 
 # Trading parameters
 trading:
-  pair: BTC/USDC                # Trading pair
+  pair: BTC/USDC                 # Trading pair
 
-	quote_amount: 50.0            # Amount in quote currency (USDC) per buy order
-  max_buys_per_day: 4           # Maximum number of buy orders per 24 hours (1-24)
-	rsi_period: 1                 # Period for RSI calculation
-  rsi_oversold_threshold: 45.0  # RSI threshold for oversold condition (< 45 = buy signal)
-	price_offset: 700.0           # Price difference for limit orders (USDC)
+	quote_amount: 50.0             # Amount in quote currency (USDC) per buy order
+  max_buys_per_day: 4            # Maximum number of buy orders per 24 hours (1-24)
+	rsi_period: 1                  # Period for RSI calculation
+	rsi_threshold: 100.0           # RSI threshold (> 70 = no buy signal), 100 to disable
+
+  profit_target: 2.0             # Profit target in percentage (2.0 = 2%) to trigger sell logic
+  volatility_period: 7           # Days of data for volatility calculation
+  volatility_adjustment: 50.0    # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
 	
-  profit_threshold: 2.0         # Profit threshold percentage (2.0 = 2%) to trigger sell logic
-  volatility_period: 7          # Days of data for volatility calculation
-  volatility_adjustment: 50.0   # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
-
 # Timing intervals
 intervals:
-  buy_interval_hours: 24        # Hours between buy attempts
-  check_interval_minutes: 60    # Minutes between price/order checks
+  buy_interval_hours: 24         # Hours between buy attempts
+  check_interval_minutes: 60     # Minutes between price/order checks
 
 # Database configuration
 database:
-  path: db/bot.db               # SQLite database file path
+  path: db/bot.db                # SQLite database file path
 
 # Logging configuration
 logging:
-  level: info                   # Levels: debug, info, warn, error
-  file: ""                      # Optional log file (empty = stdout only)
+  level: info                    # Levels: debug, info, warn, error
+  file: ""                       # Optional log file (empty = stdout only)
 
 # Web server configuration
 web:
-	port: ":8080"                 # Port for the web interface
+	port: ":8080"                  # Port for the web interface
 
 # Note: Set API_KEY and API_SECRET environment variables for exchange access in .env
 `
@@ -198,10 +194,10 @@ func validateConfig(config *FileConfig) error {
 	if config.Trading.QuoteAmount <= 0 {
 		return fmt.Errorf("trading.quote_amount must be positive")
 	}
-	if config.Trading.PriceOffset < 0 {
-		return fmt.Errorf("trading.price_offset must be non-negative")
+	if config.Trading.RSIThreshold < 0 || config.Trading.RSIThreshold > 100 {
+		return fmt.Errorf("trading.rsi_threshold must be between 0 and 100")
 	}
-	if config.Trading.ProfitThreshold <= 0 {
+	if config.Trading.ProfitTarget <= 0 {
 		return fmt.Errorf("trading.profit_threshold must be greater than 0")
 	}
 	if config.Intervals.BuyIntervalHours <= 0 {
@@ -241,13 +237,12 @@ type BotConfig struct {
 	BuyInterval   time.Duration
 	CheckInterval time.Duration
 	// Buy
-	QuoteAmount          float64
-	MaxBuysPerDay        int
-	RSIPeriod            int
-	RSIOversoldThreshold float64
+	QuoteAmount   float64
+	MaxBuysPerDay int
+	RSIPeriod     int
+	RSIThreshold  float64
 	// Sell
-	PriceOffset          float64
-	ProfitThreshold      float64
+	ProfitTarget         float64
 	VolatilityPeriod     int
 	VolatilityAdjustment float64
 	// Web UI
@@ -287,13 +282,12 @@ func (fc *FileConfig) ToBotConfig() BotConfig {
 		BuyInterval:   time.Duration(fc.Intervals.BuyIntervalHours) * time.Hour,
 		CheckInterval: time.Duration(fc.Intervals.CheckIntervalMins) * time.Minute,
 		// Buy
-		QuoteAmount:          fc.Trading.QuoteAmount,
-		MaxBuysPerDay:        fc.Trading.MaxBuysPerDay,
-		RSIPeriod:            fc.Trading.RSIPeriod,
-		RSIOversoldThreshold: fc.Trading.RSIOversoldThreshold,
-		PriceOffset:          fc.Trading.PriceOffset,
+		QuoteAmount:   fc.Trading.QuoteAmount,
+		MaxBuysPerDay: fc.Trading.MaxBuysPerDay,
+		RSIPeriod:     fc.Trading.RSIPeriod,
+		RSIThreshold:  fc.Trading.RSIThreshold,
 		// Sell
-		ProfitThreshold:      fc.Trading.ProfitThreshold,
+		ProfitTarget:         fc.Trading.ProfitTarget,
 		VolatilityPeriod:     fc.Trading.VolatilityPeriod,
 		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
 		// Web UI

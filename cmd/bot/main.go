@@ -61,8 +61,8 @@ func main() {
 	// Conversion vers la configuration du bot
 	botConfig := fileConfig.ToBotConfig()
 
-	logger.Infof("Configuration loaded: Pair=%s, Amount=%v, PriceOffset=%v, Threshold=%v",
-		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset, botConfig.ProfitThreshold)
+	logger.Infof("Configuration loaded: Pair=%s, Amount=%v, MaxBuys/Day=%d, RSIThreshold=%.2f, ProfitTarget=%.2f, VolatilityAdjustmment=%.2f",
+		botConfig.Pair, botConfig.QuoteAmount, botConfig.MaxBuysPerDay, botConfig.RSIThreshold, botConfig.ProfitTarget, botConfig.VolatilityAdjustment)
 
 	// Initialisation de la base de données
 	db, err := database.NewDB(fileConfig.Database.Path)

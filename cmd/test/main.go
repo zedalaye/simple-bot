@@ -75,8 +75,8 @@ func main() {
 
 	logStep("Prepare configuration...")
 	botConfig := fileConfig.ToBotConfig()
-	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%.2f, PriceOffset=%.2f",
-		botConfig.Pair, botConfig.QuoteAmount, botConfig.PriceOffset)
+	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%v, MaxBuys/Day=%d, RSIThreshold=%.2f, ProfitTarget=%.2f, VolatilityAdjustmment=%.2f",
+		botConfig.Pair, botConfig.QuoteAmount, botConfig.MaxBuysPerDay, botConfig.RSIThreshold, botConfig.ProfitTarget, botConfig.VolatilityAdjustment)
 
 	logStep("Check Telegram Bot configuration")
 	useTelegram := os.Getenv("TELEGRAM") == "1"
@@ -181,7 +181,9 @@ func main() {
 	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, MinQuoteAmount)
 	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
 
-	limitPrice := currentPrice - botConfig.PriceOffset
+	// For testing, use a simple fixed offset (similar to old behavior)
+	testOffset := 10.0 // Use a small fixed offset for testing
+	limitPrice := currentPrice - testOffset
 	baseAmount := buyAmountInQuoteAsset / limitPrice
 
 	buyOrder, err := exchg.PlaceLimitBuyOrder(botConfig.Pair, baseAmount, limitPrice)
@@ -228,10 +230,11 @@ func main() {
 
 	// 8. Créer un ordre de vente limite au prix + offset
 	logStep("Create limit sell order...")
-	sellPrice := currentPrice + botConfig.PriceOffset
+	sellOffset := currentPrice * 0.002 // 0.2% au-dessus du prix actuel (eq. 200$ pour un BTC à 100k)
+	sellPrice := currentPrice + sellOffset
 	sellAmountInBaseAsset := *buyOrder.Amount
 
-	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, botConfig.PriceOffset)
+	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, sellOffset)
 	logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
 
 	sellOrder, err := exchg.PlaceLimitSellOrder(botConfig.Pair, sellAmountInBaseAsset, sellPrice)
@@ -264,7 +267,7 @@ func main() {
 	logger.Infof("Exchange: %s", fileConfig.Exchange.Name)
 	logger.Infof("Trading pair: %s", botConfig.Pair)
 	logger.Infof("Current price: %.2f %s", currentPrice, quoteAsset)
-	logger.Infof("Price offset: %.2f %s", botConfig.PriceOffset, quoteAsset)
+	logger.Infof("Sell offset: %.2f %s", sellOffset, quoteAsset)
 	logger.Infof("%s balance: %.6f", quoteAsset, quoteBalance)
 	logger.Infof("%s balance: %.6f", baseAsset, baseBalance)
 	logger.Info("✓ All tests completed successfully!")
