@@ -220,10 +220,10 @@ func (b *Bot) handleBuySignal() {
 	// Calculate dynamic price offset based on RSI: -(0.1% + (RSI/100)%)
 	dynamicOffsetPercent := -((0.1 / 100.0) + (rsi/100.0)/100.0)
 	dynamicOffset := currentPrice * dynamicOffsetPercent
-	limitPrice := b.roundToPrecision(currentPrice-dynamicOffset, b.market.Precision.Price)
+	limitPrice := b.roundToPrecision(currentPrice+dynamicOffset, b.market.Precision.Price)
 	baseAmount := b.roundToPrecision(b.Config.QuoteAmount/limitPrice, b.market.Precision.Amount)
 
-	logger.Infof("[%s] Dynamic Offset: %.4f%% (RSI=%.2f, Offset=%.2f%%), Limit Price=%s",
+	logger.Infof("[%s] Dynamic Offset: %.4f (RSI=%.2f, Offset=%.2f%%), Limit Price=%s",
 		b.Config.ExchangeName, dynamicOffset, rsi, dynamicOffsetPercent*100, b.market.FormatPrice(limitPrice))
 
 	order, err := b.exchange.PlaceLimitBuyOrder(b.Config.Pair, baseAmount, limitPrice)
