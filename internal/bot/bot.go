@@ -76,7 +76,7 @@ type Candle struct {
 }
 
 type Bot struct {
-	config   config.BotConfig
+	Config   config.BotConfig
 	db       *database.DB
 	exchange Exchange
 	market   Market
@@ -85,7 +85,7 @@ type Bot struct {
 
 func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
 	bot := &Bot{
-		config:   config,
+		Config:   config,
 		db:       db,
 		exchange: exchange,
 		done:     make(chan bool),
@@ -107,15 +107,15 @@ func (b *Bot) Cleanup() {
 }
 
 func (b *Bot) initializeMarketPrecision() error {
-	logger.Infof("[%s] Fetching market data...", b.config.ExchangeName)
-	b.market = b.exchange.GetMarket(b.config.Pair)
-	logger.Infof("[%s] Base Asset: %s, Quote Asset: %s", b.config.ExchangeName, b.market.BaseAsset, b.market.QuoteAsset)
-	logger.Infof("[%s] Market precision: price=%f, amount=%f", b.config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
+	logger.Infof("[%s] Fetching market data...", b.Config.ExchangeName)
+	b.market = b.exchange.GetMarket(b.Config.Pair)
+	logger.Infof("[%s] Base Asset: %s, Quote Asset: %s", b.Config.ExchangeName, b.market.BaseAsset, b.market.QuoteAsset)
+	logger.Infof("[%s] Market precision: price=%f, amount=%f", b.Config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
 	return nil
 }
 
 func (b *Bot) Start(buyAtLaunch bool) error {
-	logger.Infof("[%s] Starting bot...", b.config.ExchangeName)
+	logger.Infof("[%s] Starting bot...", b.Config.ExchangeName)
 
 	b.handleOrderCheck()
 	b.handlePriceCheck()
@@ -131,21 +131,21 @@ func (b *Bot) Start(buyAtLaunch bool) error {
 }
 
 func (b *Bot) Stop() {
-	logger.Infof("[%s] Stopping bot...", b.config.ExchangeName)
+	logger.Infof("[%s] Stopping bot...", b.Config.ExchangeName)
 	close(b.done)
 }
 
 func (b *Bot) run() {
-	buyTicker := time.NewTicker(b.config.BuyInterval)
+	buyTicker := time.NewTicker(b.Config.BuyInterval)
 	defer buyTicker.Stop()
 
-	checkTicker := time.NewTicker(b.config.CheckInterval)
+	checkTicker := time.NewTicker(b.Config.CheckInterval)
 	defer checkTicker.Stop()
 
 	for {
 		select {
 		case <-b.done:
-			logger.Infof("[%s] Bot stopped gracefully", b.config.ExchangeName)
+			logger.Infof("[%s] Bot stopped gracefully", b.Config.ExchangeName)
 			return
 		case <-buyTicker.C:
 			b.handleBuySignal()
@@ -165,9 +165,9 @@ func (b *Bot) handleBuySignal() {
 		return
 	}
 
-	if todayBuyCount >= b.config.MaxBuysPerDay {
+	if todayBuyCount >= b.Config.MaxBuysPerDay {
 		logger.Infof("[%s] Daily buy limit reached (%d/%d), skipping RSI check",
-			b.config.ExchangeName, todayBuyCount, b.config.MaxBuysPerDay)
+			b.Config.ExchangeName, todayBuyCount, b.Config.MaxBuysPerDay)
 		return
 	}
 
@@ -179,39 +179,39 @@ func (b *Bot) handleBuySignal() {
 	}
 
 	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
-	if !ok || (quoteAssetBalance.Free < b.config.QuoteAmount) {
+	if !ok || (quoteAssetBalance.Free < b.Config.QuoteAmount) {
 		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
 		return
 	}
 
 	// Vérifier le RSI pour confirmer le signal d'achat
-	logger.Infof("[%s] Checking RSI for potential buy signal...", b.config.ExchangeName)
+	logger.Infof("[%s] Checking RSI for potential buy signal...", b.Config.ExchangeName)
 
-	rsi, err := b.calculateRSI(b.config.Pair, b.config.RSIPeriod)
+	rsi, err := b.CalculateRSI()
 	if err != nil {
 		logger.Errorf("Failed to calculate RSI: %v", err)
 		return
 	}
 
-	logger.Infof("[%s] Current RSI: %.2f", b.config.ExchangeName, rsi)
+	logger.Infof("[%s] Current RSI: %.2f", b.Config.ExchangeName, rsi)
 
-	if b.config.RSIThreshold > 0 && b.config.RSIThreshold < 100 {
-		if rsi > b.config.RSIThreshold {
+	if b.Config.RSIThreshold > 0 && b.Config.RSIThreshold < 100 {
+		if rsi > b.Config.RSIThreshold {
 			logger.Infof("[%s] RSI (%.2f) is too high (threshold: %.2f), skipping buy signal",
-				b.config.ExchangeName, rsi, b.config.RSIThreshold)
+				b.Config.ExchangeName, rsi, b.Config.RSIThreshold)
 			return
 		} else {
 			logger.Infof("[%s] RSI (%.2f) is below threshold (%.2f), proceeding with buy signal",
-				b.config.ExchangeName,
-				rsi, b.config.RSIThreshold)
+				b.Config.ExchangeName,
+				rsi, b.Config.RSIThreshold)
 		}
 	} else {
 		logger.Debug("RSI Threshold is not set. Skipping RSI check")
 	}
 
-	logger.Infof("[%s] Time to place a new Buy Order...", b.config.ExchangeName)
+	logger.Infof("[%s] Time to place a new Buy Order...", b.Config.ExchangeName)
 
-	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
+	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to get ticker data: %v", err)
 		return
@@ -221,12 +221,12 @@ func (b *Bot) handleBuySignal() {
 	dynamicOffsetPercent := -((0.1 / 100.0) + (rsi/100.0)/100.0)
 	dynamicOffset := currentPrice * dynamicOffsetPercent
 	limitPrice := b.roundToPrecision(currentPrice-dynamicOffset, b.market.Precision.Price)
-	baseAmount := b.roundToPrecision(b.config.QuoteAmount/limitPrice, b.market.Precision.Amount)
+	baseAmount := b.roundToPrecision(b.Config.QuoteAmount/limitPrice, b.market.Precision.Amount)
 
 	logger.Infof("[%s] Dynamic Offset: %.4f%% (RSI=%.2f, Offset=%.2f%%), Limit Price=%s",
-		b.config.ExchangeName, dynamicOffset, rsi, dynamicOffsetPercent*100, b.market.FormatPrice(limitPrice))
+		b.Config.ExchangeName, dynamicOffset, rsi, dynamicOffsetPercent*100, b.market.FormatPrice(limitPrice))
 
-	order, err := b.exchange.PlaceLimitBuyOrder(b.config.Pair, baseAmount, limitPrice)
+	order, err := b.exchange.PlaceLimitBuyOrder(b.Config.Pair, baseAmount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Buy Order: %v", err)
 		return
@@ -247,7 +247,7 @@ func (b *Bot) handleBuySignal() {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🌀 New Cycle on %s [%d]", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("🌀 New Cycle on %s [%d]", b.Config.ExchangeName, dbCycle.ID)
 	message += fmt.Sprintf("\nℹ️ Buy Order %s [%d]", *order.Id, dbOrder.ID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
@@ -260,7 +260,7 @@ func (b *Bot) handleBuySignal() {
 	}
 
 	logger.Infof("[%s] Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v, RSI=%.2f)",
-		b.config.ExchangeName,
+		b.Config.ExchangeName,
 		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
 		order.Id, dbOrder.ID, rsi)
 }
@@ -268,24 +268,24 @@ func (b *Bot) handleBuySignal() {
 func (b *Bot) handlePriceCheck() {
 	logger.Debug("Checking prices...")
 
-	currentPrice, err := b.exchange.GetPrice(b.config.Pair)
+	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to get ticker data: %v", err)
 		return
 	}
 
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
-	logger.Infof("[%s] Current price: %v", b.config.ExchangeName, currentPrice)
+	logger.Infof("[%s] Current price: %v", b.Config.ExchangeName, currentPrice)
 
 	// Calculer la volatilité pour ajuster le seuil de vente
-	volatility, err := b.calculateVolatility(b.config.Pair, b.config.VolatilityPeriod)
+	volatility, err := b.CalculateVolatility()
 	if err != nil {
 		logger.Errorf("Failed to calculate volatility: %v", err)
 		// Utiliser une valeur par défaut en cas d'erreur
 		volatility = 2.0 // 2% par défaut
-		logger.Infof("[%s] Using default (%.2f%%) volatility !", b.config.ExchangeName, volatility)
+		logger.Infof("[%s] Using default (%.2f%%) volatility !", b.Config.ExchangeName, volatility)
 	} else {
-		logger.Infof("[%s] Current volatility: %.2f%%", b.config.ExchangeName, volatility)
+		logger.Infof("[%s] Current volatility: %.2f%%", b.Config.ExchangeName, volatility)
 	}
 
 	positions, err := b.db.GetOpenPositions()
@@ -304,7 +304,7 @@ func (b *Bot) handlePriceCheck() {
 				continue
 			}
 			pos.MaxPrice = currentPrice
-			logger.Infof("[%s] Updated max price for position %v to %v", b.config.ExchangeName, pos.ID, pos.MaxPrice)
+			logger.Infof("[%s] Updated max price for position %v to %v", b.Config.ExchangeName, pos.ID, pos.MaxPrice)
 		}
 
 		// Calculer le seuil de profit dynamique basé sur la volatilité
@@ -314,11 +314,11 @@ func (b *Bot) handlePriceCheck() {
 
 		// Calculer l'ajustement basé sur la distance entre la volatilité et le seuil de base
 		// Peut-être négatif si la volatilité est inférieure au seuil de base
-		volatilityFactor := (volatility - b.config.ProfitTarget) / 100.0 // Convertir en décimal (4.0 -> 0.04)
-		adjustmentPercent := volatilityFactor * (b.config.VolatilityAdjustment / 100.0)
+		volatilityFactor := (volatility - b.Config.ProfitTarget) / 100.0 // Convertir en décimal (4.0 -> 0.04)
+		adjustmentPercent := volatilityFactor * (b.Config.VolatilityAdjustment / 100.0)
 
 		// Appliquer l'ajustement selon le niveau de volatilité
-		dynamicProfitPercent := (b.config.ProfitTarget / 100.0) + adjustmentPercent
+		dynamicProfitPercent := (b.Config.ProfitTarget / 100.0) + adjustmentPercent
 
 		// S'assurer que le seuil reste raisonnable (entre 0.1% et 15%)
 		if dynamicProfitPercent < 0.001 {
@@ -330,14 +330,14 @@ func (b *Bot) handlePriceCheck() {
 		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
 
 		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%)",
-			b.config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.config.ProfitTarget, volatility)
+			b.Config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.Config.ProfitTarget, volatility)
 
 		// Vérifier le profit minimum avec le seuil dynamique
 		if currentPrice >= pos.Price*dynamicProfitThreshold {
 			// Logique de trailing stop originale : vendre si le prix tombe de 0.5% par rapport au max
 			if currentPrice < (pos.MaxPrice * 0.995) {
 				logger.Infof("[%s] Price dropped 0.5%% from max (%.4f -> %.4f), placing sell order for position %v",
-					b.config.ExchangeName, pos.MaxPrice, currentPrice, pos.ID)
+					b.Config.ExchangeName, pos.MaxPrice, currentPrice, pos.ID)
 
 				b.placeSellOrder(pos, currentPrice)
 			}
@@ -369,7 +369,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	// consulter le carnet d'ordre pour se placer juste au-dessus de la meilleure offre
 	priceOffset := currentPrice * 0.002 // 0.2% au-dessus du prix actuel (eq. 200$ pour un BTC à 100k)
 	limitPrice := b.roundToPrecision(currentPrice+priceOffset, b.market.Precision.Price)
-	order, err := b.exchange.PlaceLimitSellOrder(b.config.Pair, pos.Amount, limitPrice)
+	order, err := b.exchange.PlaceLimitSellOrder(b.Config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
 		return
@@ -390,7 +390,7 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, dbCycle.ID)
 	message += fmt.Sprintf("\nℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
@@ -402,12 +402,12 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 	}
 
 	logger.Infof("[%s] Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
-		b.config.ExchangeName,
+		b.Config.ExchangeName,
 		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {
-	order, err := b.exchange.FetchOrder(dbOrder.ExternalID, b.config.Pair)
+	order, err := b.exchange.FetchOrder(dbOrder.ExternalID, b.Config.Pair)
 	if err != nil {
 		logger.Errorf("Failed to fetch Order (ID=%v): %v", dbOrder.ExternalID, err)
 		return
@@ -453,7 +453,7 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.Config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
 	if dbOrder.Side == database.Buy {
 		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
@@ -467,7 +467,7 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("[%s] Order %v Cancelled (cancelled manually on exchange)", b.config.ExchangeName, order.Id)
+	logger.Infof("[%s] Order %v Cancelled (cancelled manually on exchange)", b.Config.ExchangeName, order.Id)
 }
 
 func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
@@ -477,7 +477,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, dbCycle.ID)
 	message += fmt.Sprintf("\n✅ Buy Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
@@ -489,7 +489,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	}
 
 	logger.Infof("[%s] Buy Order Filled: %s %s at %s %s (ID=%v)",
-		b.config.ExchangeName,
+		b.Config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
 
@@ -502,7 +502,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 			logger.Errorf("Failed to update order position in database: %v", err)
 		}
 		logger.Infof("[%s] Position created (ID=%v, Price=%v, Amount=%v)",
-			b.config.ExchangeName,
+			b.Config.ExchangeName,
 			position.ID, position.Price, position.Amount)
 	}
 }
@@ -514,8 +514,8 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	}
 
 	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] COMPLETE", b.config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\n✅ [%s] Sell Order Filled: %s", b.config.ExchangeName, *order.Id)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] COMPLETE", b.Config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("\n✅ [%s] Sell Order Filled: %s", b.Config.ExchangeName, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
@@ -537,7 +537,7 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	}
 
 	logger.Infof("[%s] Sell Order Filled: %s %s at %s %s (ID=%s)",
-		b.config.ExchangeName,
+		b.Config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		*order.Id)
 
@@ -546,7 +546,7 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		if err != nil {
 			logger.Errorf("Failed to delete position from database: %v", err)
 		} else {
-			logger.Infof("[%s] Position deleted: ID=%v", b.config.ExchangeName, *dbOrder.PositionID)
+			logger.Infof("[%s] Position deleted: ID=%v", b.Config.ExchangeName, *dbOrder.PositionID)
 		}
 	}
 }
@@ -554,7 +554,7 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 func (b *Bot) ShowStatistics() {
 	if stats, err := b.db.GetStats(); err == nil {
 		logger.Infof("[%s] Positions[Active=%d, Value=%.2f], Orders[Pending=%d, Filled=%d, Cancelled=%d]",
-			b.config.ExchangeName,
+			b.Config.ExchangeName,
 			stats["active_positions"],
 			stats["total_positions_value"],
 			stats["pending_orders"],
@@ -578,9 +578,10 @@ func (m *Market) FormatPrice(price float64) string {
 }
 
 // calculateVolatility calcule la volatilité quotidienne à partir des prix de clôture
-func (b *Bot) calculateVolatility(pair string, period int) (float64, error) {
+func (b *Bot) CalculateVolatility() (float64, error) {
+	period := b.Config.VolatilityPeriod
 	since := time.Now().AddDate(0, 0, -period).UnixMilli()
-	candles, err := b.exchange.FetchCandles(pair, "4h", &since, int64(period*6))
+	candles, err := b.exchange.FetchCandles(b.Config.Pair, "4h", &since, int64(period*6))
 	if err != nil {
 		logger.Errorf("Failed to fetch OHLCV data: %v", err)
 		return 0, err
@@ -622,16 +623,17 @@ func (b *Bot) calculateVolatility(pair string, period int) (float64, error) {
 }
 
 // calculateRSI calcule l'indice de force relative (RSI) pour une période donnée
-func (b *Bot) calculateRSI(pair string, period int) (float64, error) {
+func (b *Bot) CalculateRSI() (float64, error) {
 	// Récupérer suffisamment de données pour le calcul RSI
+	period := b.Config.RSIPeriod
 	since := time.Now().AddDate(0, 0, -period).UnixMilli()
-	candles, err := b.exchange.FetchCandles(pair, "1h", &since, int64(period*24)) // 3x la période pour stabilité
+	candles, err := b.exchange.FetchCandles(b.Config.Pair, "4h", &since, 500)
 	if err != nil {
 		logger.Errorf("Failed to fetch candles for RSI: %v", err)
 		return 0, err
 	}
 
-	if len(candles) < 2 {
+	if len(candles) < (period + 1) {
 		return 0, fmt.Errorf("not enough candle data for RSI calculation")
 	}
 
@@ -655,8 +657,8 @@ func (b *Bot) calculateRSI(pair string, period int) (float64, error) {
 	avgLoss := losses[0]
 
 	for i := 1; i < len(gains); i++ {
-		avgGain = (avgGain*(float64(period*24)-1) + gains[i]) / float64(period*24)
-		avgLoss = (avgLoss*(float64(period*24)-1) + losses[i]) / float64(period*24)
+		avgGain = (avgGain*(float64(period)-1) + gains[i]) / float64(period)
+		avgLoss = (avgLoss*(float64(period)-1) + losses[i]) / float64(period)
 	}
 
 	// Calculer le RSI
