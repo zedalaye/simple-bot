@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/ccxt/ccxt/go/v4"
+	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
 const (
@@ -88,13 +88,14 @@ type Exchange struct {
 func NewExchange(exchangeName string) *Exchange {
 	var exchange ccxt.IExchange
 
-	if exchangeName == "mexc" {
+	switch exchangeName {
+	case "mexc":
 		exchange = ccxt.CreateExchange("mexc", map[string]interface{}{
 			"apiKey":          os.Getenv("API_KEY"),
 			"secret":          os.Getenv("SECRET"),
 			"enableRateLimit": true,
 		})
-	} else if exchangeName == "hyperliquid" {
+	case "hyperliquid":
 		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
 			"walletAddress": os.Getenv("WALLET_ADDRESS"),
 			"privateKey":    os.Getenv("PRIVATE_KEY"),
