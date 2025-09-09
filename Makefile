@@ -1,14 +1,13 @@
 # Makefile pour simplifier la compilation
 
 .PHONY: build-all \
-        build-bot build-admin build-test build-volatility build-rsi \
+        build-bot build-admin build-test build-volatility build-rsi build-order build-fix-cycles \
         build-image \
-        build-fix-cycles \
         clean \
         run-bot run-admin run-web run-test
 
 # Construire tous les binaires
-build-all: build-bot build-admin build-web build-test build-volatility build-rsi
+build-all: build-bot build-admin build-web build-test build-volatility build-rsi build-order build-fix-cycles
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -28,6 +27,9 @@ build-volatility:
 
 build-rsi:
 	go build -o bin/rsi ./cmd/rsi
+
+build-order:
+	go build -o bin/order ./cmd/order	
 
 build-fix-cycles:
 	go build -o bin/fix-cycles ./cmd/fix-cycles

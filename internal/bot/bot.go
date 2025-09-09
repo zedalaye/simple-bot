@@ -21,7 +21,8 @@ type Exchange interface {
 	CancelOrder(id string, symbol string) (Order, error)
 	GetPrice(pair string) (float64, error)
 	FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]Candle, error)
-	FetchTrades(pair string, since *int64, limit int64) ([]Trade, error)
+	FetchMyTrades(pair string, since *int64, until *int64, limit int64) ([]Trade, error)
+	FetchTradesForOrder(id string, pair string) ([]Trade, error)
 }
 
 type Market struct {
@@ -46,7 +47,6 @@ type Order struct {
 	Id        *string
 	Price     *float64
 	Amount    *float64
-	Fee       *float64
 	Status    *string
 	Timestamp *int64
 }

@@ -142,7 +142,6 @@ func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64
 	}
 	//fmt.Printf("DEBUG. Buy Order=%+v\n", result)
 	return e.FetchOrder(*result.Id, pair)
-	//return toBotOrder(result), nil
 }
 
 func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float64) (bot.Order, error) {
@@ -159,7 +158,6 @@ func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float6
 	}
 	//fmt.Printf("DEBUG. Sell Order=%+v\n", result)
 	return e.FetchOrder(*result.Id, pair)
-	// return toBotOrder(result), nil
 }
 
 func (e *Exchange) GetMarket(pair string) bot.Market {
@@ -228,28 +226,44 @@ func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, lim
 	return botCandles, nil
 }
 
-func withFetchTradeOptions(since *int64, limit int64) ccxt.FetchTradesOptions {
+func withFetchTradeOptions(since *int64, until *int64, limit int64) ccxt.FetchTradesOptions {
 	return func(opts *ccxt.FetchTradesOptionsStruct) {
 		if since != nil {
 			opts.Since = since
 		}
 		opts.Limit = &limit
+		if until != nil {
+			opts.Params = &map[string]interface{}{}
+			(*opts.Params)["until"] = *until
+		}
 	}
 }
 
-func (e *Exchange) FetchTrades(pair string, since *int64, limit int64) ([]bot.Trade, error) {
+func withFetchMyTradeOptions(pair string, since *int64, until *int64, limit int64) ccxt.FetchMyTradesOptions {
+	return func(opts *ccxt.FetchMyTradesOptionsStruct) {
+		opts.Symbol = &pair
+		if since != nil {
+			opts.Since = since
+		}
+		if until != nil {
+			opts.Params = &map[string]interface{}{}
+			(*opts.Params)["until"] = *until
+		}
+		opts.Limit = &limit
+	}
+}
+
+func (e *Exchange) FetchMyTrades(pair string, since *int64, until *int64, limit int64) ([]bot.Trade, error) {
 	var result []ccxt.Trade
-	e.IExchange.SetVerbose(true)
+	// e.IExchange.SetVerbose(true)
 	err := retryWithBackoff(func() error {
-		trades, tradeErr := e.IExchange.FetchTrades(pair,
-			withFetchTradeOptions(since, limit),
-		)
+		trades, tradeErr := e.IExchange.FetchMyTrades(withFetchMyTradeOptions(pair, since, until, limit))
 		if tradeErr == nil {
 			result = trades
 		}
 		return tradeErr
 	})
-	e.IExchange.SetVerbose(false)
+	// e.IExchange.SetVerbose(false)
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +278,7 @@ func (e *Exchange) FetchTrades(pair string, since *int64, limit int64) ([]bot.Tr
 
 func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	var result ccxt.Order
+	// e.IExchange.SetVerbose(true)
 	err := retryWithBackoff(func() error {
 		order, orderErr := e.IExchange.FetchOrder(id, ccxt.WithFetchOrderSymbol(symbol))
 		if orderErr == nil {
@@ -271,11 +286,43 @@ func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 		}
 		return orderErr
 	})
+	// e.IExchange.SetVerbose(false)
 	if err != nil {
 		return bot.Order{}, err
 	}
 	// fmt.Printf("DEBUG. Fetched Order=%+v\n", result)
 	return toBotOrder(result), nil
+}
+
+func withFetchMyTradeForOrderOptions(pair string, orderId string) ccxt.FetchMyTradesOptions {
+	return func(opts *ccxt.FetchMyTradesOptionsStruct) {
+		opts.Symbol = &pair
+		opts.Params = &map[string]interface{}{}
+		(*opts.Params)["orderId"] = orderId
+	}
+}
+
+func (e *Exchange) FetchTradesForOrder(id string, symbol string) ([]bot.Trade, error) {
+	var result []ccxt.Trade
+	// e.IExchange.SetVerbose(true)
+	err := retryWithBackoff(func() error {
+		trade, tradeErr := e.IExchange.FetchMyTrades(withFetchMyTradeForOrderOptions(symbol, id))
+		if tradeErr == nil {
+			result = trade
+		}
+		return tradeErr
+	})
+	// e.IExchange.SetVerbose(false)
+	if err != nil {
+		return nil, err
+	}
+
+	botTrades := make([]bot.Trade, len(result))
+	for i, trade := range result {
+		//fmt.Printf("DEBUG. Trade=%+v\n", trade)
+		botTrades[i] = toBotTrade(trade)
+	}
+	return botTrades, nil
 }
 
 func (e *Exchange) CancelOrder(id string, symbol string) (bot.Order, error) {
@@ -340,7 +387,6 @@ func toBotOrder(order ccxt.Order) bot.Order {
 		Id:        order.Id,
 		Price:     order.Price,
 		Amount:    order.Amount,
-		Fee:       order.Fee.Cost,
 		Status:    order.Status,
 		Timestamp: order.Timestamp,
 	}
