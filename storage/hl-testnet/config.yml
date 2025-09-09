@@ -10,7 +10,7 @@ trading:
 
   quote_amount: 15.0            # Amount in USDC per buy order
   max_buys_per_day: 4           # Max buy orders per day
-  rsi_period: 1                 # Days of data (1h candles) for RSI calculation
+  rsi_period: 14                # Days of data (4h candles) for RSI calculation (14 is standard)
   rsi_threshold: 70.0           # RSI threshold (> 70 = no buy signal), 100 to disable
 
   profit_target: 0.5            # Base profit target (2.0 = 2% profit)
