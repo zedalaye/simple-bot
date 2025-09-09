@@ -391,14 +391,15 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 	}
 
 	if order.Status != nil {
-		if *order.Status == "closed" {
+		switch *order.Status {
+		case "closed":
 			b.handleClosedOrder(dbOrder, order)
-		} else if *order.Status == "canceled" {
+		case "canceled":
 			b.handleCanceledOrder(dbOrder, order)
-		} else if *order.Status == "open" {
+		case "open":
 			// Removed automatic cancel logic - orders will remain active until filled or manually cancelled
 			logger.Debugf("Order %v still open", dbOrder.ExternalID)
-		} else {
+		default:
 			logger.Warnf("Unsupported Order Status: %v", *order.Status)
 		}
 	} else {
