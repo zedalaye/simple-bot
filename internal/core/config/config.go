@@ -74,7 +74,6 @@ func LoadConfig() (*FileConfig, error) {
 			// Buy
 			QuoteAmount:   50.0,
 			MaxBuysPerDay: 4,
-			RSIPeriod:     1,
 			RSIThreshold:  70.0,
 			// Sell
 			ProfitTarget:         2.0,
@@ -148,10 +147,10 @@ exchange:
 trading:
   pair: BTC/USDC                 # Trading pair
 
-	quote_amount: 50.0             # Amount in quote currency (USDC) per buy order
-  max_buys_per_day: 4            # Maximum number of buy orders per 24 hours (1-24)
-	rsi_period: 1                  # Period for RSI calculation
-	rsi_threshold: 100.0           # RSI threshold (> 70 = no buy signal), 100 to disable
+	quote_amount: 50.0           # Amount in quote currency (USDC) per buy order
+  max_buys_per_day: 4          # Maximum number of buy orders per 24 hours (1-24)
+	rsi_period: 14               # Days of data (4h candles) for RSI calculation (14 is standard)
+	rsi_threshold: 70.0          # RSI threshold (> 70 = no buy signal), 100 to disable
 
   profit_target: 2.0             # Profit target in percentage (2.0 = 2%) to trigger sell logic
   volatility_period: 7           # Days of data for volatility calculation
@@ -159,7 +158,7 @@ trading:
 	
 # Timing intervals
 intervals:
-  buy_interval_hours: 24         # Hours between buy attempts
+  buy_interval_hours: 4          # Hours between buy attempts
   check_interval_minutes: 60     # Minutes between price/order checks
 
 # Database configuration
@@ -194,8 +193,17 @@ func validateConfig(config *FileConfig) error {
 	if config.Trading.QuoteAmount <= 0 {
 		return fmt.Errorf("trading.quote_amount must be positive")
 	}
+	if config.Trading.RSIPeriod < 1 {
+		return fmt.Errorf("trading.rsi_period must be at least 1")
+	}
 	if config.Trading.RSIThreshold < 0 || config.Trading.RSIThreshold > 100 {
 		return fmt.Errorf("trading.rsi_threshold must be between 0 and 100")
+	}
+	if config.Trading.VolatilityPeriod < 1 {
+		return fmt.Errorf("trading.volatility_period must be at least 1")
+	}
+	if config.Trading.VolatilityAdjustment < 0 {
+		return fmt.Errorf("trading.volatility_adjustment cannot be negative")
 	}
 	if config.Trading.ProfitTarget <= 0 {
 		return fmt.Errorf("trading.profit_threshold must be greater than 0")
