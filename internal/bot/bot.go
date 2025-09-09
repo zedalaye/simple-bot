@@ -193,7 +193,7 @@ func (b *Bot) handleBuySignal() {
 				b.config.ExchangeName, rsi, b.config.RSIThreshold)
 			return
 		} else {
-			logger.Infof("[%s] RSI (%.2f) is below threashold (%.2f), proceeding with buy signal",
+			logger.Infof("[%s] RSI (%.2f) is below threshold (%.2f), proceeding with buy signal",
 				b.config.ExchangeName,
 				rsi, b.config.RSIThreshold)
 		}
