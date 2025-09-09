@@ -5,11 +5,12 @@ import (
 	"bot/internal/exchange"
 	"bot/internal/logger"
 	"flag"
-	"github.com/joho/godotenv"
 	"log"
 	"math"
 	"os"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -72,9 +73,8 @@ func main() {
 	}
 	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
 
-	// 1 mois
-	since := time.Now().AddDate(0, -6, 0).UnixMilli()
-	candles, err := exchg.FetchCandles(botConfig.Pair, "4h", &since, 500)
+	since := time.Now().AddDate(0, 0, -botConfig.VolatilityPeriod).UnixMilli()
+	candles, err := exchg.FetchCandles(botConfig.Pair, "1h", &since, 500)
 	if err != nil {
 		logger.Fatalf("Failed to fetch candles: %v", err)
 	}
