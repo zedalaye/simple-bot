@@ -30,9 +30,9 @@ For each exchange you want to use, create a directory structure within the `stor
   .env.tg       # To send notifications through a Telgram Bot Instance  
 ```
 
-Create or adapt the `config.yml` and `.env` files (for exchange secrets), see below.
+Create or adapt the [`config.yml`](storage/mexc/config.yml) and `.env` files (for exchange secrets), see below.
 
-Make sure `config.yml` references the right `.env` and specifies a database name like `db/bot.db`
+Make sure `config.yml` specifies a database name like `db/bot.db`
 
 ```bash
 $ ./simple-bot [*mexc*|hl|all] up
@@ -42,14 +42,16 @@ The syntax is :
 
 ```
 $ ./simple-bot -h
-Usage: ./simple-bot [mexc|hl|all] [up|down|restart|logs|status|backup]
+Usage: ./simple-bot [<exchange>|all] [up|down|restart|logs|status|backup|run]
 Examples:
-  ./simple-bot mexc up      # bot + webui MEXC
-  ./simple-bot hl up        # bot + webui Hyperliquid
-  ./simple-bot all up       # MEXC *et* Hyperliquid
-  ./simple-bot all down     # Stop everything
-  ./simple-bot all status   # Status of all containers
+  ./simple-bot mexc up      # Lance bot + webui MEXC
+  ./simple-bot hl up        # Lance bot + webui Hyperliquid
+  ./simple-bot all up       # Lance MEXC ET Hyperliquid
+  ./simple-bot all down     # Arrête tout
+  ./simple-bot all status   # Status de tous les containers
+  ./simple-bot all backup   # Backup des bases de données
   ./simple-bot mexc logs    # Logs MEXC
+  ./simple-bot mexc run     # Lance une commande MEXC
 ```
 
 ## Build the bot manually
@@ -76,7 +78,7 @@ The main executable is `/bin/bot`
 
 ### For MEXC
 
-Adjust bot parameters in `storage/mexc/config.yml` and create a `storage/mexc/.env` file containing :
+Adjust bot parameters in [`storage/mexc/config.yml`](storage/mexc/config.yml) and create a `storage/mexc/.env` file containing :
 
 ```env
 API_KEY=<MEXC API Key for this bot>
@@ -84,12 +86,12 @@ SECRET=<MEXC API Key "Secret">
 ```
 
 ```bash
-$ ./bin/bot --bot-dir storage/mexc
+$ ./bin/bot --root storage/mexc
 ```
 
 ### For Hyperliquid
 
-Adjust bot parameters in `storage/hl/config.yml` and create a `storage/hl/.env` file containing secrets :
+Adjust bot parameters in [`storage/hl/config.yml`](storage/hl/config.yml) and create a `storage/hl/.env` file containing secrets :
 
 ```env
 WALLET_ADDRESS=<YOUR Wallet Address on Arbitrum Blockchain>
@@ -97,7 +99,7 @@ PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bot>
 ```
 
 ```bash
-$ ./bin/bot --bot-dir storage/hl
+$ ./bin/bot --root storage/hl
 ```
 
 ## Receive notifications on Telegram
@@ -131,5 +133,5 @@ When the `storage/.env.tg` file is available, Telegram notifications are automat
 ## Start the Web UI
 
 ```bash
-$ ./bin/web --bot-dir storage/<exchange>
+$ ./bin/web --root storage/<exchange>
 ```
