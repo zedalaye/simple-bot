@@ -98,6 +98,14 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	return bot, nil
 }
 
+func (b *Bot) Cleanup() {
+	if b.db != nil {
+		logger.Infof("[%s] Close database connection...", b.Config.ExchangeName)
+		_ = b.db.Close()
+		b.db = nil
+	}
+}
+
 func (b *Bot) initializeMarketPrecision() error {
 	logger.Infof("[%s] Fetching market data...", b.config.ExchangeName)
 	b.market = b.exchange.GetMarket(b.config.Pair)
