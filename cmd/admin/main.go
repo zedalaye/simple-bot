@@ -51,7 +51,12 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func(db *database.DB) {
+		err := db.Close()
+		if err != nil {
+			logger.Fatalf("Failed to close database: %v", err)
+		}
+	}(db)
 
 	// Retourne au dossier racine par défaut
 	err = os.Chdir(projectRoot)
