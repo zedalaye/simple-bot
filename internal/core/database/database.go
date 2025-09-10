@@ -25,12 +25,13 @@ const (
 )
 
 type Position struct {
-	ID        int       `json:"id"`
-	Price     float64   `json:"price"`
-	Amount    float64   `json:"amount"`
-	MaxPrice  float64   `json:"max_price"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          int       `json:"id"`
+	Price       float64   `json:"price"`
+	Amount      float64   `json:"amount"`
+	MaxPrice    float64   `json:"max_price"`
+	TargetPrice float64   `json:"target_price"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Order struct {
@@ -118,6 +119,14 @@ var migrations = []Migration{
 			);
 		`,
 	},
+	{
+		ID:   5,
+		Name: "add_target_price_to_positions",
+		SQL: `
+			ALTER TABLE positions 
+				ADD COLUMN target_price REAL DEFAULT 0.0;
+		`,
+	},
 }
 
 type DB struct {
@@ -193,9 +202,9 @@ func (db *DB) applyMigrations() error {
 }
 
 // Positions
-func (db *DB) CreatePosition(price, amount float64) (*Position, error) {
-	query := `INSERT INTO positions (price, amount) VALUES (?, ?)`
-	result, err := db.conn.Exec(query, price, amount)
+func (db *DB) CreatePosition(price, targetPrice, amount float64) (*Position, error) {
+	query := `INSERT INTO positions (price, target_price, amount) VALUES (?, ?, ?)`
+	result, err := db.conn.Exec(query, price, targetPrice, amount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create position: %w", err)
 	}
@@ -210,14 +219,14 @@ func (db *DB) CreatePosition(price, amount float64) (*Position, error) {
 
 func (db *DB) GetPosition(id int) (*Position, error) {
 	query := `
-		SELECT id, price, amount, max_price, created_at, updated_at 
+		SELECT id, price, amount, max_price, target_price, created_at, updated_at 
 		FROM positions 
 		WHERE id = ?
 	`
 	row := db.conn.QueryRow(query, id)
 
 	var pos Position
-	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
+	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &pos.CreatedAt, &pos.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get position: %w", err)
 	}
@@ -227,7 +236,7 @@ func (db *DB) GetPosition(id int) (*Position, error) {
 
 func (db *DB) GetAllPositions() ([]Position, error) {
 	query := `
-		SELECT id, price, amount, max_price, created_at, updated_at 
+		SELECT id, price, amount, max_price, target_price, created_at, updated_at 
 		FROM positions 
 		ORDER BY created_at DESC
 	`
@@ -240,7 +249,7 @@ func (db *DB) GetAllPositions() ([]Position, error) {
 	var positions []Position
 	for rows.Next() {
 		var pos Position
-		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &pos.CreatedAt, &pos.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -252,7 +261,7 @@ func (db *DB) GetAllPositions() ([]Position, error) {
 
 func (db *DB) GetOpenPositions() ([]Position, error) {
 	query := `
-		SELECT p.id, p.price, p.amount, p.max_price, p.created_at, p.updated_at 
+		SELECT p.id, p.price, p.amount, p.max_price, p.target_price, p.created_at, p.updated_at 
 		FROM positions p
 		WHERE not exists (
 			SELECT * FROM orders o 
@@ -269,7 +278,7 @@ func (db *DB) GetOpenPositions() ([]Position, error) {
 	var positions []Position
 	for rows.Next() {
 		var pos Position
-		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.CreatedAt, &pos.UpdatedAt)
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &pos.CreatedAt, &pos.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -284,6 +293,15 @@ func (db *DB) UpdatePositionMaxPrice(id int, maxPrice float64) error {
 	_, err := db.conn.Exec(query, maxPrice, id)
 	if err != nil {
 		return fmt.Errorf("failed to update max_price for position %d: %v", id, err)
+	}
+	return nil
+}
+
+func (db *DB) UpdatePositionTargetPrice(id int, targetPrice float64) error {
+	query := `UPDATE positions SET target_price = ? WHERE id = ?`
+	_, err := db.conn.Exec(query, targetPrice, id)
+	if err != nil {
+		return fmt.Errorf("failed to update target_price for position %d: %v", id, err)
 	}
 	return nil
 }

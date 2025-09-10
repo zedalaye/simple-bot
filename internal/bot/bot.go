@@ -276,7 +276,7 @@ func (b *Bot) handlePriceCheck() {
 	}
 
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
-	logger.Infof("[%s] Current price: %v", b.Config.ExchangeName, currentPrice)
+	logger.Infof("[%s] Current price: %s", b.Config.ExchangeName, b.market.FormatPrice(currentPrice))
 
 	// Calculer la volatilité pour ajuster le seuil de vente
 	volatility, err := b.CalculateVolatility()
@@ -301,11 +301,12 @@ func (b *Bot) handlePriceCheck() {
 		if currentPrice > pos.MaxPrice {
 			err := b.db.UpdatePositionMaxPrice(pos.ID, currentPrice)
 			if err != nil {
-				logger.Errorf("Failed to update max price for position %v: %v", pos.ID, err)
+				logger.Errorf("Failed to update max price for position %d: %v", pos.ID, err)
 				continue
 			}
 			pos.MaxPrice = currentPrice
-			logger.Infof("[%s] Updated max price for position %v to %v", b.Config.ExchangeName, pos.ID, pos.MaxPrice)
+			logger.Infof("[%s] Position %d, updated MaxPrice → %s",
+				b.Config.ExchangeName, pos.ID, b.market.FormatPrice(pos.MaxPrice))
 		}
 
 		// Calculer le seuil de profit dynamique basé sur la volatilité
@@ -331,16 +332,23 @@ func (b *Bot) handlePriceCheck() {
 		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
 		targetPrice := pos.Price * dynamicProfitThreshold
 
-		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%) → Target: %s %s",
-			b.Config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.Config.ProfitTarget, volatility,
-			b.market.FormatPrice(targetPrice), b.market.QuoteAsset)
+		if targetPrice != pos.TargetPrice {
+			err := b.db.UpdatePositionTargetPrice(pos.ID, targetPrice)
+			if err != nil {
+				logger.Errorf("Failed to update target price for position %d: %v", pos.ID, err)
+			} else {
+				pos.TargetPrice = targetPrice
+				logger.Infof("[%s] Position %d, updated TargetPrice → %s (DynamicProfit=%.2f%%, Volatility=%.2f%%)",
+					b.Config.ExchangeName, pos.ID, b.market.FormatPrice(pos.TargetPrice), dynamicProfitPercent*100, volatility)
+			}
+		}
 
 		// Vérifier le profit minimum avec le seuil dynamique
 		if currentPrice >= targetPrice {
 			// Logique de trailing stop originale : vendre si le prix tombe de 0.5% par rapport au max
 			if currentPrice < (pos.MaxPrice * 0.995) {
-				logger.Infof("[%s] Price dropped 0.5%% from max (%.4f -> %.4f), placing sell order for position %v",
-					b.Config.ExchangeName, pos.MaxPrice, currentPrice, pos.ID)
+				logger.Infof("[%s] Position %d, price dropped: %.4f → %.4f, time to sell!",
+					b.Config.ExchangeName, pos.ID, pos.MaxPrice, currentPrice)
 
 				b.placeSellOrder(pos, currentPrice)
 			}
@@ -496,7 +504,10 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
 
-	position, err := b.db.CreatePosition(*order.Price, *order.Amount)
+	// Par défaut, le prix cible est basé sur le profit target configuré
+	targetPrice := *order.Price * (1.0 + b.Config.ProfitTarget/100.0)
+
+	position, err := b.db.CreatePosition(*order.Price, targetPrice, *order.Amount)
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
 	} else {
@@ -504,9 +515,13 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		if err != nil {
 			logger.Errorf("Failed to update order position in database: %v", err)
 		}
-		logger.Infof("[%s] Position created (ID=%v, Price=%v, Amount=%v)",
+		logger.Infof("[%s] Position created (ID=%v, Price=%s, Amount=%s, TargetPrice=%s)",
 			b.Config.ExchangeName,
-			position.ID, position.Price, position.Amount)
+			position.ID,
+			b.market.FormatPrice(position.Price),
+			b.market.FormatAmount(position.Amount),
+			b.market.FormatPrice(position.TargetPrice),
+		)
 	}
 }
 

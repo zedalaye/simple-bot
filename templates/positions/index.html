@@ -22,6 +22,7 @@
                     <th><i class="bi bi-hash me-1"></i>ID</th>
                     <th><i class="bi bi-currency-euro me-1"></i>Prix Achat</th>
                     <th><i class="bi bi-graph-up me-1"></i>Prix Max</th>
+                    <th><i class="bi bi-bullseye me-1"></i>Prix Cible</th>
                     <th><i class="bi bi-pie-chart me-1"></i>Quantité</th>
                     <th><i class="bi bi-calculator me-1"></i>Valeur</th>
                     <th><i class="bi bi-calendar me-1"></i>Créé le</th>
@@ -34,6 +35,7 @@
                     <td><strong>#{{.ID}}</strong></td>
                     <td class="text-info">{{printf "%.2f" .Price}}</td>
                     <td class="text-success">{{printf "%.2f" .MaxPrice}}</td>
+                    <td class="text-warning">{{printf "%.2f" .TargetPrice}}</td>
                     <td>{{printf "%.6f" .Amount}}</td>
                     <td class="text-primary fw-bold">{{printf "%.2f" (.Value)}}</td>
                     <td>{{.CreatedAt.Format "02/01/2006 15:04"}}</td>
