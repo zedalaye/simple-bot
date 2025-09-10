@@ -57,6 +57,7 @@ func LoadBot(projectRoot, botDir string) (*bot.Bot, error) {
 	logger.Infof("  Profit Target           %.2f%%", botConfig.ProfitTarget)
 	logger.Infof("  Volatility Adjustmment  %.2f%%", botConfig.VolatilityAdjustment)
 	logger.Infof("  Trailing Stop Delta     %.2f%%", botConfig.TrailingStopDelta)
+	logger.Infof("  Sell Offset             %.2f%%", botConfig.SellOffset)
 
 	// Initialisation de la base de données
 	db, err := database.NewDB(fileConfig.Database.Path)
