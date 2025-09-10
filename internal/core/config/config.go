@@ -163,7 +163,7 @@ trading:
   volatility_period: 7           # Days of data for volatility calculation
   volatility_adjustment: 50.0    # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
   trailing_stop_delta: 0.1       # Trailing Stop Delta in % (sell when the price drop under 0.1% < of MaxPrice)
-	sell_offset: 0.1               # Sell Offset in % above current price to stay maker
+  sell_offset: 0.1               # Sell Offset in % above current price to stay maker
 
 # Timing intervals
 intervals:
