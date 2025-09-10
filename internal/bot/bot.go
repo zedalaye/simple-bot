@@ -329,12 +329,14 @@ func (b *Bot) handlePriceCheck() {
 		}
 
 		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
+		targetPrice := pos.Price * dynamicProfitThreshold
 
-		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%)",
-			b.Config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.Config.ProfitTarget, volatility)
+		logger.Infof("[%s] Dynamic profit threshold for position %v: %.2f%% (base: %.1f%%, volatility: %.2f%%) → Target: %s %s",
+			b.Config.ExchangeName, pos.ID, dynamicProfitPercent*100, b.Config.ProfitTarget, volatility,
+			b.market.FormatPrice(targetPrice), b.market.QuoteAsset)
 
 		// Vérifier le profit minimum avec le seuil dynamique
-		if currentPrice >= pos.Price*dynamicProfitThreshold {
+		if currentPrice >= targetPrice {
 			// Logique de trailing stop originale : vendre si le prix tombe de 0.5% par rapport au max
 			if currentPrice < (pos.MaxPrice * 0.995) {
 				logger.Infof("[%s] Price dropped 0.5%% from max (%.4f -> %.4f), placing sell order for position %v",
