@@ -30,6 +30,7 @@ type Position struct {
 	Amount      float64   `json:"amount"`
 	MaxPrice    float64   `json:"max_price"`
 	TargetPrice float64   `json:"target_price"`
+	StrategyID  *int      `json:"strategy_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -43,16 +44,67 @@ type Order struct {
 	Fees       float64     `json:"fees"`
 	Status     OrderStatus `json:"status"`
 	PositionID *int        `json:"position_id,omitempty"` // Pour lier les ordres de vente aux positions
+	StrategyID *int        `json:"strategy_id,omitempty"`
 	CreatedAt  time.Time   `json:"created_at"`
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type Cycle struct {
-	ID        int       `json:"id"`
-	BuyOrder  Order     `json:"buy_order"`
-	SellOrder *Order    `json:"sell_order,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         int       `json:"id"`
+	BuyOrder   Order     `json:"buy_order"`
+	SellOrder  *Order    `json:"sell_order,omitempty"`
+	StrategyID *int      `json:"strategy_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type Strategy struct {
+	ID                   int        `json:"id"`
+	Name                 string     `json:"name"`
+	Description          string     `json:"description"`
+	Enabled              bool       `json:"enabled"`
+	AlgorithmName        string     `json:"algorithm_name"`
+	CronExpression       string     `json:"cron_expression"`
+	QuoteAmount          float64    `json:"quote_amount"`
+	MaxConcurrentOrders  int        `json:"max_concurrent_orders"`
+	RSIThreshold         *float64   `json:"rsi_threshold,omitempty"`
+	RSIPeriod            *int       `json:"rsi_period,omitempty"`
+	RSITimeframe         string     `json:"rsi_timeframe"`
+	MACDFastPeriod       int        `json:"macd_fast_period"`
+	MACDSlowPeriod       int        `json:"macd_slow_period"`
+	MACDSignalPeriod     int        `json:"macd_signal_period"`
+	MACDTimeframe        string     `json:"macd_timeframe"`
+	BBPeriod             int        `json:"bb_period"`
+	BBMultiplier         float64    `json:"bb_multiplier"`
+	BBTimeframe          string     `json:"bb_timeframe"`
+	ProfitTarget         float64    `json:"profit_target"`
+	TrailingStopDelta    float64    `json:"trailing_stop_delta"`
+	SellOffset           float64    `json:"sell_offset"`
+	VolatilityPeriod     *int       `json:"volatility_period,omitempty"`
+	VolatilityAdjustment *float64   `json:"volatility_adjustment,omitempty"`
+	VolatilityTimeframe  string     `json:"volatility_timeframe"`
+	LastExecutedAt       *time.Time `json:"last_executed_at,omitempty"`
+	NextExecutionAt      *time.Time `json:"next_execution_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+type Candle struct {
+	ID         int       `json:"id"`
+	Pair       string    `json:"pair"`
+	Timeframe  string    `json:"timeframe"`
+	Timestamp  int64     `json:"timestamp"`
+	OpenPrice  float64   `json:"open_price"`
+	HighPrice  float64   `json:"high_price"`
+	LowPrice   float64   `json:"low_price"`
+	ClosePrice float64   `json:"close_price"`
+	Volume     float64   `json:"volume"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type ActiveTimeframe struct {
+	Pair      string `json:"pair"`
+	Timeframe string `json:"timeframe"`
 }
 
 type Migration struct {
@@ -125,6 +177,108 @@ var migrations = []Migration{
 		SQL: `
 			ALTER TABLE positions 
 				ADD COLUMN target_price REAL DEFAULT 0.0;
+		`,
+	},
+	{
+		ID:   6,
+		Name: "create_candles_table",
+		SQL: `
+			CREATE TABLE IF NOT EXISTS candles (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				pair TEXT NOT NULL,
+				timeframe TEXT NOT NULL,
+				timestamp INTEGER NOT NULL,
+				open_price REAL NOT NULL,
+				high_price REAL NOT NULL,
+				low_price REAL NOT NULL,
+				close_price REAL NOT NULL,
+				volume REAL NOT NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(pair, timeframe, timestamp)
+			);
+			CREATE INDEX IF NOT EXISTS idx_candles_pair_timeframe_timestamp ON candles(pair, timeframe, timestamp);
+			CREATE INDEX IF NOT EXISTS idx_candles_timestamp ON candles(timestamp);
+		`,
+	},
+	{
+		ID:   7,
+		Name: "create_strategies_table",
+		SQL: `
+			CREATE TABLE IF NOT EXISTS strategies (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT UNIQUE NOT NULL,
+				description TEXT,
+				enabled BOOLEAN DEFAULT 1,
+				algorithm_name TEXT NOT NULL DEFAULT 'rsi_dca',
+				cron_expression TEXT NOT NULL,
+				quote_amount REAL NOT NULL,
+				max_concurrent_orders INTEGER DEFAULT 1,
+				
+				-- RSI parameters
+				rsi_threshold REAL,
+				rsi_period INTEGER,
+				rsi_timeframe TEXT DEFAULT '4h',
+				
+				-- MACD parameters (for future algorithms)
+				macd_fast_period INTEGER DEFAULT 12,
+				macd_slow_period INTEGER DEFAULT 26,
+				macd_signal_period INTEGER DEFAULT 9,
+				macd_timeframe TEXT DEFAULT '4h',
+				
+				-- Bollinger Bands parameters (for future algorithms)
+				bb_period INTEGER DEFAULT 20,
+				bb_multiplier REAL DEFAULT 2.0,
+				bb_timeframe TEXT DEFAULT '1h',
+				
+				-- Common sell parameters
+				profit_target REAL NOT NULL,
+				trailing_stop_delta REAL NOT NULL,
+				sell_offset REAL NOT NULL,
+				
+				-- Volatility parameters
+				volatility_period INTEGER,
+				volatility_adjustment REAL,
+				volatility_timeframe TEXT DEFAULT '4h',
+				
+				-- Scheduling
+				last_executed_at DATETIME NULL,
+				next_execution_at DATETIME NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE INDEX IF NOT EXISTS idx_strategies_enabled ON strategies(enabled);
+			CREATE INDEX IF NOT EXISTS idx_strategies_next_execution ON strategies(next_execution_at);
+		`,
+	},
+	{
+		ID:   8,
+		Name: "add_strategy_id_columns",
+		SQL: `
+			ALTER TABLE orders ADD COLUMN strategy_id INTEGER NULL REFERENCES strategies(id) ON DELETE SET NULL;
+			ALTER TABLE positions ADD COLUMN strategy_id INTEGER NULL REFERENCES strategies(id) ON DELETE SET NULL;
+			ALTER TABLE cycles ADD COLUMN strategy_id INTEGER NULL REFERENCES strategies(id) ON DELETE SET NULL;
+			
+			CREATE INDEX IF NOT EXISTS idx_orders_strategy_id ON orders(strategy_id);
+			CREATE INDEX IF NOT EXISTS idx_positions_strategy_id ON positions(strategy_id);
+			CREATE INDEX IF NOT EXISTS idx_cycles_strategy_id ON cycles(strategy_id);
+		`,
+	},
+	{
+		ID:   9,
+		Name: "create_legacy_strategy_and_migrate_data",
+		SQL: `
+			INSERT INTO strategies (id, name, description, algorithm_name, cron_expression,
+				quote_amount, rsi_threshold, rsi_period, rsi_timeframe,
+				volatility_period, volatility_adjustment, volatility_timeframe,
+				profit_target, trailing_stop_delta, sell_offset, max_concurrent_orders)
+			VALUES (1, 'Legacy Strategy', 'Migrated from single-strategy configuration', 'rsi_dca', '0 */4 * * *',
+				50.0, 70.0, 14, '4h',
+				7, 50.0, '4h',
+				2.0, 0.1, 0.1, 1);
+			
+			UPDATE orders SET strategy_id = 1 WHERE strategy_id IS NULL;
+			UPDATE positions SET strategy_id = 1 WHERE strategy_id IS NULL;
+			UPDATE cycles SET strategy_id = 1 WHERE strategy_id IS NULL;
 		`,
 	},
 }
@@ -219,16 +373,22 @@ func (db *DB) CreatePosition(price, targetPrice, amount float64) (*Position, err
 
 func (db *DB) GetPosition(id int) (*Position, error) {
 	query := `
-		SELECT id, price, amount, max_price, target_price, created_at, updated_at 
-		FROM positions 
+		SELECT id, price, amount, max_price, target_price, strategy_id, created_at, updated_at
+		FROM positions
 		WHERE id = ?
 	`
 	row := db.conn.QueryRow(query, id)
 
 	var pos Position
-	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &pos.CreatedAt, &pos.UpdatedAt)
+	var strategyID sql.NullInt64
+	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyID, &pos.CreatedAt, &pos.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get position: %w", err)
+	}
+
+	if strategyID.Valid {
+		id := int(strategyID.Int64)
+		pos.StrategyID = &id
 	}
 
 	return &pos, nil
@@ -333,16 +493,16 @@ func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price, fees
 
 func (db *DB) GetOrder(id int) (*Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
-		FROM orders 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at
+		FROM orders
 		WHERE id = ?
 	`
 	row := db.conn.QueryRow(query, id)
 
 	var order Order
-	var positionID sql.NullInt64
+	var positionID, strategyID sql.NullInt64
 	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-		&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+		&order.Status, &positionID, &strategyID, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order: %w", err)
 	}
@@ -350,6 +510,10 @@ func (db *DB) GetOrder(id int) (*Order, error) {
 	if positionID.Valid {
 		id := int(positionID.Int64)
 		order.PositionID = &id
+	}
+	if strategyID.Valid {
+		id := int(strategyID.Int64)
+		order.StrategyID = &id
 	}
 
 	return &order, nil
@@ -492,18 +656,23 @@ func (db *DB) CreateCycle(buyOrderId int) (*Cycle, error) {
 
 func (db *DB) GetCycle(id int) (*Cycle, error) {
 	query := `
-		SELECT id, buy_order_id, sell_order_id, created_at, updated_at 
-		FROM cycles 
+		SELECT id, buy_order_id, sell_order_id, strategy_id, created_at, updated_at
+		FROM cycles
 		WHERE id = ?
 	`
 	row := db.conn.QueryRow(query, id)
 
 	var cycle Cycle
 	var buyOrderId int64
-	var sellOrderId sql.NullInt64
-	err := row.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &cycle.CreatedAt, &cycle.UpdatedAt)
+	var sellOrderId, strategyID sql.NullInt64
+	err := row.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &strategyID, &cycle.CreatedAt, &cycle.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cycle: %w", err)
+	}
+
+	if strategyID.Valid {
+		id := int(strategyID.Int64)
+		cycle.StrategyID = &id
 	}
 
 	buyOrder, err := db.GetOrder(int(buyOrderId))
@@ -1153,4 +1322,325 @@ func (db *DB) CountTodayBuyOrders() (int, error) {
 	var count int
 	err := row.Scan(&count)
 	return count, err
+}
+
+// ===============================
+// STRATEGIES METHODS
+// ===============================
+
+func (db *DB) CreateStrategy(name, description, algorithmName, cronExpression string, quoteAmount, profitTarget, trailingStopDelta, sellOffset float64) (*Strategy, error) {
+	query := `INSERT INTO strategies (name, description, algorithm_name, cron_expression, quote_amount, profit_target, trailing_stop_delta, sell_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	result, err := db.conn.Exec(query, name, description, algorithmName, cronExpression, quoteAmount, profitTarget, trailingStopDelta, sellOffset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create strategy: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return db.GetStrategy(int(id))
+}
+
+func (db *DB) GetStrategy(id int) (*Strategy, error) {
+	query := `
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
+			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
+			volatility_period, volatility_adjustment, volatility_timeframe,
+			last_executed_at, next_execution_at, created_at, updated_at
+		FROM strategies
+		WHERE id = ?
+	`
+	row := db.conn.QueryRow(query, id)
+
+	var strategy Strategy
+	var lastExecutedAt, nextExecutionAt sql.NullTime
+	var rsiThreshold sql.NullFloat64
+	var rsiPeriod sql.NullInt64
+	var volatilityPeriod sql.NullInt64
+	var volatilityAdjustment sql.NullFloat64
+
+	err := row.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
+		&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+		&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
+		&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
+		&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
+		&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
+		&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get strategy: %w", err)
+	}
+
+	// Handle nullable fields
+	if rsiThreshold.Valid {
+		strategy.RSIThreshold = &rsiThreshold.Float64
+	}
+	if rsiPeriod.Valid {
+		period := int(rsiPeriod.Int64)
+		strategy.RSIPeriod = &period
+	}
+	if volatilityPeriod.Valid {
+		period := int(volatilityPeriod.Int64)
+		strategy.VolatilityPeriod = &period
+	}
+	if volatilityAdjustment.Valid {
+		strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
+	}
+	if lastExecutedAt.Valid {
+		strategy.LastExecutedAt = &lastExecutedAt.Time
+	}
+	if nextExecutionAt.Valid {
+		strategy.NextExecutionAt = &nextExecutionAt.Time
+	}
+
+	return &strategy, nil
+}
+
+func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
+	query := `
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
+			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
+			volatility_period, volatility_adjustment, volatility_timeframe,
+			last_executed_at, next_execution_at, created_at, updated_at
+		FROM strategies
+		WHERE enabled = 1
+		ORDER BY created_at DESC
+	`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get enabled strategies: %w", err)
+	}
+	defer rows.Close()
+
+	var strategies []Strategy
+	for rows.Next() {
+		var strategy Strategy
+		var lastExecutedAt, nextExecutionAt sql.NullTime
+		var rsiThreshold sql.NullFloat64
+		var rsiPeriod sql.NullInt64
+		var volatilityPeriod sql.NullInt64
+		var volatilityAdjustment sql.NullFloat64
+
+		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
+			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
+			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
+			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
+			&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
+			&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan strategy: %w", err)
+		}
+
+		// Handle nullable fields
+		if rsiThreshold.Valid {
+			strategy.RSIThreshold = &rsiThreshold.Float64
+		}
+		if rsiPeriod.Valid {
+			period := int(rsiPeriod.Int64)
+			strategy.RSIPeriod = &period
+		}
+		if volatilityPeriod.Valid {
+			period := int(volatilityPeriod.Int64)
+			strategy.VolatilityPeriod = &period
+		}
+		if volatilityAdjustment.Valid {
+			strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
+		}
+		if lastExecutedAt.Valid {
+			strategy.LastExecutedAt = &lastExecutedAt.Time
+		}
+		if nextExecutionAt.Valid {
+			strategy.NextExecutionAt = &nextExecutionAt.Time
+		}
+
+		strategies = append(strategies, strategy)
+	}
+
+	return strategies, nil
+}
+
+func (db *DB) UpdateStrategyExecution(id int, lastExecuted time.Time) error {
+	query := `UPDATE strategies SET last_executed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := db.conn.Exec(query, lastExecuted, id)
+	if err != nil {
+		return fmt.Errorf("failed to update strategy execution time: %w", err)
+	}
+	return nil
+}
+
+// ===============================
+// CANDLES METHODS
+// ===============================
+
+func (db *DB) SaveCandle(pair, timeframe string, timestamp int64, open, high, low, close, volume float64) error {
+	query := `INSERT OR IGNORE INTO candles (pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := db.conn.Exec(query, pair, timeframe, timestamp, open, high, low, close, volume)
+	if err != nil {
+		return fmt.Errorf("failed to save candle: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetCandles(pair, timeframe string, limit int) ([]Candle, error) {
+	query := `
+		SELECT id, pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume, created_at
+		FROM candles
+		WHERE pair = ? AND timeframe = ?
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+	rows, err := db.conn.Query(query, pair, timeframe, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get candles: %w", err)
+	}
+	defer rows.Close()
+
+	var candles []Candle
+	for rows.Next() {
+		var candle Candle
+		err := rows.Scan(&candle.ID, &candle.Pair, &candle.Timeframe, &candle.Timestamp,
+			&candle.OpenPrice, &candle.HighPrice, &candle.LowPrice, &candle.ClosePrice,
+			&candle.Volume, &candle.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan candle: %w", err)
+		}
+		candles = append(candles, candle)
+	}
+
+	// Reverse to get chronological order (oldest first)
+	for i, j := 0, len(candles)-1; i < j; i, j = i+1, j-1 {
+		candles[i], candles[j] = candles[j], candles[i]
+	}
+
+	return candles, nil
+}
+
+func (db *DB) GetLastCandle(pair, timeframe string) (*Candle, error) {
+	query := `
+		SELECT id, pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume, created_at
+		FROM candles
+		WHERE pair = ? AND timeframe = ?
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`
+	row := db.conn.QueryRow(query, pair, timeframe)
+
+	var candle Candle
+	err := row.Scan(&candle.ID, &candle.Pair, &candle.Timeframe, &candle.Timestamp,
+		&candle.OpenPrice, &candle.HighPrice, &candle.LowPrice, &candle.ClosePrice,
+		&candle.Volume, &candle.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No candles found
+		}
+		return nil, fmt.Errorf("failed to get last candle: %w", err)
+	}
+
+	return &candle, nil
+}
+
+func (db *DB) GetActiveTimeframes() ([]ActiveTimeframe, error) {
+	query := `
+		SELECT DISTINCT 'UBTC/USDC' as pair, s.rsi_timeframe as timeframe
+		FROM strategies s
+		WHERE s.enabled = 1 AND s.rsi_timeframe IS NOT NULL
+		UNION
+		SELECT DISTINCT 'UBTC/USDC' as pair, s.volatility_timeframe as timeframe
+		FROM strategies s
+		WHERE s.enabled = 1 AND s.volatility_timeframe IS NOT NULL
+		UNION
+		SELECT DISTINCT 'UBTC/USDC' as pair, s.macd_timeframe as timeframe
+		FROM strategies s
+		WHERE s.enabled = 1 AND s.macd_timeframe IS NOT NULL
+		UNION
+		SELECT DISTINCT 'UBTC/USDC' as pair, s.bb_timeframe as timeframe
+		FROM strategies s
+		WHERE s.enabled = 1 AND s.bb_timeframe IS NOT NULL
+	`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active timeframes: %w", err)
+	}
+	defer rows.Close()
+
+	var timeframes []ActiveTimeframe
+	for rows.Next() {
+		var tf ActiveTimeframe
+		err := rows.Scan(&tf.Pair, &tf.Timeframe)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan timeframe: %w", err)
+		}
+		timeframes = append(timeframes, tf)
+	}
+
+	return timeframes, nil
+}
+
+func (db *DB) CleanupOldCandles(olderThanDays int) error {
+	cutoffTimestamp := time.Now().AddDate(0, 0, -olderThanDays).Unix()
+	query := `DELETE FROM candles WHERE timestamp < ?`
+	result, err := db.conn.Exec(query, cutoffTimestamp)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup old candles: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		logger.Infof("Cleaned up %d old candles", rowsAffected)
+	}
+
+	return nil
+}
+
+// ===============================
+// EXTENDED METHODS WITH STRATEGY SUPPORT
+// ===============================
+
+func (db *DB) CreateOrderWithStrategy(externalID string, side OrderSide, amount, price, fees float64, positionID *int, strategyID int) (*Order, error) {
+	query := `INSERT INTO orders (external_id, side, amount, price, fees, status, position_id, strategy_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	result, err := db.conn.Exec(query, externalID, side, amount, price, fees, Pending, positionID, strategyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create order with strategy: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return db.GetOrder(int(id))
+}
+
+func (db *DB) CreatePositionWithStrategy(price, targetPrice, amount float64, strategyID int) (*Position, error) {
+	query := `INSERT INTO positions (price, target_price, amount, strategy_id) VALUES (?, ?, ?, ?)`
+	result, err := db.conn.Exec(query, price, targetPrice, amount, strategyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create position with strategy: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return db.GetPosition(int(id))
+}
+
+func (db *DB) CreateCycleWithStrategy(buyOrderId int, strategyID int) (*Cycle, error) {
+	query := `INSERT INTO cycles (buy_order_id, strategy_id) VALUES (?, ?)`
+	result, err := db.conn.Exec(query, buyOrderId, strategyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cycle with strategy: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return db.GetCycle(int(id))
 }

@@ -4,6 +4,7 @@ import (
 	"bot/internal/core/config"
 	"bot/internal/core/database"
 	"bot/internal/logger"
+	"bot/internal/market"
 	"bot/internal/telegram"
 	"fmt"
 	"math"
@@ -76,11 +77,13 @@ type Candle struct {
 }
 
 type Bot struct {
-	Config   config.BotConfig
-	db       *database.DB
-	exchange Exchange
-	market   Market
-	done     chan bool
+	Config          config.BotConfig
+	db              *database.DB
+	exchange        Exchange
+	market          Market
+	marketCollector *market.MarketDataCollector
+	calculator      *market.Calculator
+	done            chan bool
 }
 
 func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
@@ -93,6 +96,20 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 	if err := bot.initializeMarketPrecision(); err != nil {
 		return nil, err
+	}
+
+	// Initialize market data services with adapter
+	exchangeAdapter := newBotExchangeAdapter(exchange)
+	bot.marketCollector = market.NewMarketDataCollector(db, exchangeAdapter)
+	bot.calculator = market.NewCalculator(db, bot.marketCollector)
+
+	// Initial market data collection
+	logger.Infof("[%s] Initializing market data collection...", config.ExchangeName)
+	err := bot.marketCollector.CollectCandles(config.Pair, "4h", 200) // Collect initial historical data
+	if err != nil {
+		logger.Warnf("Failed to collect initial market data: %v", err)
+	} else {
+		logger.Infof("[%s] Market data collection initialized successfully", config.ExchangeName)
 	}
 
 	return bot, nil
@@ -188,7 +205,7 @@ func (b *Bot) handleBuySignal() {
 	// Vérifier le RSI pour confirmer le signal d'achat
 	logger.Infof("[%s] Checking RSI for potential buy signal...", b.Config.ExchangeName)
 
-	rsi, err := b.CalculateRSI()
+	rsi, err := b.calculator.CalculateRSI(b.Config.Pair, "4h", b.Config.RSIPeriod)
 	if err != nil {
 		logger.Errorf("Failed to calculate RSI: %v", err)
 		return
@@ -278,8 +295,8 @@ func (b *Bot) handlePriceCheck() {
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
 	logger.Infof("[%s] Current price: %s", b.Config.ExchangeName, b.market.FormatPrice(currentPrice))
 
-	// Calculer la volatilité pour ajuster le seuil de vente
-	volatility, err := b.CalculateVolatility()
+	// Calculer la volatilité pour ajuster le seuil de vente (avec cache)
+	volatility, err := b.calculator.CalculateVolatility(b.Config.Pair, "4h", b.Config.VolatilityPeriod)
 	if err != nil {
 		logger.Errorf("Failed to calculate volatility: %v", err)
 		// Utiliser une valeur par défaut en cas d'erreur
@@ -690,4 +707,44 @@ func (b *Bot) CalculateRSI() (float64, error) {
 	rsi := 100 - (100 / (1 + rs))
 
 	return rsi, nil
+}
+
+// ===============================
+// EXCHANGE ADAPTER FOR MARKET DATA
+// ===============================
+
+// botExchangeAdapter adapts the bot's Exchange interface to work with market.Exchange
+type botExchangeAdapter struct {
+	exchange Exchange
+}
+
+func newBotExchangeAdapter(exchange Exchange) market.Exchange {
+	return &botExchangeAdapter{exchange: exchange}
+}
+
+func (bea *botExchangeAdapter) FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]market.BotCandle, error) {
+	// Call the bot's exchange FetchCandles method
+	botCandles, err := bea.exchange.FetchCandles(pair, timeframe, since, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert bot.Candle to market.BotCandle
+	marketCandles := make([]market.BotCandle, len(botCandles))
+	for i, candle := range botCandles {
+		marketCandles[i] = market.BotCandle{
+			Timestamp: candle.Timestamp,
+			Open:      candle.Open,
+			High:      candle.High,
+			Low:       candle.Low,
+			Close:     candle.Close,
+			Volume:    candle.Volume,
+		}
+	}
+
+	return marketCandles, nil
+}
+
+func (bea *botExchangeAdapter) GetPrice(pair string) (float64, error) {
+	return bea.exchange.GetPrice(pair)
 }
