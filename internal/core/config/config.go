@@ -29,6 +29,7 @@ type FileConfig struct {
 		ProfitTarget         float64 `yaml:"profit_target" json:"profit_target"`
 		VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 		VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
+		TrailingStopDelta    float64 `yaml:"trailing_stop_delta" json:"trailing_stop_delta"`
 	} `yaml:"trading" json:"trading"`
 
 	Intervals struct {
@@ -69,6 +70,7 @@ func LoadConfig() (*FileConfig, error) {
 			ProfitTarget         float64 `yaml:"profit_target" json:"profit_target"`
 			VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 			VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
+			TrailingStopDelta    float64 `yaml:"trailing_stop_delta" json:"trailing_stop_delta"`
 		}{
 			Pair: "BTC/USDC",
 			// Buy
@@ -80,6 +82,7 @@ func LoadConfig() (*FileConfig, error) {
 			ProfitTarget:         2.0,
 			VolatilityPeriod:     7,
 			VolatilityAdjustment: 50.0,
+			TrailingStopDelta:    0.1,
 		},
 		Intervals: struct {
 			BuyIntervalHours  int `yaml:"buy_interval_hours" json:"buy_interval_hours"`
@@ -156,6 +159,7 @@ trading:
   profit_target: 2.0             # Profit target in percentage (2.0 = 2%) to trigger sell logic
   volatility_period: 7           # Days of data for volatility calculation
   volatility_adjustment: 50.0    # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
+  trailing_stop_delta: 0.1       # Trailing Stop Delta in % (sell when the price drop under 0.1% < of MaxPrice)
 
 # Timing intervals
 intervals:
@@ -209,6 +213,9 @@ func validateConfig(config *FileConfig) error {
 	if config.Trading.ProfitTarget <= 0 {
 		return fmt.Errorf("trading.profit_threshold must be greater than 0")
 	}
+	if config.Trading.TrailingStopDelta <= 0 || config.Trading.TrailingStopDelta > 100 {
+		return fmt.Errorf("trading.rsi_threshold must be greater than 0 and lower or equal than 100")
+	}
 	if config.Intervals.BuyIntervalHours <= 0 {
 		return fmt.Errorf("intervals.buy_interval_hours must be positive")
 	}
@@ -254,6 +261,7 @@ type BotConfig struct {
 	ProfitTarget         float64
 	VolatilityPeriod     int
 	VolatilityAdjustment float64
+	TrailingStopDelta    float64
 	// Web UI
 	WebPort string
 }
@@ -299,6 +307,7 @@ func (fc *FileConfig) ToBotConfig() BotConfig {
 		ProfitTarget:         fc.Trading.ProfitTarget,
 		VolatilityPeriod:     fc.Trading.VolatilityPeriod,
 		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
+		TrailingStopDelta:    fc.Trading.TrailingStopDelta,
 		// Web UI
 		WebPort: fc.Web.Port,
 	}

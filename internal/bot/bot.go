@@ -345,8 +345,9 @@ func (b *Bot) handlePriceCheck() {
 
 		// Vérifier le profit minimum avec le seuil dynamique
 		if currentPrice >= targetPrice {
-			// Logique de trailing stop originale : vendre si le prix tombe de 0.5% par rapport au max
-			if currentPrice < (pos.MaxPrice * 0.995) {
+			// Logique de trailing stop originale : vendre si le prix tombe de 0.1% par rapport au max
+			trailingStopThreshold := 1.0 - (b.Config.TrailingStopDelta / 100)
+			if currentPrice < (pos.MaxPrice * trailingStopThreshold) {
 				logger.Infof("[%s] Position %d, price dropped: %.4f → %.4f, time to sell!",
 					b.Config.ExchangeName, pos.ID, pos.MaxPrice, currentPrice)
 

@@ -48,25 +48,33 @@ func LoadBot(projectRoot, botDir string) (*bot.Bot, error) {
 	// Conversion vers la configuration du bot
 	botConfig := fileConfig.ToBotConfig()
 
-	logger.Infof("Configuration loaded: Pair=%s, Amount=%v, MaxBuys/Day=%d, RSIThreshold=%.2f, ProfitTarget=%.2f, VolatilityAdjustmment=%.2f",
-		botConfig.Pair, botConfig.QuoteAmount, botConfig.MaxBuysPerDay, botConfig.RSIThreshold, botConfig.ProfitTarget, botConfig.VolatilityAdjustment)
+	logger.Info("✓ Configuration loaded")
+	logger.Infof("  Exchange                %s", botConfig.ExchangeName)
+	logger.Infof("  Pair                    %s", botConfig.Pair)
+	logger.Infof("  Amount per Trade        %.2f", botConfig.QuoteAmount)
+	logger.Infof("  Max Buys per Day        %d", botConfig.MaxBuysPerDay)
+	logger.Infof("  RSI Threshold           %.2f", botConfig.RSIThreshold)
+	logger.Infof("  Profit Target           %.2f%%", botConfig.ProfitTarget)
+	logger.Infof("  Volatility Adjustmment  %.2f%%", botConfig.VolatilityAdjustment)
+	logger.Infof("  Trailing Stop Delta     %.2f%%", botConfig.TrailingStopDelta)
 
 	// Initialisation de la base de données
 	db, err := database.NewDB(fileConfig.Database.Path)
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
-	logger.Info("Database initialized successfully")
+	logger.Info("✓ Database initialized successfully")
 
 	// Configuration de l'exchange
 	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
-	logger.Infof("%s exchange initialized", fileConfig.Exchange.Name)
+	logger.Info("✓ Exchange initialized successfully")
 
 	// Création du bot
 	tradingBot, err := bot.NewBot(botConfig, db, exchg)
 	if err != nil {
 		logger.Fatalf("Failed to create bot: %v", err)
 	}
+	logger.Info("✓ Bot initialized successfully")
 
 	return tradingBot, nil
 }
