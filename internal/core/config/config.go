@@ -30,6 +30,7 @@ type FileConfig struct {
 		VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 		VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
 		TrailingStopDelta    float64 `yaml:"trailing_stop_delta" json:"trailing_stop_delta"`
+		SellOffset           float64 `yaml:"sell_offset" json:"sell_offset"`
 	} `yaml:"trading" json:"trading"`
 
 	Intervals struct {
@@ -71,6 +72,7 @@ func LoadConfig() (*FileConfig, error) {
 			VolatilityPeriod     int     `yaml:"volatility_period" json:"volatility_period"`
 			VolatilityAdjustment float64 `yaml:"volatility_adjustment" json:"volatility_adjustment"`
 			TrailingStopDelta    float64 `yaml:"trailing_stop_delta" json:"trailing_stop_delta"`
+			SellOffset           float64 `yaml:"sell_offset" json:"sell_offset"`
 		}{
 			Pair: "BTC/USDC",
 			// Buy
@@ -83,6 +85,7 @@ func LoadConfig() (*FileConfig, error) {
 			VolatilityPeriod:     7,
 			VolatilityAdjustment: 50.0,
 			TrailingStopDelta:    0.1,
+			SellOffset:           0.1,
 		},
 		Intervals: struct {
 			BuyIntervalHours  int `yaml:"buy_interval_hours" json:"buy_interval_hours"`
@@ -160,6 +163,7 @@ trading:
   volatility_period: 7           # Days of data for volatility calculation
   volatility_adjustment: 50.0    # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
   trailing_stop_delta: 0.1       # Trailing Stop Delta in % (sell when the price drop under 0.1% < of MaxPrice)
+	sell_offset: 0.1               # Sell Offset in % above current price to stay maker
 
 # Timing intervals
 intervals:
@@ -196,31 +200,37 @@ web:
 
 func validateConfig(config *FileConfig) error {
 	if config.Trading.QuoteAmount <= 0 {
-		return fmt.Errorf("trading.quote_amount must be positive")
+		return fmt.Errorf("trading.quote_amount > 0")
+	}
+	if config.Trading.MaxBuysPerDay < 1 || config.Trading.MaxBuysPerDay > 24*60 {
+		return fmt.Errorf("trading.max_buys_per_day must be >= 1 and <= 1440 (1 trade per minute)")
 	}
 	if config.Trading.RSIPeriod < 1 {
-		return fmt.Errorf("trading.rsi_period must be at least 1")
+		return fmt.Errorf("trading.rsi_period must be >= 1")
 	}
 	if config.Trading.RSIThreshold < 0 || config.Trading.RSIThreshold > 100 {
-		return fmt.Errorf("trading.rsi_threshold must be between 0 and 100")
+		return fmt.Errorf("trading.rsi_threshold must be >= 0 and <= 100")
 	}
 	if config.Trading.VolatilityPeriod < 1 {
-		return fmt.Errorf("trading.volatility_period must be at least 1")
+		return fmt.Errorf("trading.volatility_period must >= 1")
 	}
 	if config.Trading.VolatilityAdjustment < 0 {
-		return fmt.Errorf("trading.volatility_adjustment cannot be negative")
+		return fmt.Errorf("trading.volatility_adjustment must be >= 0")
 	}
 	if config.Trading.ProfitTarget <= 0 {
-		return fmt.Errorf("trading.profit_threshold must be greater than 0")
+		return fmt.Errorf("trading.profit_threshold must be > 0")
 	}
 	if config.Trading.TrailingStopDelta <= 0 || config.Trading.TrailingStopDelta > 100 {
-		return fmt.Errorf("trading.rsi_threshold must be greater than 0 and lower or equal than 100")
+		return fmt.Errorf("trading.rsi_threshold must be > 0 and <= 100")
+	}
+	if config.Trading.SellOffset < 0 {
+		return fmt.Errorf("trading.sell_offset must be >= 0")
 	}
 	if config.Intervals.BuyIntervalHours <= 0 {
-		return fmt.Errorf("intervals.buy_interval_hours must be positive")
+		return fmt.Errorf("intervals.buy_interval_hours > 0")
 	}
 	if config.Intervals.CheckIntervalMins <= 0 {
-		return fmt.Errorf("intervals.check_interval_minutes must be positive")
+		return fmt.Errorf("intervals.check_interval_minutes must be > 0")
 	}
 	if config.Exchange.Name == "" {
 		return fmt.Errorf("exchange.name cannot be empty")
@@ -230,9 +240,6 @@ func validateConfig(config *FileConfig) error {
 	}
 	if config.Web.Port == "" {
 		return fmt.Errorf("web.port cannot be empty")
-	}
-	if config.Trading.MaxBuysPerDay < 1 || config.Trading.MaxBuysPerDay > 24*60 {
-		return fmt.Errorf("trading.max_buys_per_day must be between 1 and 1440")
 	}
 
 	// Validation des niveaux de log
@@ -262,6 +269,7 @@ type BotConfig struct {
 	VolatilityPeriod     int
 	VolatilityAdjustment float64
 	TrailingStopDelta    float64
+	SellOffset           float64
 	// Web UI
 	WebPort string
 }
@@ -308,6 +316,7 @@ func (fc *FileConfig) ToBotConfig() BotConfig {
 		VolatilityPeriod:     fc.Trading.VolatilityPeriod,
 		VolatilityAdjustment: fc.Trading.VolatilityAdjustment,
 		TrailingStopDelta:    fc.Trading.TrailingStopDelta,
+		SellOffset:           fc.Trading.SellOffset,
 		// Web UI
 		WebPort: fc.Web.Port,
 	}

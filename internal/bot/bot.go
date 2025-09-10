@@ -379,8 +379,9 @@ func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
 
 	// pour rester maker, on place un ordre juste un peu plus haut que currentPrice, idéalement il faudrait
 	// consulter le carnet d'ordre pour se placer juste au-dessus de la meilleure offre
-	priceOffset := currentPrice * 0.002 // 0.2% au-dessus du prix actuel (eq. 200$ pour un BTC à 100k)
+	priceOffset := currentPrice * (b.Config.SellOffset / 100.0)
 	limitPrice := b.roundToPrecision(currentPrice+priceOffset, b.market.Precision.Price)
+
 	order, err := b.exchange.PlaceLimitSellOrder(b.Config.Pair, pos.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
