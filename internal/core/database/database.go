@@ -1463,6 +1463,70 @@ func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
 	return strategies, nil
 }
 
+func (db *DB) GetAllStrategies() ([]Strategy, error) {
+	query := `
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
+			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
+			volatility_period, volatility_adjustment, volatility_timeframe,
+			last_executed_at, next_execution_at, created_at, updated_at
+		FROM strategies
+		ORDER BY created_at DESC
+	`
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all strategies: %w", err)
+	}
+	defer rows.Close()
+
+	var strategies []Strategy
+	for rows.Next() {
+		var strategy Strategy
+		var lastExecutedAt, nextExecutionAt sql.NullTime
+		var rsiThreshold sql.NullFloat64
+		var rsiPeriod sql.NullInt64
+		var volatilityPeriod sql.NullInt64
+		var volatilityAdjustment sql.NullFloat64
+
+		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
+			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
+			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
+			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
+			&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
+			&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan strategy: %w", err)
+		}
+
+		// Handle nullable fields
+		if rsiThreshold.Valid {
+			strategy.RSIThreshold = &rsiThreshold.Float64
+		}
+		if rsiPeriod.Valid {
+			period := int(rsiPeriod.Int64)
+			strategy.RSIPeriod = &period
+		}
+		if volatilityPeriod.Valid {
+			period := int(volatilityPeriod.Int64)
+			strategy.VolatilityPeriod = &period
+		}
+		if volatilityAdjustment.Valid {
+			strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
+		}
+		if lastExecutedAt.Valid {
+			strategy.LastExecutedAt = &lastExecutedAt.Time
+		}
+		if nextExecutionAt.Valid {
+			strategy.NextExecutionAt = &nextExecutionAt.Time
+		}
+
+		strategies = append(strategies, strategy)
+	}
+
+	return strategies, nil
+}
+
 func (db *DB) UpdateStrategyExecution(id int, lastExecuted time.Time) error {
 	query := `UPDATE strategies SET last_executed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 	_, err := db.conn.Exec(query, lastExecuted, id)
@@ -1643,4 +1707,139 @@ func (db *DB) CreateCycleWithStrategy(buyOrderId int, strategyID int) (*Cycle, e
 	}
 
 	return db.GetCycle(int(id))
+}
+
+// ===============================
+// STRATEGY-SPECIFIC METHODS
+// ===============================
+
+func (db *DB) GetOpenPositionsForStrategy(strategyID int) ([]Position, error) {
+	query := `
+		SELECT p.id, p.price, p.amount, p.max_price, p.target_price, p.strategy_id, p.created_at, p.updated_at
+		FROM positions p
+		WHERE p.strategy_id = ? AND not exists (
+			SELECT * FROM orders o
+			WHERE o.position_id = p.id and o.status = 'PENDING' and o.side = 'SELL'
+		)
+		ORDER BY created_at DESC
+	`
+	rows, err := db.conn.Query(query, strategyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get open positions for strategy: %w", err)
+	}
+	defer rows.Close()
+
+	var positions []Position
+	for rows.Next() {
+		var pos Position
+		var strategyID sql.NullInt64
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyID, &pos.CreatedAt, &pos.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan position: %w", err)
+		}
+
+		if strategyID.Valid {
+			id := int(strategyID.Int64)
+			pos.StrategyID = &id
+		}
+
+		positions = append(positions, pos)
+	}
+
+	return positions, nil
+}
+
+func (db *DB) CountActiveOrdersForStrategy(strategyID int) (int, error) {
+	query := `SELECT COUNT(*) FROM orders WHERE strategy_id = ? AND status = ?`
+	var count int
+	err := db.conn.QueryRow(query, strategyID, Pending).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count active orders for strategy: %w", err)
+	}
+	return count, nil
+}
+
+func (db *DB) UpdateStrategyNextExecution(strategyID int, nextExecution time.Time) error {
+	query := `UPDATE strategies SET next_execution_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := db.conn.Exec(query, nextExecution, strategyID)
+	if err != nil {
+		return fmt.Errorf("failed to update strategy next execution: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) GetStrategyStats(strategyID int) (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Count orders by status for this strategy
+	query := `
+		SELECT
+			COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending,
+			COUNT(CASE WHEN status = 'FILLED' THEN 1 END) as filled,
+			COUNT(CASE WHEN status = 'CANCELLED' THEN 1 END) as cancelled
+		FROM orders
+		WHERE strategy_id = ?
+	`
+	var pending, filled, cancelled int
+	err := db.conn.QueryRow(query, strategyID).Scan(&pending, &filled, &cancelled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get strategy order stats: %w", err)
+	}
+
+	stats["pending_orders"] = pending
+	stats["filled_orders"] = filled
+	stats["cancelled_orders"] = cancelled
+
+	// Count positions for this strategy
+	var positionsCount int
+	err = db.conn.QueryRow(`SELECT COUNT(*) FROM positions WHERE strategy_id = ?`, strategyID).Scan(&positionsCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get strategy positions count: %w", err)
+	}
+	stats["active_positions"] = positionsCount
+
+	return stats, nil
+}
+
+// ===============================
+// PUBLIC METHODS FOR EXTERNAL TOOLS
+// ===============================
+
+func (db *DB) CreateExampleStrategy(name, description, algorithm, cron string, amount, profitTarget float64, rsiThresh *float64, rsiPeriod *int) error {
+	// Check if strategy exists
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM strategies WHERE name = ?`, name).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check strategy existence: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("strategy %s already exists", name)
+	}
+
+	// Insert strategy
+	query := `
+		INSERT INTO strategies (
+			name, description, enabled, algorithm_name, cron_expression, quote_amount,
+			rsi_threshold, rsi_period, rsi_timeframe, profit_target, trailing_stop_delta, sell_offset,
+			volatility_period, volatility_adjustment, volatility_timeframe, max_concurrent_orders
+		) VALUES (?, ?, 1, ?, ?, ?, ?, ?, '4h', ?, 0.1, 0.1, 7, 50.0, '4h', 1)
+	`
+
+	_, err = db.conn.Exec(query, name, description, algorithm, cron, amount,
+		rsiThresh, rsiPeriod, profitTarget)
+	if err != nil {
+		return fmt.Errorf("failed to create strategy: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) DeleteNonLegacyStrategies() (int64, error) {
+	result, err := db.conn.Exec(`DELETE FROM strategies WHERE id != 1`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete strategies: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected, nil
 }

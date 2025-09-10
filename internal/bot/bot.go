@@ -85,6 +85,7 @@ type Bot struct {
 	marketCollector   *market.MarketDataCollector
 	calculator        *market.Calculator
 	algorithmRegistry *algorithms.AlgorithmRegistry
+	strategyMode      bool // true = use strategies from DB, false = use legacy config
 	done              chan bool
 }
 
@@ -109,9 +110,19 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	bot.algorithmRegistry = algorithms.NewAlgorithmRegistry()
 	logger.Infof("[%s] Algorithm registry initialized with %d algorithms", config.ExchangeName, len(bot.algorithmRegistry.List()))
 
+	// Check if we should use strategy mode (multiple strategies available)
+	strategies, err := db.GetEnabledStrategies()
+	if err == nil && len(strategies) > 1 {
+		bot.strategyMode = true
+		logger.Infof("[%s] Strategy mode enabled: found %d strategies in database", config.ExchangeName, len(strategies))
+	} else {
+		bot.strategyMode = false
+		logger.Infof("[%s] Legacy mode: using single strategy from config", config.ExchangeName)
+	}
+
 	// Initial market data collection
 	logger.Infof("[%s] Initializing market data collection...", config.ExchangeName)
-	err := bot.marketCollector.CollectCandles(config.Pair, "4h", 200) // Collect initial historical data
+	err = bot.marketCollector.CollectCandles(config.Pair, "4h", 200) // Collect initial historical data
 	if err != nil {
 		logger.Warnf("Failed to collect initial market data: %v", err)
 	} else {
@@ -159,6 +170,43 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) run() {
+	if b.strategyMode {
+		b.runStrategyMode()
+	} else {
+		b.runLegacyMode()
+	}
+}
+
+func (b *Bot) runStrategyMode() {
+	logger.Info("[Strategy Mode] Running with database-configured strategies...")
+
+	// In strategy mode, we execute strategies based on their individual schedules
+	// For now, let's run a simple demo that executes strategies periodically
+	checkTicker := time.NewTicker(b.Config.CheckInterval)
+	defer checkTicker.Stop()
+
+	// Demo: Execute strategies every 30 seconds for testing
+	strategyTicker := time.NewTicker(30 * time.Second)
+	defer strategyTicker.Stop()
+
+	for {
+		select {
+		case <-b.done:
+			logger.Infof("[%s] Bot stopped gracefully (strategy mode)", b.Config.ExchangeName)
+			return
+		case <-strategyTicker.C:
+			b.executeAllStrategiesDemo()
+		case <-checkTicker.C:
+			b.handlePriceCheck()
+			b.handleOrderCheck()
+			b.ShowStatistics()
+		}
+	}
+}
+
+func (b *Bot) runLegacyMode() {
+	logger.Info("[Legacy Mode] Running with traditional single strategy...")
+
 	buyTicker := time.NewTicker(b.Config.BuyInterval)
 	defer buyTicker.Stop()
 
@@ -168,7 +216,7 @@ func (b *Bot) run() {
 	for {
 		select {
 		case <-b.done:
-			logger.Infof("[%s] Bot stopped gracefully", b.Config.ExchangeName)
+			logger.Infof("[%s] Bot stopped gracefully (legacy mode)", b.Config.ExchangeName)
 			return
 		case <-buyTicker.C:
 			b.handleBuySignal()
@@ -178,6 +226,95 @@ func (b *Bot) run() {
 			b.ShowStatistics()
 		}
 	}
+}
+
+func (b *Bot) executeAllStrategiesDemo() {
+	logger.Debug("🎯 Checking all strategies for execution...")
+
+	strategies, err := b.db.GetEnabledStrategies()
+	if err != nil {
+		logger.Errorf("Failed to get enabled strategies: %v", err)
+		return
+	}
+
+	for _, strategy := range strategies {
+		err := b.executeStrategyDemo(strategy)
+		if err != nil {
+			logger.Errorf("Failed to execute strategy %s: %v", strategy.Name, err)
+		}
+	}
+}
+
+func (b *Bot) executeStrategyDemo(strategy database.Strategy) error {
+	logger.Infof("🎯 Demo execution of strategy '%s' (algorithm: %s)", strategy.Name, strategy.AlgorithmName)
+
+	// Get the algorithm for this strategy
+	algorithm, exists := b.algorithmRegistry.Get(strategy.AlgorithmName)
+	if !exists {
+		return fmt.Errorf("algorithm %s not found", strategy.AlgorithmName)
+	}
+
+	// Check active orders limit
+	activeOrders, err := b.db.CountActiveOrdersForStrategy(strategy.ID)
+	if err != nil {
+		return fmt.Errorf("failed to count active orders: %w", err)
+	}
+
+	if activeOrders >= strategy.MaxConcurrentOrders {
+		logger.Infof("Strategy %s has reached max concurrent orders (%d/%d), skipping",
+			strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
+		return nil
+	}
+
+	// Get current market data
+	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
+	if err != nil {
+		return fmt.Errorf("failed to get current price: %w", err)
+	}
+
+	// Get balance
+	exchangeBalance, err := b.exchange.FetchBalance()
+	if err != nil {
+		return fmt.Errorf("failed to fetch balance: %w", err)
+	}
+
+	// Convert balance format
+	balance := make(map[string]algorithms.Balance)
+	for asset, bal := range exchangeBalance {
+		balance[asset] = algorithms.Balance{Free: bal.Free}
+	}
+
+	// Get open positions for this strategy
+	openPositions, err := b.db.GetOpenPositionsForStrategy(strategy.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get open positions: %w", err)
+	}
+
+	// Create trading context
+	tradingContext := algorithms.TradingContext{
+		Pair:          b.Config.Pair,
+		CurrentPrice:  currentPrice,
+		Balance:       balance,
+		OpenPositions: openPositions,
+		Calculator:    b.calculator,
+	}
+
+	// Ask algorithm if we should buy
+	buySignal, err := algorithm.ShouldBuy(tradingContext, strategy)
+	if err != nil {
+		return fmt.Errorf("algorithm ShouldBuy failed: %w", err)
+	}
+
+	if buySignal.ShouldBuy {
+		logger.Infof("✅ Strategy %s: BUY signal - %s", strategy.Name, buySignal.Reason)
+		// For demo, just log the signal without actually placing orders
+		logger.Infof("   Would buy %.4f at %.4f with target %.4f",
+			buySignal.Amount, buySignal.LimitPrice, buySignal.TargetPrice)
+	} else {
+		logger.Debugf("Strategy %s: no buy signal - %s", strategy.Name, buySignal.Reason)
+	}
+
+	return nil
 }
 
 func (b *Bot) handleBuySignal() {
