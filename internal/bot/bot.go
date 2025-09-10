@@ -6,6 +6,7 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
+	"bot/internal/scheduler"
 	"bot/internal/telegram"
 	"fmt"
 	"math"
@@ -85,7 +86,7 @@ type Bot struct {
 	marketCollector   *market.MarketDataCollector
 	calculator        *market.Calculator
 	algorithmRegistry *algorithms.AlgorithmRegistry
-	strategyMode      bool // true = use strategies from DB, false = use legacy config
+	strategyScheduler *scheduler.StrategyScheduler
 	done              chan bool
 }
 
@@ -110,15 +111,19 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	bot.algorithmRegistry = algorithms.NewAlgorithmRegistry()
 	logger.Infof("[%s] Algorithm registry initialized with %d algorithms", config.ExchangeName, len(bot.algorithmRegistry.List()))
 
-	// Check if we should use strategy mode (multiple strategies available)
+	// Initialize strategy scheduler (always active now - no more legacy mode)
 	strategies, err := db.GetEnabledStrategies()
-	if err == nil && len(strategies) > 1 {
-		bot.strategyMode = true
-		logger.Infof("[%s] Strategy mode enabled: found %d strategies in database", config.ExchangeName, len(strategies))
-	} else {
-		bot.strategyMode = false
-		logger.Infof("[%s] Legacy mode: using single strategy from config", config.ExchangeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load strategies: %w", err)
 	}
+	logger.Infof("[%s] Found %d enabled strategies in database", config.ExchangeName, len(strategies))
+
+	strategyScheduler, err := scheduler.NewStrategyScheduler(db, bot.marketCollector, bot.calculator, bot.algorithmRegistry, bot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create strategy scheduler: %w", err)
+	}
+	bot.strategyScheduler = strategyScheduler
+	logger.Infof("[%s] ✓ Strategy scheduler initialized with %d strategies", config.ExchangeName, len(strategies))
 
 	// Initial market data collection
 	logger.Infof("[%s] Initializing market data collection...", config.ExchangeName)
@@ -155,11 +160,8 @@ func (b *Bot) Start(buyAtLaunch bool) error {
 	b.handlePriceCheck()
 	b.ShowStatistics()
 
-	if buyAtLaunch {
-		b.handleBuySignal()
-	}
-
-	logger.Debug("Starting bot goroutine...")
+	// buyAtLaunch is now handled by the strategy scheduler
+	logger.Debug("Starting cron-based strategy scheduler...")
 	go b.run()
 	return nil
 }
@@ -170,451 +172,66 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) run() {
-	if b.strategyMode {
-		b.runStrategyMode()
-	} else {
-		b.runLegacyMode()
+	logger.Info("🚀 Starting cron-based strategy scheduler...")
+
+	// Start the strategy scheduler with real cron
+	err := b.strategyScheduler.Start()
+	if err != nil {
+		logger.Fatalf("Failed to start strategy scheduler: %v", err)
+		return
 	}
-}
 
-func (b *Bot) runStrategyMode() {
-	logger.Info("[Strategy Mode] Running with database-configured strategies...")
-
-	// In strategy mode, we execute strategies based on their individual schedules
-	// For now, let's run a simple demo that executes strategies periodically
+	// Strategy scheduler manages buy signals, we handle ongoing position/order management
 	checkTicker := time.NewTicker(b.Config.CheckInterval)
 	defer checkTicker.Stop()
 
-	// Demo: Execute strategies every 30 seconds for testing
-	strategyTicker := time.NewTicker(30 * time.Second)
-	defer strategyTicker.Stop()
+	logger.Info("✅ Cron scheduler active, strategies will execute according to their cron expressions")
 
 	for {
 		select {
 		case <-b.done:
-			logger.Infof("[%s] Bot stopped gracefully (strategy mode)", b.Config.ExchangeName)
+			logger.Infof("[%s] Bot stopping gracefully", b.Config.ExchangeName)
+			// Stop the strategy scheduler
+			if b.strategyScheduler != nil {
+				err := b.strategyScheduler.Stop()
+				if err != nil {
+					logger.Errorf("Failed to stop strategy scheduler: %v", err)
+				}
+			}
 			return
-		case <-strategyTicker.C:
-			b.executeAllStrategiesDemo()
 		case <-checkTicker.C:
-			b.handlePriceCheck()
-			b.handleOrderCheck()
+			b.handlePriceCheck() // Update position max prices + trailing stop
+			b.handleOrderCheck() // Check pending orders status
 			b.ShowStatistics()
 		}
 	}
 }
 
-func (b *Bot) runLegacyMode() {
-	logger.Info("[Legacy Mode] Running with traditional single strategy...")
-
-	buyTicker := time.NewTicker(b.Config.BuyInterval)
-	defer buyTicker.Stop()
-
-	checkTicker := time.NewTicker(b.Config.CheckInterval)
-	defer checkTicker.Stop()
-
-	for {
-		select {
-		case <-b.done:
-			logger.Infof("[%s] Bot stopped gracefully (legacy mode)", b.Config.ExchangeName)
-			return
-		case <-buyTicker.C:
-			b.handleBuySignal()
-		case <-checkTicker.C:
-			b.handlePriceCheck()
-			b.handleOrderCheck()
-			b.ShowStatistics()
-		}
-	}
-}
-
-func (b *Bot) executeAllStrategiesDemo() {
-	logger.Debug("🎯 Checking all strategies for execution...")
-
-	strategies, err := b.db.GetEnabledStrategies()
-	if err != nil {
-		logger.Errorf("Failed to get enabled strategies: %v", err)
-		return
-	}
-
-	for _, strategy := range strategies {
-		err := b.executeStrategyDemo(strategy)
-		if err != nil {
-			logger.Errorf("Failed to execute strategy %s: %v", strategy.Name, err)
-		}
-	}
-}
-
-func (b *Bot) executeStrategyDemo(strategy database.Strategy) error {
-	logger.Infof("🎯 Demo execution of strategy '%s' (algorithm: %s)", strategy.Name, strategy.AlgorithmName)
-
-	// Get the algorithm for this strategy
-	algorithm, exists := b.algorithmRegistry.Get(strategy.AlgorithmName)
-	if !exists {
-		return fmt.Errorf("algorithm %s not found", strategy.AlgorithmName)
-	}
-
-	// Check active orders limit
-	activeOrders, err := b.db.CountActiveOrdersForStrategy(strategy.ID)
-	if err != nil {
-		return fmt.Errorf("failed to count active orders: %w", err)
-	}
-
-	if activeOrders >= strategy.MaxConcurrentOrders {
-		logger.Infof("Strategy %s has reached max concurrent orders (%d/%d), skipping",
-			strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
-		return nil
-	}
-
-	// Get current market data
-	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
-	if err != nil {
-		return fmt.Errorf("failed to get current price: %w", err)
-	}
-
-	// Get balance
-	exchangeBalance, err := b.exchange.FetchBalance()
-	if err != nil {
-		return fmt.Errorf("failed to fetch balance: %w", err)
-	}
-
-	// Convert balance format
-	balance := make(map[string]algorithms.Balance)
-	for asset, bal := range exchangeBalance {
-		balance[asset] = algorithms.Balance{Free: bal.Free}
-	}
-
-	// Get open positions for this strategy
-	openPositions, err := b.db.GetOpenPositionsForStrategy(strategy.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get open positions: %w", err)
-	}
-
-	// Create trading context
-	tradingContext := algorithms.TradingContext{
-		Pair:          b.Config.Pair,
-		CurrentPrice:  currentPrice,
-		Balance:       balance,
-		OpenPositions: openPositions,
-		Calculator:    b.calculator,
-	}
-
-	// Ask algorithm if we should buy
-	buySignal, err := algorithm.ShouldBuy(tradingContext, strategy)
-	if err != nil {
-		return fmt.Errorf("algorithm ShouldBuy failed: %w", err)
-	}
-
-	if buySignal.ShouldBuy {
-		logger.Infof("✅ Strategy %s: BUY signal - %s", strategy.Name, buySignal.Reason)
-		// For demo, just log the signal without actually placing orders
-		logger.Infof("   Would buy %.4f at %.4f with target %.4f",
-			buySignal.Amount, buySignal.LimitPrice, buySignal.TargetPrice)
-	} else {
-		logger.Debugf("Strategy %s: no buy signal - %s", strategy.Name, buySignal.Reason)
-	}
-
-	return nil
-}
-
-func (b *Bot) handleBuySignal() {
-	// Use algorithm-based approach with Legacy strategy
-	err := b.handleBuySignalWithAlgorithm()
-	if err != nil {
-		logger.Errorf("Algorithm-based buy signal failed, falling back to legacy: %v", err)
-		// Fallback to legacy logic for now
-		b.handleBuySignalLegacy()
-	}
-}
-
-func (b *Bot) handleBuySignalWithAlgorithm() error {
-	// Get the Legacy strategy (ID=1) to maintain backward compatibility
-	strategy, err := b.db.GetStrategy(1)
-	if err != nil {
-		return fmt.Errorf("failed to get legacy strategy: %w", err)
-	}
-
-	// Get the algorithm for this strategy
-	algorithm, exists := b.algorithmRegistry.Get(strategy.AlgorithmName)
-	if !exists {
-		return fmt.Errorf("algorithm %s not found", strategy.AlgorithmName)
-	}
-
-	// Check daily buy limit
-	todayBuyCount, err := b.db.CountTodayBuyOrders()
-	if err != nil {
-		return fmt.Errorf("failed to count today's buy orders: %w", err)
-	}
-
-	if todayBuyCount >= b.Config.MaxBuysPerDay {
-		logger.Infof("[%s] Daily buy limit reached (%d/%d), skipping buy signal",
-			b.Config.ExchangeName, todayBuyCount, b.Config.MaxBuysPerDay)
-		return nil
-	}
-
-	// Check available balance
-	exchangeBalance, err := b.exchange.FetchBalance()
-	if err != nil {
-		return fmt.Errorf("failed to fetch balances: %w", err)
-	}
-
-	quoteAssetBalance, ok := exchangeBalance[b.market.QuoteAsset]
-	if !ok || (quoteAssetBalance.Free < strategy.QuoteAmount) {
-		logger.Warnf("[%s] %s balance not found or insufficient: %v",
-			b.Config.ExchangeName, b.market.QuoteAsset, quoteAssetBalance.Free)
-		return nil
-	}
-
-	// Get current price
-	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
-	if err != nil {
-		return fmt.Errorf("failed to get current price: %w", err)
-	}
-
-	// Create trading context
-	balance := make(map[string]algorithms.Balance)
-	for asset, bal := range exchangeBalance {
-		balance[asset] = algorithms.Balance{Free: bal.Free}
-	}
-
-	openPositions, err := b.db.GetOpenPositions()
-	if err != nil {
-		return fmt.Errorf("failed to get open positions: %w", err)
-	}
-
-	tradingContext := algorithms.TradingContext{
-		Pair:          b.Config.Pair,
-		CurrentPrice:  currentPrice,
-		Balance:       balance,
-		OpenPositions: openPositions,
-		Calculator:    b.calculator,
-	}
-
-	// Ask algorithm if we should buy
-	buySignal, err := algorithm.ShouldBuy(tradingContext, *strategy)
-	if err != nil {
-		return fmt.Errorf("algorithm ShouldBuy failed: %w", err)
-	}
-
-	if !buySignal.ShouldBuy {
-		logger.Infof("[%s] Algorithm decision: %s", b.Config.ExchangeName, buySignal.Reason)
-		return nil
-	}
-
-	// Algorithm says buy, execute the order
-	logger.Infof("[%s] Algorithm decision: %s", b.Config.ExchangeName, buySignal.Reason)
-	return b.executeBuyOrder(buySignal, *strategy)
-}
-
-func (b *Bot) executeBuyOrder(buySignal algorithms.BuySignal, strategy database.Strategy) error {
-	// Round prices and amounts according to market precision
-	limitPrice := b.roundToPrecision(buySignal.LimitPrice, b.market.Precision.Price)
-	baseAmount := b.roundToPrecision(buySignal.Amount, b.market.Precision.Amount)
-	targetPrice := b.roundToPrecision(buySignal.TargetPrice, b.market.Precision.Price)
-
-	logger.Infof("[%s] Placing buy order: amount=%s, price=%s, target=%s",
-		b.Config.ExchangeName, b.market.FormatAmount(baseAmount),
-		b.market.FormatPrice(limitPrice), b.market.FormatPrice(targetPrice))
-
-	// Place the buy order on exchange
-	order, err := b.exchange.PlaceLimitBuyOrder(b.Config.Pair, baseAmount, limitPrice)
-	if err != nil {
-		return fmt.Errorf("failed to place limit buy order: %w", err)
-	}
-
-	orderPrice := *order.Price
-	orderAmount := *order.Amount
-
-	// Save order to database with strategy ID
-	dbOrder, err := b.db.CreateOrderWithStrategy(*order.Id, database.Buy, orderAmount, orderPrice, 0.0, nil, strategy.ID)
-	if err != nil {
-		return fmt.Errorf("failed to save buy order to database: %w", err)
-	}
-
-	// Create cycle with strategy ID
-	dbCycle, err := b.db.CreateCycleWithStrategy(dbOrder.ID, strategy.ID)
-	if err != nil {
-		logger.Errorf("Failed to create cycle in database: %v", err)
-	}
-
-	// Create position with pre-calculated target price
-	position, err := b.db.CreatePositionWithStrategy(orderPrice, targetPrice, orderAmount, strategy.ID)
-	if err != nil {
-		logger.Errorf("Failed to create position in database: %v", err)
-	} else {
-		err = b.db.UpdateOrderPosition(dbOrder.ID, position.ID)
-		if err != nil {
-			logger.Errorf("Failed to update order position: %v", err)
-		}
-		logger.Infof("[%s] Position created with PRE-CALCULATED target: ID=%d, target=%s",
-			b.Config.ExchangeName, position.ID, b.market.FormatPrice(targetPrice))
-	}
-
-	// Send notification
-	message := fmt.Sprintf("🌀 New Cycle [Strategy: %s] on %s [%d]", strategy.Name, b.Config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\nℹ️ Buy Order %s [%d]", *order.Id, dbOrder.ID)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
-	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n🎯 Target Price: %s %s (PRE-CALCULATED)", b.market.FormatPrice(targetPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n📊 Reason: %s", buySignal.Reason)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification: %v", err)
-	}
-
-	logger.Infof("[%s] Algorithm-driven buy order placed: %s %s at %s %s (target=%s, strategy=%s)",
-		b.Config.ExchangeName, b.market.FormatAmount(orderAmount), b.market.BaseAsset,
-		b.market.FormatPrice(orderPrice), b.market.QuoteAsset, b.market.FormatPrice(targetPrice), strategy.Name)
-
-	return nil
-}
-
-func (b *Bot) handleBuySignalLegacy() {
-	// Original legacy logic (unchanged for fallback)
-	logger.Info("Using legacy buy signal logic")
-
-	// Check daily buy limit
-	todayBuyCount, err := b.db.CountTodayBuyOrders()
-	if err != nil {
-		logger.Errorf("Failed to count today's buy orders: %v", err)
-		return
-	}
-
-	if todayBuyCount >= b.Config.MaxBuysPerDay {
-		logger.Infof("[%s] Daily buy limit reached (%d/%d), skipping RSI check",
-			b.Config.ExchangeName, todayBuyCount, b.Config.MaxBuysPerDay)
-		return
-	}
-
-	// Check available balance
-	balance, err := b.exchange.FetchBalance()
-	if err != nil {
-		logger.Errorf("Failed to fetch balances: %v", err)
-		return
-	}
-
-	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
-	if !ok || (quoteAssetBalance.Free < b.Config.QuoteAmount) {
-		logger.Warnf("[%s] %s balance not found or insufficient: %v",
-			b.Config.ExchangeName, b.market.QuoteAsset, quoteAssetBalance.Free)
-		return
-	}
-
-	// Vérifier le RSI pour confirmer le signal d'achat
-	logger.Infof("[%s] Checking RSI for potential buy signal...", b.Config.ExchangeName)
-
-	rsi, err := b.calculator.CalculateRSI(b.Config.Pair, "4h", b.Config.RSIPeriod)
-	if err != nil {
-		logger.Errorf("Failed to calculate RSI: %v", err)
-		return
-	}
-
-	logger.Infof("[%s] Current RSI: %.2f", b.Config.ExchangeName, rsi)
-
-	if b.Config.RSIThreshold > 0 && b.Config.RSIThreshold < 100 {
-		if rsi > b.Config.RSIThreshold {
-			logger.Infof("[%s] RSI (%.2f) is too high (threshold: %.2f), skipping buy signal",
-				b.Config.ExchangeName, rsi, b.Config.RSIThreshold)
-			return
-		} else {
-			logger.Infof("[%s] RSI (%.2f) is below threshold (%.2f), proceeding with buy signal",
-				b.Config.ExchangeName,
-				rsi, b.Config.RSIThreshold)
-		}
-	} else {
-		logger.Debug("RSI Threshold is not set. Skipping RSI check")
-	}
-
-	logger.Infof("[%s] Time to place a new Buy Order...", b.Config.ExchangeName)
-
-	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
-	if err != nil {
-		logger.Errorf("Failed to get ticker data: %v", err)
-		return
-	}
-
-	// Calculate dynamic price offset based on RSI: -(0.1% + (RSI/100)%)
-	dynamicOffsetPercent := -((0.1 / 100.0) + (rsi/100.0)/100.0)
-	dynamicOffset := currentPrice * dynamicOffsetPercent
-	limitPrice := b.roundToPrecision(currentPrice+dynamicOffset, b.market.Precision.Price)
-	baseAmount := b.roundToPrecision(b.Config.QuoteAmount/limitPrice, b.market.Precision.Amount)
-
-	logger.Infof("[%s] Dynamic Offset: %.4f (RSI=%.2f, Offset=%.2f%%), Limit Price=%s",
-		b.Config.ExchangeName, dynamicOffset, rsi, dynamicOffsetPercent*100, b.market.FormatPrice(limitPrice))
-
-	order, err := b.exchange.PlaceLimitBuyOrder(b.Config.Pair, baseAmount, limitPrice)
-	if err != nil {
-		logger.Errorf("Failed to place Limit Buy Order: %v", err)
-		return
-	}
-
-	orderPrice := *order.Price
-	orderAmount := *order.Amount
-
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Buy, orderAmount, orderPrice, 0.0, nil)
-	if err != nil {
-		logger.Errorf("Failed to save buy order to database: %v", err)
-		return
-	}
-
-	dbCycle, err := b.db.CreateCycle(dbOrder.ID)
-	if err != nil {
-		logger.Errorf("Failed to create cycle to database: %v", err)
-	}
-
-	message := ""
-	message += fmt.Sprintf("🌀 New Cycle on %s [%d]", b.Config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\nℹ️ Buy Order %s [%d]", *order.Id, dbOrder.ID)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
-	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n📊 RSI: %.2f", rsi)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
-	}
-
-	logger.Infof("[%s] Limit Buy Order placed: %s %s at %s %s (ID=%v, DB_ID=%v, RSI=%.2f)",
-		b.Config.ExchangeName,
-		b.market.FormatAmount(orderAmount), b.market.BaseAsset, b.market.FormatPrice(orderPrice), b.market.QuoteAsset,
-		order.Id, dbOrder.ID, rsi)
-}
+// All buy logic is now handled by the strategy scheduler
+// No more demo methods or legacy buy signal handling needed
 
 func (b *Bot) handlePriceCheck() {
-	logger.Debug("Checking prices...")
+	logger.Debug("Checking prices and positions...")
 
 	currentPrice, err := b.exchange.GetPrice(b.Config.Pair)
 	if err != nil {
-		logger.Errorf("Failed to get ticker data: %v", err)
+		logger.Errorf("Failed to get current price: %v", err)
 		return
 	}
 
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
 	logger.Infof("[%s] Current price: %s", b.Config.ExchangeName, b.market.FormatPrice(currentPrice))
 
-	// Calculer la volatilité pour ajuster le seuil de vente (avec cache)
-	volatility, err := b.calculator.CalculateVolatility(b.Config.Pair, "4h", b.Config.VolatilityPeriod)
-	if err != nil {
-		logger.Errorf("Failed to calculate volatility: %v", err)
-		// Utiliser une valeur par défaut en cas d'erreur
-		volatility = 2.0 // 2% par défaut
-		logger.Infof("[%s] Using default (%.2f%%) volatility !", b.Config.ExchangeName, volatility)
-	} else {
-		logger.Infof("[%s] Current volatility: %.2f%%", b.Config.ExchangeName, volatility)
-	}
-
+	// Get all open positions (from all strategies)
 	positions, err := b.db.GetOpenPositions()
 	if err != nil {
-		logger.Errorf("Failed to get open positions from database: %v", err)
+		logger.Errorf("Failed to get open positions: %v", err)
 		return
 	}
-	logger.Debugf("Found %d open positions", len(positions))
+	logger.Debugf("Checking %d open positions for sell signals", len(positions))
 
 	for _, pos := range positions {
-		// Mettre à jour le prix maximum observé
+		// Update max price if current price is higher
 		if currentPrice > pos.MaxPrice {
 			err := b.db.UpdatePositionMaxPrice(pos.ID, currentPrice)
 			if err != nil {
@@ -622,56 +239,36 @@ func (b *Bot) handlePriceCheck() {
 				continue
 			}
 			pos.MaxPrice = currentPrice
-			logger.Infof("[%s] Position %d, updated MaxPrice → %s",
+			logger.Infof("[%s] Position %d updated MaxPrice → %s",
 				b.Config.ExchangeName, pos.ID, b.market.FormatPrice(pos.MaxPrice))
 		}
 
-		// Calculer le seuil de profit dynamique basé sur la volatilité
-		// ProfitThreshold est maintenant un pourcentage (2.0 = 2%)
-		// Pendant une faible volatilité, accepter des profits plus faibles (plus agressif)
-		// Pendant une forte volatilité, espérer des profits plus élevés (moins agressif)
-
-		// Calculer l'ajustement basé sur la distance entre la volatilité et le seuil de base
-		// Peut-être négatif si la volatilité est inférieure au seuil de base
-		volatilityFactor := (volatility - b.Config.ProfitTarget) / 100.0 // Convertir en décimal (4.0 -> 0.04)
-		adjustmentPercent := volatilityFactor * (b.Config.VolatilityAdjustment / 100.0)
-
-		// Appliquer l'ajustement selon le niveau de volatilité
-		dynamicProfitPercent := (b.Config.ProfitTarget / 100.0) + adjustmentPercent
-
-		// S'assurer que le seuil reste raisonnable (entre 0.1% et 15%)
-		if dynamicProfitPercent < 0.001 {
-			dynamicProfitPercent = 0.001
-		} else if dynamicProfitPercent > 0.10 {
-			dynamicProfitPercent = 0.10
-		}
-
-		dynamicProfitThreshold := 1.0 + dynamicProfitPercent
-		targetPrice := pos.Price * dynamicProfitThreshold
-
-		if targetPrice != pos.TargetPrice {
-			err := b.db.UpdatePositionTargetPrice(pos.ID, targetPrice)
+		// Check trailing stop using PRE-CALCULATED target price (no more dynamic recalculation!)
+		if currentPrice >= pos.TargetPrice {
+			// Get strategy for this position to get trailing stop settings
+			strategy, err := b.getStrategyForPosition(pos)
 			if err != nil {
-				logger.Errorf("Failed to update target price for position %d: %v", pos.ID, err)
-			} else {
-				pos.TargetPrice = targetPrice
-				logger.Infof("[%s] Position %d, updated TargetPrice → %s (DynamicProfit=%.2f%%, Volatility=%.2f%%)",
-					b.Config.ExchangeName, pos.ID, b.market.FormatPrice(pos.TargetPrice), dynamicProfitPercent*100, volatility)
+				logger.Errorf("Failed to get strategy for position %d: %v", pos.ID, err)
+				continue
 			}
-		}
 
-		// Vérifier le profit minimum avec le seuil dynamique
-		if currentPrice >= targetPrice {
-			// Logique de trailing stop originale : vendre si le prix tombe de 0.1% par rapport au max
-			trailingStopThreshold := 1.0 - (b.Config.TrailingStopDelta / 100)
+			trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
 			if currentPrice < (pos.MaxPrice * trailingStopThreshold) {
-				logger.Infof("[%s] Position %d, price dropped: %.4f → %.4f, time to sell!",
-					b.Config.ExchangeName, pos.ID, pos.MaxPrice, currentPrice)
+				logger.Infof("[%s] Position %d trailing stop triggered: %.4f < %.4f",
+					b.Config.ExchangeName, pos.ID, currentPrice, pos.MaxPrice*trailingStopThreshold)
 
-				b.placeSellOrder(pos, currentPrice)
+				b.placeSellOrderLegacy(pos, currentPrice)
 			}
 		}
 	}
+}
+
+// Helper to get strategy for a position
+func (b *Bot) getStrategyForPosition(pos database.Position) (*database.Strategy, error) {
+	if pos.StrategyID == nil {
+		return nil, fmt.Errorf("position %d has no strategy_id", pos.ID)
+	}
+	return b.db.GetStrategy(*pos.StrategyID)
 }
 
 func (b *Bot) handleOrderCheck() {
@@ -688,7 +285,7 @@ func (b *Bot) handleOrderCheck() {
 	}
 }
 
-func (b *Bot) placeSellOrder(pos database.Position, currentPrice float64) {
+func (b *Bot) placeSellOrderLegacy(pos database.Position, currentPrice float64) {
 	dbCycle, err := b.db.GetCycleForBuyOrderPosition(pos.ID)
 	if err != nil {
 		logger.Errorf("Failed to get cycle from buy order position %v: %v", pos.ID, err)
@@ -1047,4 +644,63 @@ func (bea *botExchangeAdapter) FetchCandles(pair string, timeframe string, since
 
 func (bea *botExchangeAdapter) GetPrice(pair string) (float64, error) {
 	return bea.exchange.GetPrice(pair)
+}
+
+// ===============================
+// STRATEGY EXCHANGE IMPLEMENTATION FOR BOT
+// ===============================
+
+// Implement scheduler.StrategyExchange interface directly in Bot
+func (b *Bot) FetchBalance() (map[string]scheduler.ExchangeBalance, error) {
+	botBalance, err := b.exchange.FetchBalance()
+	if err != nil {
+		return nil, err
+	}
+
+	balance := make(map[string]scheduler.ExchangeBalance)
+	for asset, bal := range botBalance {
+		balance[asset] = scheduler.ExchangeBalance{Free: bal.Free}
+	}
+
+	return balance, nil
+}
+
+func (b *Bot) GetPrice(pair string) (float64, error) {
+	return b.exchange.GetPrice(pair)
+}
+
+func (b *Bot) PlaceLimitBuyOrder(pair string, amount float64, price float64) (scheduler.ExchangeOrder, error) {
+	// Round according to market precision
+	amount = b.roundToPrecision(amount, b.market.Precision.Amount)
+	price = b.roundToPrecision(price, b.market.Precision.Price)
+
+	botOrder, err := b.exchange.PlaceLimitBuyOrder(pair, amount, price)
+	if err != nil {
+		return scheduler.ExchangeOrder{}, err
+	}
+
+	return scheduler.ExchangeOrder{
+		Id:     botOrder.Id,
+		Price:  botOrder.Price,
+		Amount: botOrder.Amount,
+		Status: botOrder.Status,
+	}, nil
+}
+
+func (b *Bot) PlaceLimitSellOrder(pair string, amount float64, price float64) (scheduler.ExchangeOrder, error) {
+	// Round according to market precision
+	amount = b.roundToPrecision(amount, b.market.Precision.Amount)
+	price = b.roundToPrecision(price, b.market.Precision.Price)
+
+	botOrder, err := b.exchange.PlaceLimitSellOrder(pair, amount, price)
+	if err != nil {
+		return scheduler.ExchangeOrder{}, err
+	}
+
+	return scheduler.ExchangeOrder{
+		Id:     botOrder.Id,
+		Price:  botOrder.Price,
+		Amount: botOrder.Amount,
+		Status: botOrder.Status,
+	}, nil
 }
