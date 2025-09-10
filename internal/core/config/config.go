@@ -74,6 +74,7 @@ func LoadConfig() (*FileConfig, error) {
 			// Buy
 			QuoteAmount:   50.0,
 			MaxBuysPerDay: 4,
+			RSIPeriod:     14,
 			RSIThreshold:  70.0,
 			// Sell
 			ProfitTarget:         2.0,
@@ -147,15 +148,15 @@ exchange:
 trading:
   pair: BTC/USDC                 # Trading pair
 
-	quote_amount: 50.0           # Amount in quote currency (USDC) per buy order
-  max_buys_per_day: 4          # Maximum number of buy orders per 24 hours (1-24)
-	rsi_period: 14               # Days of data (4h candles) for RSI calculation (14 is standard)
-	rsi_threshold: 70.0          # RSI threshold (> 70 = no buy signal), 100 to disable
+  quote_amount: 50.0             # Amount in quote currency (USDC) per buy order
+  max_buys_per_day: 4            # Maximum number of buy orders per 24 hours (1-24)
+  rsi_period: 14                 # Days of data (4h candles) for RSI calculation (14 is standard)
+  rsi_threshold: 70.0            # RSI threshold (> 70 = no buy signal), 100 to disable
 
   profit_target: 2.0             # Profit target in percentage (2.0 = 2%) to trigger sell logic
   volatility_period: 7           # Days of data for volatility calculation
   volatility_adjustment: 50.0    # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
-	
+
 # Timing intervals
 intervals:
   buy_interval_hours: 4          # Hours between buy attempts
@@ -172,7 +173,7 @@ logging:
 
 # Web server configuration
 web:
-	port: ":8080"                  # Port for the web interface
+  port: ":8080"                  # Port for the web interface
 
 # Note: Set API_KEY and API_SECRET environment variables for exchange access in .env
 `

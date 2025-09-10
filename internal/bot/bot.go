@@ -180,7 +180,8 @@ func (b *Bot) handleBuySignal() {
 
 	quoteAssetBalance, ok := balance[b.market.QuoteAsset]
 	if !ok || (quoteAssetBalance.Free < b.Config.QuoteAmount) {
-		logger.Warnf("USDC balance not found or insufficient: %v", quoteAssetBalance.Free)
+		logger.Warnf("[%s] %s balance not found or insufficient: %v",
+			b.Config.ExchangeName, b.market.QuoteAsset, quoteAssetBalance.Free)
 		return
 	}
 
