@@ -5,7 +5,8 @@ import (
 	"bot/internal/logger"
 	"fmt"
 	"math"
-	// Temporary manual calculations until indicator library issue is resolved
+
+	"github.com/cinar/indicator/v2/momentum"
 )
 
 // Calculator handles technical indicator calculations using cached candle data
@@ -49,55 +50,34 @@ func (c *Calculator) CalculateRSI(pair, timeframe string, period int) (float64, 
 		closes[i] = candle.ClosePrice
 	}
 
-	// Calculate RSI manually (temporary implementation)
-	if len(closes) < period+1 {
-		return 0, fmt.Errorf("insufficient data for RSI calculation")
+	// Calculate RSI using indicator v2 library with channels (following your example)
+	rsi := momentum.NewRsiWithPeriod[float64](period)
+
+	// Create input channel and send closing prices
+	inputChan := make(chan float64, len(closes))
+	for _, price := range closes {
+		inputChan <- price
+	}
+	close(inputChan)
+
+	// Compute RSI values using the channel API
+	rsiChan := rsi.Compute(inputChan)
+
+	// Collect all RSI values
+	var rsiValues []float64
+	for value := range rsiChan {
+		rsiValues = append(rsiValues, value)
 	}
 
-	// Calculate gains and losses
-	gains := make([]float64, len(closes)-1)
-	losses := make([]float64, len(closes)-1)
-
-	for i := 1; i < len(closes); i++ {
-		change := closes[i] - closes[i-1]
-		if change > 0 {
-			gains[i-1] = change
-			losses[i-1] = 0
-		} else {
-			gains[i-1] = 0
-			losses[i-1] = -change
-		}
+	if len(rsiValues) == 0 {
+		return 0, fmt.Errorf("RSI calculation returned no values")
 	}
 
-	// Calculate initial averages
-	if len(gains) < period {
-		return 0, fmt.Errorf("insufficient gains data for RSI")
-	}
+	// Return the latest RSI value
+	latestRSI := rsiValues[len(rsiValues)-1]
+	logger.Debugf("Calculated RSI: %.2f", latestRSI)
 
-	var avgGain, avgLoss float64
-	for i := 0; i < period; i++ {
-		avgGain += gains[i]
-		avgLoss += losses[i]
-	}
-	avgGain /= float64(period)
-	avgLoss /= float64(period)
-
-	// Calculate exponential averages for remaining data
-	for i := period; i < len(gains); i++ {
-		avgGain = (avgGain*float64(period-1) + gains[i]) / float64(period)
-		avgLoss = (avgLoss*float64(period-1) + losses[i]) / float64(period)
-	}
-
-	// Calculate RSI
-	if avgLoss == 0 {
-		return 100, nil
-	}
-
-	rs := avgGain / avgLoss
-	rsi := 100 - (100 / (1 + rs))
-
-	logger.Debugf("Calculated RSI: %.2f", rsi)
-	return rsi, nil
+	return latestRSI, nil
 }
 
 // CalculateVolatility calculates price volatility (standard deviation)
@@ -127,7 +107,7 @@ func (c *Calculator) CalculateVolatility(pair, timeframe string, period int) (fl
 		closes[i] = candle.ClosePrice
 	}
 
-	// Calculate volatility manually (temporary implementation)
+	// Calculate volatility using manual standard deviation (indicator v2 std API to be investigated)
 	if len(closes) < period {
 		return 0, fmt.Errorf("insufficient data for volatility calculation")
 	}
@@ -162,16 +142,16 @@ func (c *Calculator) CalculateVolatility(pair, timeframe string, period int) (fl
 	return latestVolatility, nil
 }
 
-// CalculateMACD computes MACD manually (temporary implementation)
+// CalculateMACD - Temporarily disabled until we confirm v2 API for MACD
 func (c *Calculator) CalculateMACD(pair, timeframe string, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, histogram float64, err error) {
-	logger.Debugf("MACD calculation temporarily disabled - will be implemented with working indicator library")
-	return 0, 0, 0, fmt.Errorf("MACD calculation not yet implemented - waiting for indicator library integration")
+	logger.Debugf("MACD calculation temporarily disabled - focusing on RSI v2 implementation first")
+	return 0, 0, 0, fmt.Errorf("MACD calculation temporarily disabled")
 }
 
-// CalculateBollingerBands computes Bollinger Bands manually (temporary implementation)
+// CalculateBollingerBands - Temporarily disabled until we confirm v2 API
 func (c *Calculator) CalculateBollingerBands(pair, timeframe string, period int, k float64) (upper, middle, lower float64, err error) {
-	logger.Debugf("Bollinger Bands calculation temporarily disabled - will be implemented with working indicator library")
-	return 0, 0, 0, fmt.Errorf("Bollinger Bands calculation not yet implemented - waiting for indicator library integration")
+	logger.Debugf("Bollinger Bands calculation temporarily disabled - focusing on RSI v2 implementation first")
+	return 0, 0, 0, fmt.Errorf("Bollinger Bands calculation temporarily disabled")
 }
 
 // CalculateSMA calculates Simple Moving Average manually
@@ -195,10 +175,16 @@ func (c *Calculator) CalculateSMA(pair, timeframe string, period int) (float64, 
 		return 0, fmt.Errorf("insufficient candles for SMA calculation: need %d, got %d", period, len(candles))
 	}
 
+	// Convert all candles to closes for SMA calculation
+
+	// Calculate simple moving average manually (v2 SMA API to be investigated)
 	// Use the most recent 'period' candles
+	if len(candles) < period {
+		return 0, fmt.Errorf("insufficient candles for SMA calculation")
+	}
+
 	recentCandles := candles[len(candles)-period:]
 
-	// Calculate simple moving average
 	var sum float64
 	for _, candle := range recentCandles {
 		sum += candle.ClosePrice
@@ -210,10 +196,10 @@ func (c *Calculator) CalculateSMA(pair, timeframe string, period int) (float64, 
 	return latestSMA, nil
 }
 
-// CalculateEMA calculates Exponential Moving Average manually
+// CalculateEMA - Temporarily disabled until we confirm v2 API
 func (c *Calculator) CalculateEMA(pair, timeframe string, period int) (float64, error) {
-	logger.Debugf("EMA calculation temporarily disabled - will be implemented with working indicator library")
-	return 0, fmt.Errorf("EMA calculation not yet implemented - waiting for indicator library integration")
+	logger.Debugf("EMA calculation temporarily disabled - focusing on RSI v2 implementation first")
+	return 0, fmt.Errorf("EMA calculation temporarily disabled")
 }
 
 // GetCurrentPrice returns the latest close price from cached data

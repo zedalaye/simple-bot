@@ -4,6 +4,7 @@ go 1.24.5
 
 require (
 	github.com/ccxt/ccxt/go/v4 v4.5.3 // direct
+	github.com/cinar/indicator/v2 v2.1.16 // direct
 	github.com/gin-contrib/multitemplate v1.1.1 // direct
 	github.com/gin-gonic/gin v1.10.1 // direct
 	github.com/go-co-op/gocron/v2 v2.16.5 // direct
