@@ -46,8 +46,8 @@ func main() {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 
-	// Initialize database
-	db, err := database.NewDB(fmt.Sprintf("file:%s?mode=ro", fileConfig.Database.Path))
+	// Initialize database (read-write mode for strategy management)
+	db, err := database.NewDB(fileConfig.Database.Path)
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}

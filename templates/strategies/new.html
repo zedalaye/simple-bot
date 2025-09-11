@@ -1,0 +1,182 @@
+{{define "content"}}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Nouvelle Stratégie</h1>
+                <a href="/strategies" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Retour
+                </a>
+            </div>
+
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Configuration de la stratégie</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="POST" action="/strategies">
+                                <!-- Basic Strategy Info -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="name" class="form-label">Nom de la stratégie *</label>
+                                        <input type="text" class="form-control" id="name" name="name" required 
+                                               placeholder="ex: Scalping Agressif">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="algorithm" class="form-label">Algorithme *</label>
+                                        <select class="form-select" id="algorithm" name="algorithm" required onchange="updateAlgorithmFields()">
+                                            <option value="">Sélectionner un algorithme</option>
+                                            <option value="rsi_dca">RSI DCA (Dollar Cost Averaging)</option>
+                                            <option value="macd_cross">MACD Crossover</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="2" 
+                                              placeholder="Description de la stratégie..."></textarea>
+                                </div>
+
+                                <!-- Scheduling -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="cron" class="form-label">Expression Cron *</label>
+                                        <input type="text" class="form-control" id="cron" name="cron" required 
+                                               placeholder="0 9 * * *" onchange="updateCronDescription()">
+                                        <div class="form-text" id="cron-description">Format: minute heure jour mois jour-semaine</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="quote_amount" class="form-label">Montant par ordre (USDC) *</label>
+                                        <input type="number" step="0.01" class="form-control" id="quote_amount" name="quote_amount" required 
+                                               placeholder="25.00">
+                                    </div>
+                                </div>
+
+                                <!-- Profit Settings -->
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="profit_target" class="form-label">Objectif profit (%) *</label>
+                                        <input type="number" step="0.1" class="form-control" id="profit_target" name="profit_target" required 
+                                               placeholder="2.0">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trailing_stop_delta" class="form-label">Trailing Stop (%)</label>
+                                        <input type="number" step="0.01" class="form-control" id="trailing_stop_delta" name="trailing_stop_delta" 
+                                               placeholder="0.1" value="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="sell_offset" class="form-label">Offset vente (%)</label>
+                                        <input type="number" step="0.01" class="form-control" id="sell_offset" name="sell_offset" 
+                                               placeholder="0.1" value="0.1">
+                                    </div>
+                                </div>
+
+                                <!-- RSI Specific Fields -->
+                                <div id="rsi-fields" style="display: none;">
+                                    <h6 class="text-primary mb-3">Paramètres RSI</h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="rsi_threshold" class="form-label">Seuil RSI</label>
+                                            <input type="number" step="0.1" class="form-control" id="rsi_threshold" name="rsi_threshold" 
+                                                   placeholder="70.0">
+                                            <div class="form-text">RSI < seuil = signal d'achat</div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="rsi_period" class="form-label">Période RSI</label>
+                                            <input type="number" class="form-control" id="rsi_period" name="rsi_period" 
+                                                   placeholder="14" value="14">
+                                            <div class="form-text">Nombre de bougies pour le calcul (14 = standard)</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- MACD Specific Fields -->
+                                <div id="macd-fields" style="display: none;">
+                                    <h6 class="text-primary mb-3">Paramètres MACD</h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <label for="macd_fast_period" class="form-label">EMA Rapide</label>
+                                            <input type="number" class="form-control" id="macd_fast_period" name="macd_fast_period" 
+                                                   placeholder="12" value="12">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="macd_slow_period" class="form-label">EMA Lente</label>
+                                            <input type="number" class="form-control" id="macd_slow_period" name="macd_slow_period" 
+                                                   placeholder="26" value="26">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="macd_signal_period" class="form-label">Ligne de signal</label>
+                                            <input type="number" class="form-control" id="macd_signal_period" name="macd_signal_period" 
+                                                   placeholder="9" value="9">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Submit -->
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                                    <button type="button" class="btn btn-outline-secondary me-md-2" onclick="window.history.back()">Annuler</button>
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-save"></i> Créer la stratégie
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateAlgorithmFields() {
+    const algorithm = document.getElementById('algorithm').value;
+    const rsiFields = document.getElementById('rsi-fields');
+    const macdFields = document.getElementById('macd-fields');
+    
+    // Hide all algorithm-specific fields
+    rsiFields.style.display = 'none';
+    macdFields.style.display = 'none';
+    
+    // Show relevant fields based on selected algorithm
+    if (algorithm === 'rsi_dca') {
+        rsiFields.style.display = 'block';
+    } else if (algorithm === 'macd_cross') {
+        macdFields.style.display = 'block';
+    }
+}
+
+function updateCronDescription() {
+    const cron = document.getElementById('cron').value;
+    const description = document.getElementById('cron-description');
+    
+    // Common cron patterns
+    const cronPatterns = {
+        '0 9 * * *': 'Tous les jours à 9h00',
+        '0 10 1 * *': 'Le 1er de chaque mois à 10h00',
+        '0 */6 * * *': 'Toutes les 6 heures',
+        '0 */4 * * *': 'Toutes les 4 heures',
+        '0 */2 * * *': 'Toutes les 2 heures',
+        '0 */1 * * *': 'Toutes les heures',
+        '*/30 * * * *': 'Toutes les 30 minutes',
+        '*/15 * * * *': 'Toutes les 15 minutes'
+    };
+    
+    if (cronPatterns[cron]) {
+        description.textContent = cronPatterns[cron];
+        description.className = 'form-text text-success';
+    } else {
+        description.textContent = 'Format: minute heure jour mois jour-semaine';
+        description.className = 'form-text text-muted';
+    }
+}
+
+// Show RSI fields by default if no algorithm selected
+document.addEventListener('DOMContentLoaded', function() {
+    updateAlgorithmFields();
+});
+</script>
+{{end}}

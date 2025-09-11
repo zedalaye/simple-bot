@@ -1816,7 +1816,7 @@ func (db *DB) CreateExampleStrategy(name, description, algorithm, cron string, a
 		return fmt.Errorf("strategy %s already exists", name)
 	}
 
-	// Insert strategy
+	// Insert strategy with hardcoded defaults (for cmd tool compatibility)
 	query := `
 		INSERT INTO strategies (
 			name, description, enabled, algorithm_name, cron_expression, quote_amount,
@@ -1834,6 +1834,67 @@ func (db *DB) CreateExampleStrategy(name, description, algorithm, cron string, a
 	return nil
 }
 
+func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, enabled bool,
+	quoteAmount, profitTarget, trailingStopDelta, sellOffset float64,
+	rsiThreshold *float64, rsiPeriod *int) error {
+
+	// Check if strategy exists
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM strategies WHERE name = ?`, name).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check strategy existence: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("strategy %s already exists", name)
+	}
+
+	// Insert strategy with all web form parameters
+	query := `
+		INSERT INTO strategies (
+			name, description, enabled, algorithm_name, cron_expression, quote_amount,
+			rsi_threshold, rsi_period, rsi_timeframe, profit_target, trailing_stop_delta, sell_offset,
+			volatility_period, volatility_adjustment, volatility_timeframe, max_concurrent_orders
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '4h', ?, ?, ?, 7, 50.0, '4h', 1)
+	`
+
+	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, quoteAmount,
+		rsiThreshold, rsiPeriod, profitTarget, trailingStopDelta, sellOffset)
+	if err != nil {
+		return fmt.Errorf("failed to create strategy: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) ToggleStrategyEnabled(id int) error {
+	query := `UPDATE strategies SET enabled = NOT enabled, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := db.conn.Exec(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to toggle strategy enabled status: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) DeleteStrategy(id int) error {
+	// Prevent deletion of Legacy Strategy
+	if id == 1 {
+		return fmt.Errorf("cannot delete Legacy Strategy (ID=1)")
+	}
+
+	query := `DELETE FROM strategies WHERE id = ?`
+	result, err := db.conn.Exec(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete strategy: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("strategy not found")
+	}
+
+	return nil
+}
+
 func (db *DB) DeleteNonLegacyStrategies() (int64, error) {
 	result, err := db.conn.Exec(`DELETE FROM strategies WHERE id != 1`)
 	if err != nil {
@@ -1843,3 +1904,5 @@ func (db *DB) DeleteNonLegacyStrategies() (int64, error) {
 	rowsAffected, _ := result.RowsAffected()
 	return rowsAffected, nil
 }
+
+// Methods already exist above, removing duplicates

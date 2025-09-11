@@ -3,14 +3,15 @@ package web
 import (
 	"bot/internal/core/database"
 	"fmt"
-	"github.com/gin-contrib/multitemplate"
 	"html/template"
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 )
 
@@ -62,6 +63,12 @@ var templateFuncs = template.FuncMap{
 			hours := int(duration.Hours()) % 24
 			return fmt.Sprintf("%d j %d h", days, hours)
 		}
+	},
+	"derefFloat": func(f *float64) float64 {
+		if f != nil {
+			return *f
+		}
+		return 0
 	},
 }
 
@@ -225,6 +232,122 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 		})
 	})
 
+	// Strategies - NEW!
+	router.GET("/strategies", func(c *gin.Context) {
+		strategies, err := db.GetAllStrategies()
+		if err != nil {
+			handleError(c, "Erreur - Stratégies", "strategies", "Failed to get strategies: "+err.Error())
+			return
+		}
+
+		c.HTML(http.StatusOK, "strategies_index", gin.H{
+			"title":      makeTitle(exchangeName, "Stratégies"),
+			"exchange":   exchangeName,
+			"active":     "strategies",
+			"strategies": strategies,
+		})
+	})
+
+	// Create new strategy form
+	router.GET("/strategies/new", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "strategies_new", gin.H{
+			"title":      makeTitle(exchangeName, "Nouvelle Stratégie"),
+			"exchange":   exchangeName,
+			"active":     "strategies",
+			"algorithms": []string{"rsi_dca", "macd_cross"}, // Available algorithms
+		})
+	})
+
+	// Create strategy (POST)
+	router.POST("/strategies", func(c *gin.Context) {
+		name := c.PostForm("name")
+		description := c.PostForm("description")
+		algorithm := c.PostForm("algorithm")
+		cron := c.PostForm("cron")
+		enabled := c.PostForm("enabled") == "on"
+
+		quoteAmount, _ := strconv.ParseFloat(c.PostForm("quote_amount"), 64)
+		profitTarget, _ := strconv.ParseFloat(c.PostForm("profit_target"), 64)
+		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
+		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
+
+		// Set defaults if not provided
+		if trailingStopDelta == 0 {
+			trailingStopDelta = 0.1
+		}
+		if sellOffset == 0 {
+			sellOffset = 0.1
+		}
+
+		// RSI parameters
+		var rsiThreshold *float64
+		var rsiPeriod *int
+		if rsiThreshStr := c.PostForm("rsi_threshold"); rsiThreshStr != "" {
+			if val, err := strconv.ParseFloat(rsiThreshStr, 64); err == nil {
+				rsiThreshold = &val
+			}
+		}
+		if rsiPeriodStr := c.PostForm("rsi_period"); rsiPeriodStr != "" {
+			if val, err := strconv.Atoi(rsiPeriodStr); err == nil {
+				rsiPeriod = &val
+			}
+		}
+
+		// Use the new comprehensive method instead of CreateExampleStrategy
+		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
+			quoteAmount, profitTarget, trailingStopDelta, sellOffset, rsiThreshold, rsiPeriod)
+		if err != nil {
+			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
+			return
+		}
+
+		c.Redirect(http.StatusFound, "/strategies")
+	})
+
+	// Toggle strategy enabled/disabled
+	router.POST("/strategies/:id/toggle", func(c *gin.Context) {
+		idStr := c.Param("id")
+		strategyID, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid strategy ID"})
+			return
+		}
+
+		// Toggle strategy enabled status
+		err = db.ToggleStrategyEnabled(strategyID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Strategy status toggled successfully"})
+	})
+
+	// Delete strategy
+	router.DELETE("/strategies/:id", func(c *gin.Context) {
+		idStr := c.Param("id")
+		strategyID, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid strategy ID"})
+			return
+		}
+
+		// Prevent deletion of Legacy Strategy (ID=1)
+		if strategyID == 1 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete Legacy Strategy"})
+			return
+		}
+
+		// Delete strategy
+		err = db.DeleteStrategy(strategyID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Strategy deleted successfully"})
+	})
+
 	// API endpoints JSON
 	api := router.Group("/api")
 	{
@@ -295,6 +418,16 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 				return
 			}
 			c.JSON(http.StatusOK, activity)
+		})
+
+		// Strategies API
+		api.GET("/strategies", func(c *gin.Context) {
+			strategies, err := db.GetAllStrategies()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, strategies)
 		})
 	}
 }

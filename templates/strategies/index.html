@@ -1,0 +1,146 @@
+{{define "content"}}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Stratégies de Trading</h1>
+                <a href="/strategies/new" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Nouvelle Stratégie
+                </a>
+            </div>
+
+            {{if .strategies}}
+            <div class="row">
+                {{range .strategies}}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card {{if .Enabled}}border-success{{else}}border-secondary{{end}}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">
+                                {{if .Enabled}}
+                                    <span class="badge bg-success me-2">Activée</span>
+                                {{else}}
+                                    <span class="badge bg-secondary me-2">Désactivée</span>
+                                {{end}}
+                                {{.Name}}
+                            </h5>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="#" onclick="toggleStrategy({{.ID}})">
+                                        {{if .Enabled}}Désactiver{{else}}Activer{{end}}
+                                    </a></li>
+                                    {{if ne .ID 1}}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item text-danger" href="#" onclick="deleteStrategy({{.ID}})">Supprimer</a></li>
+                                    {{end}}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-2">{{.Description}}</p>
+                            
+                            <div class="row text-center mb-3">
+                                <div class="col-6">
+                                    <div class="border-end">
+                                        <div class="h5 mb-1">{{.AlgorithmName}}</div>
+                                        <small class="text-muted">Algorithme</small>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="h5 mb-1">{{printf "%.2f" .QuoteAmount}} USDC</div>
+                                    <small class="text-muted">Montant par ordre</small>
+                                </div>
+                            </div>
+
+                            <div class="row text-center mb-3">
+                                <div class="col-6">
+                                    <div class="border-end">
+                                        {{if .RSIThreshold}}
+                                        <div class="h6 mb-1">RSI < {{printf "%.1f" (derefFloat .RSIThreshold)}}</div>
+                                        {{else}}
+                                        <div class="h6 mb-1">-</div>
+                                        {{end}}
+                                        <small class="text-muted">Seuil RSI</small>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="h6 mb-1">+{{printf "%.1f" .ProfitTarget}}%</div>
+                                    <small class="text-muted">Objectif profit</small>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <strong>Planning :</strong>
+                                <code class="ms-2">{{.CronExpression}}</code>
+                            </div>
+
+                            {{if .LastExecutedAt}}
+                            <div class="text-muted">
+                                <small>Dernière exécution : {{timeAgo .LastExecutedAt}}</small>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="text-center py-5">
+                <i class="fas fa-cog fa-3x text-muted mb-3"></i>
+                <h3>Aucune stratégie configurée</h3>
+                <p class="text-muted">Créez votre première stratégie de trading pour commencer.</p>
+                <a href="/strategies/new" class="btn btn-primary">Créer une stratégie</a>
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleStrategy(id) {
+    fetch(`/strategies/${id}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Erreur: ' + data.error);
+        } else {
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Erreur lors de la modification de la stratégie');
+    });
+}
+
+function deleteStrategy(id) {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cette stratégie ?')) {
+        fetch(`/strategies/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Erreur: ' + data.error);
+            } else {
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Erreur lors de la suppression de la stratégie');
+        });
+    }
+}
+</script>
+{{end}}
