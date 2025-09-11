@@ -4,7 +4,6 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"fmt"
-	"math"
 
 	"github.com/cinar/indicator/v2/momentum"
 	"github.com/cinar/indicator/v2/trend"
@@ -109,37 +108,50 @@ func (c *Calculator) CalculateVolatility(pair, timeframe string, period int) (fl
 		closes[i] = candle.ClosePrice
 	}
 
-	// Calculate volatility using manual standard deviation (helper API unclear in v2)
-	if len(closes) < period {
-		return 0, fmt.Errorf("insufficient data for volatility calculation")
+	// Calculate volatility properly: first compute returns, then standard deviation with indicator v2
+	if len(closes) < 2 {
+		return 0, fmt.Errorf("need at least 2 prices for volatility calculation")
 	}
 
-	// Use the most recent 'period' candles
-	recentCloses := closes[len(closes)-period:]
-
-	// Calculate returns
-	returns := make([]float64, len(recentCloses)-1)
-	for i := 1; i < len(recentCloses); i++ {
-		returns[i-1] = (recentCloses[i] - recentCloses[i-1]) / recentCloses[i-1]
+	// Calculate returns (percentage change between consecutive prices)
+	returns := make([]float64, len(closes)-1)
+	for i := 1; i < len(closes); i++ {
+		returns[i-1] = (closes[i] - closes[i-1]) / closes[i-1]
 	}
 
-	// Calculate mean
-	var sum float64
-	for _, r := range returns {
-		sum += r
+	// Use the most recent 'period' returns for volatility calculation
+	if len(returns) < period {
+		period = len(returns) // Use all available returns if less than period
 	}
-	mean := sum / float64(len(returns))
 
-	// Calculate variance
-	var variance float64
-	for _, r := range returns {
-		variance += math.Pow(r-mean, 2)
+	recentReturns := returns[len(returns)-period:]
+
+	// Now use MovingStd on the returns (not raw prices)
+	movingStd := volatility.NewMovingStdWithPeriod[float64](len(recentReturns))
+
+	// Create input channel and send returns (not prices)
+	inputChan := make(chan float64, len(recentReturns))
+	for _, returnVal := range recentReturns {
+		inputChan <- returnVal
 	}
-	variance /= float64(len(returns))
+	close(inputChan)
 
-	// Return standard deviation as percentage
-	latestVolatility := math.Sqrt(variance) * 100
-	logger.Debugf("Calculated volatility: %.2f%%", latestVolatility)
+	// Compute moving standard deviation of returns
+	stdChan := movingStd.Compute(inputChan)
+
+	// Collect standard deviation values
+	var stdValues []float64
+	for value := range stdChan {
+		stdValues = append(stdValues, value)
+	}
+
+	if len(stdValues) == 0 {
+		return 0, fmt.Errorf("volatility calculation returned no values")
+	}
+
+	// Return latest volatility as percentage (standard deviation of returns * 100)
+	latestVolatility := stdValues[len(stdValues)-1] * 100
+	logger.Debugf("Calculated volatility with MovingStd v2 (on returns): %.2f%%", latestVolatility)
 
 	return latestVolatility, nil
 }
@@ -425,5 +437,3 @@ func (c *Calculator) GetIndicatorStats() map[string]interface{} {
 
 	return stats
 }
-
-// Note: CalculateVolatilityLegacy removed - use CalculateVolatility with standard deviation
