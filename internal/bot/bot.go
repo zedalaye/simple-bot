@@ -9,7 +9,6 @@ import (
 	"bot/internal/scheduler"
 	"bot/internal/telegram"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 )
@@ -84,7 +83,7 @@ type Bot struct {
 	exchange          Exchange
 	market            Market
 	marketCollector   *market.MarketDataCollector
-	calculator        *market.Calculator
+	Calculator        *market.Calculator
 	algorithmRegistry *algorithms.AlgorithmRegistry
 	strategyScheduler *scheduler.StrategyScheduler
 	done              chan bool
@@ -105,7 +104,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	// Initialize market data services with adapter
 	exchangeAdapter := newBotExchangeAdapter(exchange)
 	bot.marketCollector = market.NewMarketDataCollector(db, exchangeAdapter)
-	bot.calculator = market.NewCalculator(db, bot.marketCollector)
+	bot.Calculator = market.NewCalculator(db, bot.marketCollector)
 
 	// Initialize algorithm registry
 	bot.algorithmRegistry = algorithms.NewAlgorithmRegistry()
@@ -118,7 +117,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	}
 	logger.Infof("[%s] Found %d enabled strategies in database", config.ExchangeName, len(strategies))
 
-	strategyScheduler, err := scheduler.NewStrategyScheduler(db, bot.marketCollector, bot.calculator, bot.algorithmRegistry, bot)
+	strategyScheduler, err := scheduler.NewStrategyScheduler(db, bot.marketCollector, bot.Calculator, bot.algorithmRegistry, bot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create strategy scheduler: %w", err)
 	}
@@ -511,100 +510,7 @@ func (m *Market) FormatPrice(price float64) string {
 	return strconv.FormatFloat(price, 'f', m.Precision.PriceDecimals, 64)
 }
 
-// calculateVolatility calcule la volatilité quotidienne à partir des prix de clôture
-func (b *Bot) CalculateVolatility() (float64, error) {
-	period := b.Config.VolatilityPeriod
-	since := time.Now().AddDate(0, 0, -period).UnixMilli()
-	candles, err := b.exchange.FetchCandles(b.Config.Pair, "4h", &since, int64(period*6))
-	if err != nil {
-		logger.Errorf("Failed to fetch OHLCV data: %v", err)
-		return 0, err
-	}
-
-	// Extraire les prix de clôture (index 4 dans chaque kline)
-	prices := make([]float64, len(candles))
-	for i, candle := range candles {
-		prices[i] = candle.Close
-	}
-
-	if len(prices) < 2 {
-		return 0, fmt.Errorf("not enough price data for volatility calculation")
-	}
-
-	// Calculer les rendements quotidiens
-	returns := make([]float64, len(prices)-1)
-	for i := 1; i < len(prices); i++ {
-		returns[i-1] = (prices[i] - prices[i-1]) / prices[i-1]
-	}
-
-	// Calculer la moyenne des rendements
-	var sum float64
-	for _, r := range returns {
-		sum += r
-	}
-	mean := sum / float64(len(returns))
-
-	// Calculer la variance
-	var variance float64
-	for _, r := range returns {
-		variance += math.Pow(r-mean, 2)
-	}
-	variance /= float64(len(returns))
-
-	// Volatilité = écart-type (racine carrée de la variance)
-	volatility := math.Sqrt(variance)
-	return volatility * 100, nil // Convertir en pourcentage
-}
-
-// calculateRSI calcule l'indice de force relative (RSI) pour une période donnée
-func (b *Bot) CalculateRSI() (float64, error) {
-	// Récupérer suffisamment de données pour le calcul RSI
-	period := b.Config.RSIPeriod
-	since := time.Now().AddDate(0, 0, -period).UnixMilli()
-	candles, err := b.exchange.FetchCandles(b.Config.Pair, "4h", &since, 500)
-	if err != nil {
-		logger.Errorf("Failed to fetch candles for RSI: %v", err)
-		return 0, err
-	}
-
-	if len(candles) < (period + 1) {
-		return 0, fmt.Errorf("not enough candle data for RSI calculation")
-	}
-
-	// Calculer les gains et pertes
-	gains := make([]float64, len(candles)-1)
-	losses := make([]float64, len(candles)-1)
-
-	for i := 1; i < len(candles); i++ {
-		change := candles[i].Close - candles[i-1].Close
-		if change > 0 {
-			gains[i-1] = change
-			losses[i-1] = 0
-		} else {
-			gains[i-1] = 0
-			losses[i-1] = -change
-		}
-	}
-
-	// Calculer les moyennes mobiles exponentielles des gains et pertes
-	avgGain := gains[0]
-	avgLoss := losses[0]
-
-	for i := 1; i < len(gains); i++ {
-		avgGain = (avgGain*(float64(period)-1) + gains[i]) / float64(period)
-		avgLoss = (avgLoss*(float64(period)-1) + losses[i]) / float64(period)
-	}
-
-	// Calculer le RSI
-	if avgLoss == 0 {
-		return 100, nil
-	}
-
-	rs := avgGain / avgLoss
-	rsi := 100 - (100 / (1 + rs))
-
-	return rsi, nil
-}
+// Legacy calculation methods removed - now using Calculator with indicator v2 channels
 
 // ===============================
 // EXCHANGE ADAPTER FOR MARKET DATA

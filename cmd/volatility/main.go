@@ -29,7 +29,7 @@ func main() {
 	}
 	defer bot.Cleanup()
 
-	volatility, err := bot.CalculateVolatility()
+	volatility, err := bot.Calculator.CalculateVolatility(bot.Config.Pair, "4h", 7*6)
 	if err != nil {
 		logger.Fatalf("Failed to compute Volatility: %v", err)
 	}

@@ -29,7 +29,7 @@ func main() {
 	}
 	defer bot.Cleanup()
 
-	rsi, err := bot.CalculateRSI()
+	rsi, err := bot.Calculator.CalculateRSI(bot.Config.Pair, "4h", 14)
 	if err != nil {
 		logger.Fatalf("Failed to compute RSI: %v", err)
 	}
