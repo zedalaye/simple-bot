@@ -4,6 +4,7 @@ bin/
 !bin/.keep
 storage/**/db/bot.db
 storage/**/db/bot.db-*
+storage/**/db/bot.db.*
 !storage/**/db/.keep
 storage/**/backup/*
 .env
