@@ -64,18 +64,18 @@ func LoadBot(projectRoot, botDir string) (*bot.Bot, error) {
 	if err != nil {
 		logger.Fatalf("Failed to initialize database: %v", err)
 	}
-	logger.Info("✓ Database initialized successfully")
+	logger.Infof("[%s] ✓ Database initialized successfully", botConfig.ExchangeName)
 
 	// Configuration de l'exchange
 	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
-	logger.Info("✓ Exchange initialized successfully")
+	logger.Infof("[%s] ✓ Exchange initialized successfully", botConfig.ExchangeName)
 
 	// Création du bot
 	tradingBot, err := bot.NewBot(botConfig, db, exchg)
 	if err != nil {
 		logger.Fatalf("Failed to create bot: %v", err)
 	}
-	logger.Info("✓ Bot initialized successfully")
+	logger.Infof("[%s] ✓ Bot initialized successfully", botConfig.ExchangeName)
 
 	return tradingBot, nil
 }

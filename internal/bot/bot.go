@@ -103,14 +103,14 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 	// Initialize market data services with adapter
 	exchangeAdapter := newBotExchangeAdapter(exchange)
-	bot.marketCollector = market.NewMarketDataCollector(config.Pair, db, exchangeAdapter)
+	bot.marketCollector = market.NewMarketDataCollector(config.ExchangeName, config.Pair, db, exchangeAdapter)
 	bot.Calculator = market.NewCalculator(db, bot.marketCollector)
 
 	// Initialize algorithm registry
 	bot.algorithmRegistry = algorithms.NewAlgorithmRegistry()
 	logger.Infof("[%s] Algorithm registry initialized with %d algorithms", config.ExchangeName, len(bot.algorithmRegistry.List()))
 
-	strategyScheduler, err := scheduler.NewStrategyScheduler(config.Pair, db, bot.marketCollector, bot.Calculator, bot.algorithmRegistry, bot)
+	strategyScheduler, err := scheduler.NewStrategyScheduler(config.ExchangeName, config.Pair, db, &bot.market, bot.marketCollector, bot.Calculator, bot.algorithmRegistry, bot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create strategy scheduler: %w", err)
 	}
@@ -121,7 +121,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 	logger.Infof("[%s] Initializing market data collection...", config.ExchangeName)
 	err = bot.marketCollector.CollectCandles(config.Pair, "4h", 200) // Collect initial historical data
 	if err != nil {
-		logger.Warnf("Failed to collect initial market data: %v", err)
+		logger.Warnf("[%s] Failed to collect initial market data: %v", config.ExchangeName, err)
 	} else {
 		logger.Infof("[%s] Market data collection initialized successfully", config.ExchangeName)
 	}
@@ -164,7 +164,7 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) run() {
-	logger.Info("🚀 Starting cron-based strategy scheduler...")
+	logger.Infof("[%s] Starting cron-based strategy scheduler...", b.Config.ExchangeName)
 
 	// Start the strategy scheduler with real cron
 	err := b.strategyScheduler.Start()
@@ -177,7 +177,7 @@ func (b *Bot) run() {
 	checkTicker := time.NewTicker(b.Config.CheckInterval)
 	defer checkTicker.Stop()
 
-	logger.Info("✅ Cron scheduler active, strategies will execute according to their cron expressions")
+	logger.Infof("[%s] Cron scheduler active, strategies will execute according to their cron expressions", b.Config.ExchangeName)
 
 	for {
 		select {
@@ -297,15 +297,14 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 		return
 	}
 
-	message := ""
-	message += fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.Config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s\n", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset)
+	message := fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.Config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset) // ✅ PAS d'extra \n
 	if dbOrder.Side == database.Buy {
 		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	} else {
 		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	}
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(dbOrder.Amount*dbOrder.Price), b.market.QuoteAsset)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -326,7 +325,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	message += fmt.Sprintf("\n✅ Buy Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(*order.Amount**order.Price), b.market.QuoteAsset)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -363,15 +362,15 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 
 	message := ""
 	message += fmt.Sprintf("🌀 Cycle on %s [%d] COMPLETE", b.Config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\n✅ [%s] Sell Order Filled: %s", b.Config.ExchangeName, *order.Id)
+	message += fmt.Sprintf("\n✅ Sell Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(*order.Amount**order.Price), b.market.QuoteAsset)
 
 	buyValue := dbCycle.BuyOrder.Price * dbCycle.BuyOrder.Amount
 	win := *dbCycle.Profit
 	winPercent := (win / buyValue) * 100
-	message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
+	message += fmt.Sprintf("\n🤑 Profit: %s %s (%+.1f%%)", b.market.FormatPrice(win), b.market.QuoteAsset, winPercent)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -416,7 +415,13 @@ func (m *Market) FormatPrice(price float64) string {
 	return strconv.FormatFloat(price, 'f', m.Precision.PriceDecimals, 64)
 }
 
-// Legacy calculation methods removed - now using Calculator with indicator v2 channels
+func (m *Market) GetBaseAsset() string {
+	return m.BaseAsset
+}
+
+func (m *Market) GetQuoteAsset() string {
+	return m.QuoteAsset
+}
 
 // ===============================
 // EXCHANGE ADAPTER FOR MARKET DATA

@@ -18,6 +18,8 @@ import (
 
 // StrategyScheduler manages cron-based execution of trading strategies
 type StrategyScheduler struct {
+	exchangeName    string
+	pair            string
 	scheduler       gocron.Scheduler
 	started         bool
 	db              *database.DB
@@ -27,7 +29,7 @@ type StrategyScheduler struct {
 }
 
 // NewStrategyScheduler creates a new strategy scheduler
-func NewStrategyScheduler(pair string, db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) (*StrategyScheduler, error) {
+func NewStrategyScheduler(exchangeName, pair string, db *database.DB, market StrategyMarket, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) (*StrategyScheduler, error) {
 	// Create the scheduler with options
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),
@@ -39,9 +41,11 @@ func NewStrategyScheduler(pair string, db *database.DB, marketCollector *market.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create strategy manager for orchestrating execution
-	strategyManager := NewStrategyManager(pair, db, marketCollector, calculator, algorithmRegistry, exchange)
+	strategyManager := NewStrategyManager(exchangeName, pair, db, market, marketCollector, calculator, algorithmRegistry, exchange)
 
 	return &StrategyScheduler{
+		exchangeName:    exchangeName,
+		pair:            pair,
 		scheduler:       s,
 		started:         false,
 		db:              db,
@@ -53,7 +57,7 @@ func NewStrategyScheduler(pair string, db *database.DB, marketCollector *market.
 
 // Start the scheduler and load all enabled strategies
 func (ss *StrategyScheduler) Start() error {
-	logger.Info("Starting strategy scheduler...")
+	logger.Infof("[%s] Starting strategy scheduler...", ss.exchangeName)
 
 	// Load all enabled strategies from database
 	strategies, err := ss.db.GetEnabledStrategies()
@@ -61,7 +65,7 @@ func (ss *StrategyScheduler) Start() error {
 		return fmt.Errorf("failed to load enabled strategies: %w", err)
 	}
 
-	logger.Infof("Found %d enabled strategies to schedule", len(strategies))
+	logger.Infof("[%s] Found %d enabled strategies to schedule", ss.exchangeName, len(strategies))
 
 	// Schedule each strategy
 	for _, strategy := range strategies {
@@ -70,13 +74,13 @@ func (ss *StrategyScheduler) Start() error {
 			logger.Errorf("Failed to schedule strategy %s: %v", strategy.Name, err)
 			continue
 		}
-		logger.Infof("✓ Scheduled strategy '%s' (%s) with cron '%s'",
-			strategy.Name, strategy.AlgorithmName, strategy.CronExpression)
+		logger.Infof("[%s] ✓ Scheduled strategy '%s' (%s) with cron '%s'",
+			ss.exchangeName, strategy.Name, strategy.AlgorithmName, strategy.CronExpression)
 	}
 
 	// Start the scheduler
 	ss.scheduler.Start()
-	logger.Info("✓ Strategy scheduler started successfully")
+	logger.Infof("[%s] ✓ Strategy scheduler started successfully", ss.exchangeName)
 	ss.started = true
 
 	jobs := ss.scheduler.Jobs()
@@ -117,20 +121,20 @@ func (ss *StrategyScheduler) ScheduleStrategy(strategy database.Strategy) error 
 	if ss.started {
 		nextRun, err := job.NextRun()
 		if err == nil {
-			logger.Infof("Job created for strategy %s (ID: %d), next run: %v", strategy.Name, strategy.ID, nextRun)
+			logger.Infof("[%s] Job created for strategy %s (ID: %d), next run: %v", ss.exchangeName, strategy.Name, strategy.ID, nextRun)
 			if updateErr := ss.updateStrategyNextRun(strategy.ID, nextRun); updateErr != nil {
 				logger.Warnf("Failed to update next run time for strategy %d: %v", strategy.ID, updateErr)
 			}
 		}
 	} else {
-		logger.Infof("Job created for strategy %s (ID: %d)", strategy.Name, strategy.ID)
+		logger.Infof("[%s] Job created for strategy %s (ID: %d)", ss.exchangeName, strategy.Name, strategy.ID)
 	}
 	return nil
 }
 
 // executeStrategy is called by the scheduler to execute a strategy
 func (ss *StrategyScheduler) executeStrategy(strategyID int) {
-	logger.Infof("🎯 Executing strategy ID: %d", strategyID)
+	logger.Infof("[%s] 🎯 Executing strategy ID: %d", ss.exchangeName, strategyID)
 
 	// Load strategy from database
 	strategy, err := ss.db.GetStrategy(strategyID)
@@ -140,7 +144,7 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 	}
 
 	if !strategy.Enabled {
-		logger.Warnf("Strategy %s is disabled, skipping execution", strategy.Name)
+		logger.Warnf("[%s] Strategy %s is disabled, skipping execution", ss.exchangeName, strategy.Name)
 		return
 	}
 
@@ -158,7 +162,7 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 		logger.Errorf("Failed to update strategy execution time: %v", err)
 	}
 
-	logger.Infof("✅ Strategy '%s' executed successfully at %v", strategy.Name, now.Format("15:04:05"))
+	logger.Infof("[%s] ✅ Strategy '%s' executed successfully at %v", ss.exchangeName, strategy.Name, now.Format("15:04:05"))
 
 	var baseTime time.Time
 	if strategy.NextExecutionAt != nil {
@@ -168,12 +172,12 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 	}
 	nextRun, err := ss.calculateNextExecution(strategy.CronExpression, baseTime)
 	if err != nil {
-		logger.Warnf("Failed to calculate next run for strategy %d: %v", strategyID, err)
+		logger.Warnf("[%s] Failed to calculate next run for strategy %d: %v", ss.exchangeName, strategyID, err)
 	} else {
 		if updateErr := ss.updateStrategyNextRun(strategyID, nextRun); updateErr != nil {
-			logger.Warnf("Failed to update next run time for strategy %d: %v", strategyID, updateErr)
+			logger.Warnf("[%s] Failed to update next run time for strategy %d: %v", ss.exchangeName, strategyID, updateErr)
 		} else {
-			logger.Infof("✅ Strategy %d next run scheduled for: %v", strategyID, nextRun.Format("15:04:05"))
+			logger.Infof("[%s] ✅ Strategy %d next run scheduled for: %v", ss.exchangeName, strategyID, nextRun.Format("15:04:05"))
 		}
 	}
 }
@@ -191,7 +195,7 @@ func (ss *StrategyScheduler) calculateNextExecution(cronExpr string, fromTime ti
 
 // AddStrategy adds a new strategy to the scheduler at runtime
 func (ss *StrategyScheduler) AddStrategy(strategy database.Strategy) error {
-	logger.Infof("Adding new strategy to scheduler: %s", strategy.Name)
+	logger.Infof("[%s] Adding new strategy to scheduler: %s", ss.exchangeName, strategy.Name)
 	return ss.ScheduleStrategy(strategy)
 }
 
@@ -201,7 +205,7 @@ func (ss *StrategyScheduler) RemoveStrategy(strategyID int) error {
 	tag := fmt.Sprintf("strategy-%d", strategyID)
 	ss.scheduler.RemoveByTags(tag)
 
-	logger.Infof("Strategy %d removed from scheduler", strategyID)
+	logger.Infof("[%s] Strategy %d removed from scheduler", ss.exchangeName, strategyID)
 	return nil
 }
 
@@ -219,7 +223,7 @@ func (ss *StrategyScheduler) UpdateStrategy(strategy database.Strategy) error {
 
 // Stop the scheduler gracefully
 func (ss *StrategyScheduler) Stop() error {
-	logger.Info("Stopping strategy scheduler...")
+	logger.Infof("[%s] Stopping strategy scheduler...", ss.exchangeName)
 
 	ss.cancel()
 
@@ -228,7 +232,7 @@ func (ss *StrategyScheduler) Stop() error {
 		return fmt.Errorf("failed to shutdown scheduler: %w", err)
 	}
 
-	logger.Info("✓ Strategy scheduler stopped")
+	logger.Infof("[%s] ✓ Strategy scheduler stopped", ss.exchangeName)
 	ss.started = false
 
 	return nil

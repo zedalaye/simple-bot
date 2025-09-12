@@ -24,17 +24,19 @@ type Exchange interface {
 
 // MarketDataCollector manages candle data collection and storage
 type MarketDataCollector struct {
-	pair     string
-	db       *database.DB
-	exchange Exchange
+	exchangeName string
+	pair         string
+	db           *database.DB
+	exchange     Exchange
 }
 
 // NewMarketDataCollector creates a new market data collector
-func NewMarketDataCollector(pair string, db *database.DB, exchange Exchange) *MarketDataCollector {
+func NewMarketDataCollector(exchangeName, pair string, db *database.DB, exchange Exchange) *MarketDataCollector {
 	return &MarketDataCollector{
-		pair:     pair,
-		db:       db,
-		exchange: exchange,
+		exchangeName: exchangeName,
+		pair:         pair,
+		db:           db,
+		exchange:     exchange,
 	}
 }
 
@@ -84,7 +86,7 @@ func (mdc *MarketDataCollector) CollectCandles(pair, timeframe string, limit int
 		saved++
 	}
 
-	logger.Infof("Saved %d/%d candles for %s/%s", saved, len(candles), pair, timeframe)
+	logger.Infof("[%s] Saved %d/%d candles for %s/%s", mdc.exchangeName, saved, len(candles), pair, timeframe)
 	return nil
 }
 
@@ -103,7 +105,7 @@ func (mdc *MarketDataCollector) CollectAllActiveTimeframes() error {
 		return nil
 	}
 
-	logger.Infof("Found %d active timeframes to collect", len(activeTimeframes))
+	logger.Infof("[%s] Found %d active timeframes to collect", mdc.exchangeName, len(activeTimeframes))
 
 	// Collect candles for each timeframe
 	errors := 0
@@ -117,9 +119,9 @@ func (mdc *MarketDataCollector) CollectAllActiveTimeframes() error {
 	}
 
 	if errors > 0 {
-		logger.Warnf("Collection completed with %d errors out of %d timeframes", errors, len(activeTimeframes))
+		logger.Warnf("[%s] Collection completed with %d errors out of %d timeframes", mdc.exchangeName, errors, len(activeTimeframes))
 	} else {
-		logger.Infof("Successfully collected candles for all %d timeframes", len(activeTimeframes))
+		logger.Infof("[%s] Successfully collected candles for all %d timeframes", mdc.exchangeName, len(activeTimeframes))
 	}
 
 	return nil
@@ -143,7 +145,7 @@ func (mdc *MarketDataCollector) EnsureCandlesAvailable(pair, timeframe string, r
 		return nil
 	}
 
-	logger.Infof("Insufficient candles for %s/%s: %d < %d, collecting more...", pair, timeframe, len(candles), requiredCount)
+	logger.Infof("[%s] Insufficient candles for %s/%s: %d < %d, collecting more...", mdc.exchangeName, pair, timeframe, len(candles), requiredCount)
 
 	// We need more candles, fetch them
 	return mdc.CollectCandles(pair, timeframe, requiredCount*2) // Fetch double to have some buffer
@@ -151,7 +153,7 @@ func (mdc *MarketDataCollector) EnsureCandlesAvailable(pair, timeframe string, r
 
 // CleanupOldCandles removes old candles to save storage space
 func (mdc *MarketDataCollector) CleanupOldCandles(olderThanDays int) error {
-	logger.Infof("Cleaning up candles older than %d days", olderThanDays)
+	logger.Infof("[%s] Cleaning up candles older than %d days", mdc.exchangeName, olderThanDays)
 	return mdc.db.CleanupOldCandles(olderThanDays)
 }
 

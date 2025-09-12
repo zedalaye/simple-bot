@@ -2,9 +2,11 @@ package scheduler
 
 import (
 	"bot/internal/algorithms"
+
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
+	"bot/internal/telegram"
 	"fmt"
 )
 
@@ -29,10 +31,19 @@ type ExchangeOrder struct {
 	Status *string
 }
 
+type StrategyMarket interface {
+	FormatAmount(amount float64) string
+	FormatPrice(price float64) string
+	GetBaseAsset() string
+	GetQuoteAsset() string
+}
+
 // StrategyManager orchestrates the execution of trading strategies
 type StrategyManager struct {
+	exchangeName      string
 	pair              string
 	db                *database.DB
+	market            StrategyMarket
 	marketCollector   *market.MarketDataCollector
 	calculator        *market.Calculator
 	algorithmRegistry *algorithms.AlgorithmRegistry
@@ -41,10 +52,12 @@ type StrategyManager struct {
 }
 
 // NewStrategyManager creates a new strategy manager
-func NewStrategyManager(pair string, db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) *StrategyManager {
+func NewStrategyManager(exchangeName, pair string, db *database.DB, market StrategyMarket, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) *StrategyManager {
 	return &StrategyManager{
+		exchangeName:      exchangeName,
 		pair:              pair,
 		db:                db,
+		market:            market,
 		marketCollector:   marketCollector,
 		calculator:        calculator,
 		algorithmRegistry: algorithmRegistry,
@@ -55,7 +68,7 @@ func NewStrategyManager(pair string, db *database.DB, marketCollector *market.Ma
 
 // ExecuteStrategy executes a single strategy
 func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
-	logger.Infof("🎯 Executing strategy '%s' (algorithm: %s)", strategy.Name, strategy.AlgorithmName)
+	logger.Infof("[%s] 🎯 Executing strategy '%s' (algorithm: %s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
 
 	// Get the algorithm for this strategy
 	algorithm, exists := sm.algorithmRegistry.Get(strategy.AlgorithmName)
@@ -75,8 +88,8 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	}
 
 	if activeOrders >= strategy.MaxConcurrentOrders {
-		logger.Infof("Strategy %s has reached max concurrent orders (%d/%d), skipping execution",
-			strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
+		logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping execution",
+			sm.exchangeName, strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
 		return nil
 	}
 
@@ -127,8 +140,8 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		}
 
 		if !reserved {
-			logger.Warnf("Strategy %s: insufficient balance for quote_amount %.2f, skipping buy",
-				strategy.Name, strategy.QuoteAmount)
+			logger.Warnf("[%s] Strategy %s: insufficient balance for quote_amount %.2f, skipping buy",
+				sm.exchangeName, strategy.Name, strategy.QuoteAmount)
 			return nil
 		}
 
@@ -140,7 +153,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 			return fmt.Errorf("failed to execute buy order: %w", err)
 		}
 
-		logger.Infof("✅ Strategy %s: buy order executed successfully", strategy.Name)
+		logger.Infof("[%s] ✅ Strategy %s: buy order executed successfully", sm.exchangeName, strategy.Name)
 	} else {
 		logger.Debugf("Strategy %s: no buy signal - %s", strategy.Name, buySignal.Reason)
 	}
@@ -165,8 +178,8 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 
 // executeBuyOrder executes a buy order from algorithm signal
 func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strategy database.Strategy) error {
-	logger.Infof("Executing buy order for strategy %s: amount=%.4f, price=%.4f",
-		strategy.Name, buySignal.Amount, buySignal.LimitPrice)
+	logger.Infof("[%s] Executing buy order for strategy %s: amount=%.4f, price=%.4f",
+		sm.exchangeName, strategy.Name, buySignal.Amount, buySignal.LimitPrice)
 
 	// Place order on exchange
 	order, err := sm.exchange.PlaceLimitBuyOrder(sm.pair, buySignal.Amount, buySignal.LimitPrice)
@@ -186,11 +199,26 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 		logger.Errorf("Failed to create cycle: %v", err)
 	}
 
+	// ✅ AJOUTER : Notification Telegram pour ordre d'achat
+	message := fmt.Sprintf("🌀 New Cycle on %s [%d]", sm.exchangeName, cycle.ID)
+	message += fmt.Sprintf("\n📊 Strategy: %s", strategy.Name)
+	message += fmt.Sprintf("\n🛒 Buy Order: %s", *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", sm.market.FormatAmount(buySignal.Amount), sm.market.GetBaseAsset())
+	message += fmt.Sprintf("\n📉 Buy Price: %s %s", sm.market.FormatPrice(buySignal.LimitPrice), sm.market.GetQuoteAsset())
+	message += fmt.Sprintf("\n🎯 Target: %s %s", sm.market.FormatPrice(buySignal.TargetPrice), sm.market.GetQuoteAsset())
+	message += fmt.Sprintf("\n💲 Value: %s %s", sm.market.FormatPrice(buySignal.Amount*buySignal.LimitPrice), sm.market.GetQuoteAsset())
+
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send Telegram notification: %v", err)
+	}
+
 	logger.Infof("✅ Buy order created: Order ID=%d, Cycle ID=%d, Strategy=%s",
 		dbOrder.ID, cycle.ID, strategy.Name)
 
 	return nil
 }
+
 func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cycle database.CycleEnhanced, strategy database.Strategy) error {
 	logger.Infof("Executing sell order for strategy %s: cycle=%d, amount=%.4f, price=%.4f",
 		strategy.Name, cycle.ID, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
@@ -212,6 +240,22 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 	if err != nil {
 		logger.Errorf("Failed to associate sell order with cycle: %v", err)
 		return fmt.Errorf("failed to associate sell order with cycle: %w", err)
+	}
+
+	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount - cycle.BuyOrder.Fees
+
+	message := fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", sm.exchangeName, cycle.ID)
+	message += fmt.Sprintf("\n📊 Strategy: %s", strategy.Name)
+	message += fmt.Sprintf("\n🚀 Sell Order: %s", *order.Id)
+	message += fmt.Sprintf("\n💰 Quantity: %s %s", sm.market.FormatAmount(cycle.BuyOrder.Amount), sm.market.GetBaseAsset())
+	message += fmt.Sprintf("\n📈 Sell Price: %s %s", sm.market.FormatPrice(sellSignal.LimitPrice), sm.market.GetQuoteAsset())
+	message += fmt.Sprintf("\n💲 Value: %s %s", sm.market.FormatPrice(cycle.BuyOrder.Amount*sellSignal.LimitPrice), sm.market.GetQuoteAsset())
+	message += fmt.Sprintf("\n🤑 Expected Profit: %s %s (%.2f%%)", sm.market.FormatPrice(expectedProfit), sm.market.GetQuoteAsset(),
+		(expectedProfit/(cycle.BuyOrder.Price*cycle.BuyOrder.Amount))*100)
+
+	err = telegram.SendMessage(message)
+	if err != nil {
+		logger.Errorf("Failed to send Telegram notification: %v", err)
 	}
 
 	logger.Infof("✅ Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.4f",
