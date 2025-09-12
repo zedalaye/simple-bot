@@ -235,6 +235,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 		profitTarget, _ := strconv.ParseFloat(c.PostForm("profit_target"), 64)
 		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
 		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
+		concurrentOrders, _ := strconv.ParseInt(c.PostForm("concurrent_orders"), 10, 64)
 
 		// Set defaults if not provided
 		if trailingStopDelta == 0 {
@@ -260,7 +261,8 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 
 		// Use the new comprehensive method instead of CreateExampleStrategy
 		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
-			quoteAmount, profitTarget, trailingStopDelta, sellOffset, rsiThreshold, rsiPeriod)
+			quoteAmount, profitTarget, trailingStopDelta, sellOffset, rsiThreshold, rsiPeriod,
+			int(concurrentOrders))
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
 			return
