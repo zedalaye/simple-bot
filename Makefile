@@ -1,13 +1,13 @@
 # Makefile pour simplifier la compilation
 
 .PHONY: build-all \
-        build-bot build-admin build-test build-volatility build-rsi build-order build-fix-cycles \
+        build-bot build-admin build-test build-volatility build-rsi build-order \
         build-image \
         clean \
         run-bot run-admin run-web run-test
 
 # Construire tous les binaires
-build-all: build-bot build-admin build-web build-test build-volatility build-rsi build-order build-fix-cycles
+build-all: build-bot build-admin build-web build-test build-volatility build-rsi build-order
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -30,9 +30,6 @@ build-rsi:
 
 build-order:
 	go build -o bin/order ./cmd/order	
-
-build-fix-cycles:
-	go build -o bin/fix-cycles ./cmd/fix-cycles
 
 # Construction de l'image docker
 build-image:
