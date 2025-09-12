@@ -7,11 +7,11 @@ import (
 
 // TradingContext provides all necessary data for trading decisions
 type TradingContext struct {
-	Pair          string
-	CurrentPrice  float64
-	Balance       map[string]Balance
-	OpenPositions []database.Position
-	Calculator    *market.Calculator
+	Pair         string
+	CurrentPrice float64
+	Balance      map[string]Balance
+	OpenCycles   []database.CycleEnhanced
+	Calculator   *market.Calculator
 }
 
 // Balance represents asset balance
@@ -43,7 +43,7 @@ type Algorithm interface {
 
 	// Trading logic
 	ShouldBuy(ctx TradingContext, strategy database.Strategy) (BuySignal, error)
-	ShouldSell(ctx TradingContext, position database.Position, strategy database.Strategy) (SellSignal, error)
+	ShouldSell(ctx TradingContext, cycle database.Cycle, strategy database.Strategy) (SellSignal, error)
 
 	// Configuration validation
 	ValidateConfig(strategy database.Strategy) error

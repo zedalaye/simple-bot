@@ -124,26 +124,26 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 }
 
 // ShouldSell determines if we should sell a position
-func (a *RSI_DCA) ShouldSell(ctx TradingContext, position database.Position, strategy database.Strategy) (SellSignal, error) {
-	logger.Debugf("RSI_DCA.ShouldSell: checking position %d", position.ID)
+func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy database.Strategy) (SellSignal, error) {
+	logger.Debugf("RSI_DCA.ShouldSell: checking cycle %d", cycle.ID)
 
 	// Check if current price has reached the target price
-	if ctx.CurrentPrice >= position.TargetPrice {
+	if ctx.CurrentPrice >= cycle.TargetPrice {
 		// Apply trailing stop logic (same as original bot.go)
 		trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
 
-		if ctx.CurrentPrice < (position.MaxPrice * trailingStopThreshold) {
+		if ctx.CurrentPrice < (cycle.MaxPrice * trailingStopThreshold) {
 			// Price has dropped from max, time to sell
 			priceOffset := ctx.CurrentPrice * (strategy.SellOffset / 100.0)
 			limitPrice := ctx.CurrentPrice + priceOffset
 
-			logger.Infof("RSI_DCA.ShouldSell: SELL signal - trailing stop triggered for position %d", position.ID)
+			logger.Infof("RSI_DCA.ShouldSell: SELL signal - trailing stop triggered for position %d", cycle.ID)
 
 			return SellSignal{
 				ShouldSell: true,
 				LimitPrice: limitPrice,
 				Reason: fmt.Sprintf("Trailing stop: current %.4f < max %.4f * %.4f%% = %.4f",
-					ctx.CurrentPrice, position.MaxPrice, (1.0-trailingStopThreshold)*100, position.MaxPrice*trailingStopThreshold),
+					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100, cycle.MaxPrice*trailingStopThreshold),
 			}, nil
 		}
 	}
@@ -152,7 +152,7 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, position database.Position, str
 	return SellSignal{
 		ShouldSell: false,
 		Reason: fmt.Sprintf("Holding position - current %.4f, target %.4f, max %.4f",
-			ctx.CurrentPrice, position.TargetPrice, position.MaxPrice),
+			ctx.CurrentPrice, cycle.TargetPrice, cycle.MaxPrice),
 	}, nil
 }
 

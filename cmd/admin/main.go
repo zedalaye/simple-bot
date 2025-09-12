@@ -23,7 +23,7 @@ func main() {
 
 	var (
 		botDir  = flag.String("root", ".", "Path to the bot root directory")
-		command = flag.String("cmd", "stats", "Command to execute: stats, positions, orders, export")
+		command = flag.String("cmd", "stats", "Command to execute: stats, cycles, orders, export")
 		format  = flag.String("format", "table", "Output format: table, json")
 	)
 	flag.Parse()
@@ -67,8 +67,8 @@ func main() {
 	switch *command {
 	case "stats":
 		showStats(db, *format)
-	case "positions":
-		showPositions(db, *format)
+	case "cycles":
+		showCycles(db, *format)
 	case "orders":
 		showOrders(db, *format)
 	case "export":
@@ -98,32 +98,42 @@ func showStats(db *database.DB, format string) {
 	}
 }
 
-func showPositions(db *database.DB, format string) {
-	positions, err := db.GetAllPositions()
+func showCycles(db *database.DB, format string) {
+	cycles, err := db.GetAllCycles()
 	if err != nil {
-		logger.Fatalf("Failed to get positions: %v", err)
+		logger.Fatalf("Failed to get cycles: %v", err)
 	}
 
 	switch format {
 	case "json":
-		data, _ := json.MarshalIndent(positions, "", "  ")
+		data, _ := json.MarshalIndent(cycles, "", "  ")
 		fmt.Println(string(data))
 	default:
-		if len(positions) == 0 {
-			fmt.Println("No active positions")
+		if len(cycles) == 0 {
+			fmt.Println("No cycles")
 			return
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tPrice\tAmount\tValue\tAge\tCreated At")
-		fmt.Fprintln(w, "---\t-----\t------\t-----\t---\t----------")
+		fmt.Fprintln(w, "ID\tStatus\tAmount\tBuy Price\tSell Price\tProfit\tAge\tCreated At")
+		fmt.Fprintln(w, "--\t------\t------\t---------\t----------\t------\t---\t---------")
 
-		for _, pos := range positions {
-			age := time.Since(pos.CreatedAt)
-			value := pos.Price * pos.Amount
-			fmt.Fprintf(w, "%d\t%.2f\t%.6f\t%.2f\t%s\t%s\n",
-				pos.ID, pos.Price, pos.Amount, value,
-				formatDuration(age), pos.CreatedAt.Format("2006-01-02 15:04:05"))
+		for _, cycle := range cycles {
+			age := time.Since(cycle.CreatedAt)
+
+			var sellPrice string
+			var profit string
+			if cycle.SellOrder != nil {
+				sellPrice = fmt.Sprintf("%.2f", cycle.SellOrder.Price)
+				profit = fmt.Sprintf("%.2f", cycle.Profit)
+			} else {
+				sellPrice = ""
+				profit = ""
+			}
+
+			fmt.Fprintf(w, "%d\t%s\t%.2f\t%.2f\t%s\t%s\t%s\t%s\n",
+				cycle.ID, cycle.Status, cycle.BuyOrder.Amount, cycle.BuyOrder.Price, sellPrice, profit,
+				formatDuration(age), cycle.CreatedAt.Format("2006-01-02 15:04:05"))
 		}
 		w.Flush()
 	}
@@ -146,17 +156,13 @@ func showOrders(db *database.DB, format string) {
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tExternal ID\tSide\tPrice\tAmount\tPosition ID\tAge\tCreated At")
-		fmt.Fprintln(w, "---\t-----------\t----\t-----\t------\t-----------\t---\t----------")
+		fmt.Fprintln(w, "ID\tExternal ID\tSide\tPrice\tAmount\tAge\tCreated At")
+		fmt.Fprintln(w, "--\t-----------\t----\t-----\t------\t---\t----------")
 
 		for _, order := range orders {
 			age := time.Since(order.CreatedAt)
-			posID := "N/A"
-			if order.PositionID != nil {
-				posID = fmt.Sprintf("%d", *order.PositionID)
-			}
 			fmt.Fprintf(w, "%d\t%s\t%s\t%.2f\t%.6f\t%s\t%s\t%s\n",
-				order.ID, order.ExternalID, order.Side, order.Price, order.Amount, posID,
+				order.ID, order.ExternalID, order.Side, order.Price, order.Amount,
 				formatDuration(age), order.CreatedAt.Format("2006-01-02 15:04:05"))
 		}
 		w.Flush()
@@ -167,11 +173,18 @@ func exportData(db *database.DB) {
 	// Créer un export complet
 	export := make(map[string]interface{})
 
-	positions, err := db.GetAllPositions()
+	// positions, err := db.GetAllPositions()
+	// if err != nil {
+	// 	logger.Warnf("Warning: Failed to export positions: %v", err)
+	// } else {
+	// 	export["positions"] = positions
+	// }
+
+	cycles, err := db.GetAllCycles()
 	if err != nil {
-		logger.Warnf("Warning: Failed to export positions: %v", err)
+		logger.Warnf("Warning: Failed to export cycles: %v", err)
 	} else {
-		export["positions"] = positions
+		export["cycles"] = cycles
 	}
 
 	// Pour l'export, on récupère aussi les ordres pending

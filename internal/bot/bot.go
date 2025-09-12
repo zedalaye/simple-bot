@@ -215,52 +215,44 @@ func (b *Bot) handlePriceCheck() {
 	logger.Infof("[%s] Current price: %s", b.Config.ExchangeName, b.market.FormatPrice(currentPrice))
 
 	// Get all open positions (from all strategies)
-	positions, err := b.db.GetOpenPositions()
+	cycles, err := b.db.GetOpenCycles()
 	if err != nil {
-		logger.Errorf("Failed to get open positions: %v", err)
+		logger.Errorf("Failed to get open cycles: %v", err)
 		return
 	}
-	logger.Debugf("Checking %d open positions for sell signals", len(positions))
+	logger.Debugf("Checking %d open cycles for sell signals", len(cycles))
 
-	for _, pos := range positions {
+	for _, cycle := range cycles {
 		// Update max price if current price is higher
-		if currentPrice > pos.MaxPrice {
-			err := b.db.UpdatePositionMaxPrice(pos.ID, currentPrice)
+		if currentPrice > cycle.MaxPrice {
+			err := b.db.UpdateCycleMaxPrice(cycle.ID, currentPrice)
 			if err != nil {
-				logger.Errorf("Failed to update max price for position %d: %v", pos.ID, err)
+				logger.Errorf("Failed to update max price for cycle %d: %v", cycle.ID, err)
 				continue
 			}
-			pos.MaxPrice = currentPrice
-			logger.Infof("[%s] Position %d updated MaxPrice → %s",
-				b.Config.ExchangeName, pos.ID, b.market.FormatPrice(pos.MaxPrice))
+			cycle.MaxPrice = currentPrice
+			logger.Infof("[%s] Cycle %d updated MaxPrice → %s",
+				b.Config.ExchangeName, cycle.ID, b.market.FormatPrice(cycle.MaxPrice))
 		}
 
 		// Check trailing stop using PRE-CALCULATED target price (no more dynamic recalculation!)
-		if currentPrice >= pos.TargetPrice {
+		if currentPrice >= cycle.TargetPrice {
 			// Get strategy for this position to get trailing stop settings
-			strategy, err := b.getStrategyForPosition(pos)
+			strategy, err := b.db.GetStrategy(cycle.StrategyID)
 			if err != nil {
-				logger.Errorf("Failed to get strategy for position %d: %v", pos.ID, err)
+				logger.Errorf("Failed to get strategy for cycle %d: %v", cycle.ID, err)
 				continue
 			}
 
 			trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
-			if currentPrice < (pos.MaxPrice * trailingStopThreshold) {
+			if currentPrice < (cycle.MaxPrice * trailingStopThreshold) {
 				logger.Infof("[%s] Position %d trailing stop triggered: %.4f < %.4f",
-					b.Config.ExchangeName, pos.ID, currentPrice, pos.MaxPrice*trailingStopThreshold)
+					b.Config.ExchangeName, cycle.ID, currentPrice, cycle.MaxPrice*trailingStopThreshold)
 
-				b.placeSellOrderLegacy(pos, currentPrice)
+				b.placeSellOrderLegacy(cycle, currentPrice)
 			}
 		}
 	}
-}
-
-// Helper to get strategy for a position
-func (b *Bot) getStrategyForPosition(pos database.Position) (*database.Strategy, error) {
-	if pos.StrategyID == nil {
-		return nil, fmt.Errorf("position %d has no strategy_id", pos.ID)
-	}
-	return b.db.GetStrategy(*pos.StrategyID)
 }
 
 func (b *Bot) handleOrderCheck() {
@@ -277,18 +269,13 @@ func (b *Bot) handleOrderCheck() {
 	}
 }
 
-func (b *Bot) placeSellOrderLegacy(pos database.Position, currentPrice float64) {
-	dbCycle, err := b.db.GetCycleForBuyOrderPosition(pos.ID)
-	if err != nil {
-		logger.Errorf("Failed to get cycle from buy order position %v: %v", pos.ID, err)
-	}
-
+func (b *Bot) placeSellOrderLegacy(cycle database.CycleEnhanced, currentPrice float64) {
 	// pour rester maker, on place un ordre juste un peu plus haut que currentPrice, idéalement il faudrait
 	// consulter le carnet d'ordre pour se placer juste au-dessus de la meilleure offre
 	priceOffset := currentPrice * (b.Config.SellOffset / 100.0)
 	limitPrice := b.roundToPrecision(currentPrice+priceOffset, b.market.Precision.Price)
 
-	order, err := b.exchange.PlaceLimitSellOrder(b.Config.Pair, pos.Amount, limitPrice)
+	order, err := b.exchange.PlaceLimitSellOrder(b.Config.Pair, cycle.BuyOrder.Amount, limitPrice)
 	if err != nil {
 		logger.Errorf("Failed to place Limit Sell Order: %v", err)
 		return
@@ -297,19 +284,19 @@ func (b *Bot) placeSellOrderLegacy(pos database.Position, currentPrice float64) 
 	orderPrice := *order.Price
 	orderAmount := *order.Amount
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, &pos.ID, *pos.StrategyID)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, cycle.StrategyID)
 	if err != nil {
 		logger.Errorf("Failed to save sell order to database: %v", err)
 		return
 	}
 
-	err = b.db.UpdateCycleSellOrder(dbCycle.ID, dbOrder.ID)
+	err = b.db.UpdateCycleSellOrder(cycle.ID, dbOrder.ID)
 	if err != nil {
 		logger.Errorf("Failed to update cycle sell order: %v", err)
 	}
 
 	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, dbCycle.ID)
+	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, cycle.ID)
 	message += fmt.Sprintf("\nℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
@@ -320,9 +307,9 @@ func (b *Bot) placeSellOrderLegacy(pos database.Position, currentPrice float64) 
 		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
-	logger.Infof("[%s] Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Position=%v)",
+	logger.Infof("[%s] Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Cycle=%v)",
 		b.Config.ExchangeName,
-		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, pos.ID)
+		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, cycle.ID)
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {
@@ -415,21 +402,17 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	// Par défaut, le prix cible est basé sur le profit target configuré
 	targetPrice := *order.Price * (1.0 + b.Config.ProfitTarget/100.0)
 
-	position, err := b.db.CreatePosition(*order.Price, targetPrice, *order.Amount, *dbOrder.StrategyID)
-	if err != nil {
-		logger.Errorf("Failed to create position in database: %v", err)
+	// Mais il peut-être différent selon la stratégie
+	strategy, err := b.db.GetStrategy(dbCycle.StrategyID)
+	if err == nil {
+		targetPrice = *order.Price * (1.0 + strategy.ProfitTarget/100.0)
 	} else {
-		err = b.db.UpdateOrderPosition(dbOrder.ID, position.ID)
-		if err != nil {
-			logger.Errorf("Failed to update order position in database: %v", err)
-		}
-		logger.Infof("[%s] Position created (ID=%v, Price=%s, Amount=%s, TargetPrice=%s)",
-			b.Config.ExchangeName,
-			position.ID,
-			b.market.FormatPrice(position.Price),
-			b.market.FormatAmount(position.Amount),
-			b.market.FormatPrice(position.TargetPrice),
-		)
+		logger.Errorf("Failed to get strategy for cycle : %v", err)
+	}
+
+	err = b.db.UpdateCycleTargetPrice(dbCycle.ID, targetPrice)
+	if err != nil {
+		logger.Errorf("Failed to update cycle target price in database: %v", err)
 	}
 }
 
@@ -446,16 +429,10 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
 	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
-	if dbOrder.PositionID != nil {
-		position, err := b.db.GetPosition(*dbOrder.PositionID)
-		if err == nil {
-			buyValue := position.Price * position.Amount
-			sellValue := *order.Amount * *order.Price
-			win := sellValue - buyValue
-			winPercent := (win / buyValue) * 100
-			message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
-		}
-	}
+	buyValue := dbCycle.BuyOrder.Price * dbCycle.BuyOrder.Amount
+	win := *dbCycle.Profit
+	winPercent := (win / buyValue) * 100
+	message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -466,23 +443,20 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		b.Config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		*order.Id)
-
-	if dbOrder.PositionID != nil {
-		err := b.db.DeletePosition(*dbOrder.PositionID)
-		if err != nil {
-			logger.Errorf("Failed to delete position from database: %v", err)
-		} else {
-			logger.Infof("[%s] Position deleted: ID=%v", b.Config.ExchangeName, *dbOrder.PositionID)
-		}
-	}
 }
 
 func (b *Bot) ShowStatistics() {
 	if stats, err := b.db.GetStats(); err == nil {
-		logger.Infof("[%s] Positions[Active=%d, Value=%.2f], Orders[Pending=%d, Filled=%d, Cancelled=%d]",
+		logger.Infof("[%s] Profit[Average=%.2f, Total=%.2f] Cycles[Active=%d, Completed=%d, Count=%d] Orders[Pending=%d, Filled=%d, Cancelled=%d]",
 			b.Config.ExchangeName,
-			stats["active_positions"],
-			stats["total_positions_value"],
+
+			stats["average_profit"],
+			stats["total_profit"],
+
+			stats["active_cycles_count"],
+			stats["completed_cycles_count"],
+			stats["cycles_count"],
+
 			stats["pending_orders"],
 			stats["filled_orders"],
 			stats["cancelled_orders"],

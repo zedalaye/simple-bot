@@ -56,11 +56,27 @@
                 {{end}}
                     </td>
                     <td>
-                    {{if .SellOrder}}
-                        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Terminé</span>
-                    {{else}}
-                        <span class="badge bg-warning"><i class="bi bi-hourglass me-1"></i>Actif</span>
-                    {{end}}
+                        {{if eq .Status "New"}}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-plus-circle me-1"></i>Nouveau
+                            </span>
+                        {{else if eq .Status "Open"}}
+                            <span class="badge bg-info">
+                                <i class="bi bi-door-open me-1"></i>Ouvert
+                            </span>
+                        {{else if eq .Status "Running"}}
+                            <span class="badge bg-warning">
+                                <i class="bi bi-play-circle me-1"></i>En cours
+                            </span>
+                        {{else if eq .Status "Completed"}}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Terminé
+                            </span>
+                        {{else}}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-question-circle me-1"></i>Inconnu
+                            </span>
+                        {{end}}
                     </td>
                     <td>{{.CreatedAt.Format "02/01/2006 15:04"}}</td>
                     <td>

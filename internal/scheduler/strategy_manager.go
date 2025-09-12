@@ -98,19 +98,19 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		balance[asset] = algorithms.Balance{Free: bal.Free}
 	}
 
-	// Get open positions for this strategy
-	openPositions, err := sm.getOpenPositionsForStrategy(strategy.ID)
+	// Get open cycles for this strategy
+	openCycles, err := sm.getOpenCyclesForStrategy(strategy.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get open positions: %w", err)
+		return fmt.Errorf("failed to get open cycles for strategy %v: %w", strategy.ID, err)
 	}
 
 	// Create trading context
 	tradingContext := algorithms.TradingContext{
-		Pair:          sm.pair,
-		CurrentPrice:  currentPrice,
-		Balance:       balance,
-		OpenPositions: openPositions,
-		Calculator:    sm.calculator,
+		Pair:         sm.pair,
+		CurrentPrice: currentPrice,
+		Balance:      balance,
+		OpenCycles:   openCycles,
+		Calculator:   sm.calculator,
 	}
 
 	// Check if algorithm wants to buy
@@ -146,7 +146,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	}
 
 	// Check sell signals for open positions
-	err = sm.checkSellSignals(algorithm, tradingContext, strategy, openPositions)
+	err = sm.checkSellSignals(algorithm, tradingContext, strategy, openCycles)
 	if err != nil {
 		logger.Errorf("Failed to check sell signals for strategy %s: %v", strategy.Name, err)
 	}
@@ -166,46 +166,34 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 	}
 
 	// Save order to database with strategy ID
-	dbOrder, err := sm.db.CreateOrder(*order.Id, database.Buy, *order.Amount, *order.Price, 0.0, nil, strategy.ID)
+	dbOrder, err := sm.db.CreateOrder(*order.Id, database.Buy, *order.Amount, *order.Price, 0.0, strategy.ID)
 	if err != nil {
 		return fmt.Errorf("failed to save buy order to database: %w", err)
 	}
 
-	// Create position with pre-calculated target price
-	position, err := sm.db.CreatePosition(*order.Price, buySignal.TargetPrice, *order.Amount, strategy.ID)
-	if err != nil {
-		logger.Errorf("Failed to create position: %v", err)
-	} else {
-		// Link order to position
-		err = sm.db.UpdateOrderPosition(dbOrder.ID, position.ID)
-		if err != nil {
-			logger.Errorf("Failed to link order to position: %v", err)
-		}
-	}
-
 	// Create cycle with strategy ID
-	cycle, err := sm.db.CreateCycle(dbOrder.ID, strategy.ID)
+	cycle, err := sm.db.CreateCycle(dbOrder.ID)
 	if err != nil {
 		logger.Errorf("Failed to create cycle: %v", err)
 	}
 
-	logger.Infof("✅ Buy order created: Order ID=%d, Position ID=%d, Cycle ID=%d, Strategy=%s",
-		dbOrder.ID, position.ID, cycle.ID, strategy.Name)
+	logger.Infof("✅ Buy order created: Order ID=%d, Cycle ID=%d, Strategy=%s",
+		dbOrder.ID, cycle.ID, strategy.Name)
 
 	return nil
 }
 
 // checkSellSignals checks if any positions should be sold
-func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx algorithms.TradingContext, strategy database.Strategy, positions []database.Position) error {
-	for _, position := range positions {
-		sellSignal, err := algorithm.ShouldSell(ctx, position, strategy)
+func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx algorithms.TradingContext, strategy database.Strategy, cycles []database.CycleEnhanced) error {
+	for _, cycle := range cycles {
+		sellSignal, err := algorithm.ShouldSell(ctx, cycle.Cycle, strategy)
 		if err != nil {
-			logger.Errorf("Algorithm ShouldSell failed for position %d: %v", position.ID, err)
+			logger.Errorf("Algorithm ShouldSell failed for cycle %d: %v", cycle.ID, err)
 			continue
 		}
 
 		if sellSignal.ShouldSell {
-			logger.Infof("Strategy %s: sell signal for position %d - %s", strategy.Name, position.ID, sellSignal.Reason)
+			logger.Infof("Strategy %s: sell signal for cycle %d - %s", strategy.Name, cycle.ID, sellSignal.Reason)
 			// TODO: Implement sell order execution
 		}
 	}
@@ -218,6 +206,6 @@ func (sm *StrategyManager) countActiveOrdersForStrategy(strategyID int) (int, er
 	return sm.db.CountActiveOrdersForStrategy(strategyID)
 }
 
-func (sm *StrategyManager) getOpenPositionsForStrategy(strategyID int) ([]database.Position, error) {
-	return sm.db.GetOpenPositionsForStrategy(strategyID)
+func (sm *StrategyManager) getOpenCyclesForStrategy(strategyID int) ([]database.CycleEnhanced, error) {
+	return sm.db.GetOpenCyclesForStrategy(strategyID)
 }

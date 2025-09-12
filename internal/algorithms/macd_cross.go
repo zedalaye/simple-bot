@@ -90,15 +90,15 @@ func (a *MACD_Cross) ShouldBuy(ctx TradingContext, strategy database.Strategy) (
 }
 
 // ShouldSell determines if we should sell a position
-func (a *MACD_Cross) ShouldSell(ctx TradingContext, position database.Position, strategy database.Strategy) (SellSignal, error) {
-	logger.Debugf("MACD_Cross.ShouldSell: checking position %d", position.ID)
+func (a *MACD_Cross) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy database.Strategy) (SellSignal, error) {
+	logger.Debugf("MACD_Cross.ShouldSell: checking cycle %d", cycle.ID)
 
 	// Simple sell logic: sell when target price is reached
-	if ctx.CurrentPrice >= position.TargetPrice {
+	if ctx.CurrentPrice >= cycle.TargetPrice {
 		// Apply trailing stop logic
 		trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
 
-		if ctx.CurrentPrice < (position.MaxPrice * trailingStopThreshold) {
+		if ctx.CurrentPrice < (cycle.MaxPrice * trailingStopThreshold) {
 			// Price has dropped from max, time to sell
 			priceOffset := ctx.CurrentPrice * (strategy.SellOffset / 100.0)
 			limitPrice := ctx.CurrentPrice + priceOffset
@@ -109,7 +109,7 @@ func (a *MACD_Cross) ShouldSell(ctx TradingContext, position database.Position, 
 				ShouldSell: true,
 				LimitPrice: limitPrice,
 				Reason: fmt.Sprintf("Target reached + trailing stop: current %.4f < max %.4f * %.4f%%",
-					ctx.CurrentPrice, position.MaxPrice, (1.0-trailingStopThreshold)*100),
+					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100),
 			}, nil
 		}
 	}
@@ -117,7 +117,7 @@ func (a *MACD_Cross) ShouldSell(ctx TradingContext, position database.Position, 
 	// No sell signal
 	return SellSignal{
 		ShouldSell: false,
-		Reason:     fmt.Sprintf("Holding - current %.4f, target %.4f", ctx.CurrentPrice, position.TargetPrice),
+		Reason:     fmt.Sprintf("Holding - current %.4f, target %.4f", ctx.CurrentPrice, cycle.TargetPrice),
 	}, nil
 }
 

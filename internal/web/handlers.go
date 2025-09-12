@@ -143,41 +143,6 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 		})
 	})
 
-	// Positions
-	router.GET("/positions", func(c *gin.Context) {
-		positions, err := db.GetAllPositions()
-		if err != nil {
-			handleError(c, "Erreur - Positions", "positions", "Failed to get positions: "+err.Error())
-			return
-		}
-
-		// Calculer la valeur pour chaque position et le total
-		type PositionWithValue struct {
-			database.Position
-			Value float64
-		}
-
-		positionsWithValue := make([]PositionWithValue, len(positions))
-		totalValue := 0.0
-
-		for i, pos := range positions {
-			value := pos.Price * pos.Amount
-			positionsWithValue[i] = PositionWithValue{
-				Position: pos,
-				Value:    value,
-			}
-			totalValue += value
-		}
-
-		c.HTML(http.StatusOK, "positions_index", gin.H{
-			"title":      makeTitle(exchangeName, "Positions"),
-			"exchange":   exchangeName,
-			"active":     "positions",
-			"positions":  positionsWithValue,
-			"totalValue": totalValue,
-		})
-	})
-
 	// Ordres en attente
 	router.GET("/orders", func(c *gin.Context) {
 		orders, err := db.GetPendingOrders()
@@ -358,15 +323,6 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 				return
 			}
 			c.JSON(http.StatusOK, metrics)
-		})
-
-		api.GET("/positions", func(c *gin.Context) {
-			positions, err := db.GetAllPositions()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, positions)
 		})
 
 		api.GET("/orders", func(c *gin.Context) {
