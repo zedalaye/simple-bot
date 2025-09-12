@@ -234,24 +234,6 @@ func (b *Bot) handlePriceCheck() {
 			logger.Infof("[%s] Cycle %d updated MaxPrice → %s",
 				b.Config.ExchangeName, cycle.ID, b.market.FormatPrice(cycle.MaxPrice))
 		}
-
-		// Check trailing stop using PRE-CALCULATED target price (no more dynamic recalculation!)
-		if currentPrice >= cycle.TargetPrice {
-			// Get strategy for this position to get trailing stop settings
-			strategy, err := b.db.GetStrategy(cycle.StrategyID)
-			if err != nil {
-				logger.Errorf("Failed to get strategy for cycle %d: %v", cycle.ID, err)
-				continue
-			}
-
-			trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
-			if currentPrice < (cycle.MaxPrice * trailingStopThreshold) {
-				logger.Infof("[%s] Position %d trailing stop triggered: %.4f < %.4f",
-					b.Config.ExchangeName, cycle.ID, currentPrice, cycle.MaxPrice*trailingStopThreshold)
-
-				b.placeSellOrderLegacy(cycle, currentPrice)
-			}
-		}
 	}
 }
 
@@ -267,49 +249,6 @@ func (b *Bot) handleOrderCheck() {
 	for _, dbOrder := range pendingOrders {
 		b.processOrder(dbOrder)
 	}
-}
-
-func (b *Bot) placeSellOrderLegacy(cycle database.CycleEnhanced, currentPrice float64) {
-	// pour rester maker, on place un ordre juste un peu plus haut que currentPrice, idéalement il faudrait
-	// consulter le carnet d'ordre pour se placer juste au-dessus de la meilleure offre
-	priceOffset := currentPrice * (b.Config.SellOffset / 100.0)
-	limitPrice := b.roundToPrecision(currentPrice+priceOffset, b.market.Precision.Price)
-
-	order, err := b.exchange.PlaceLimitSellOrder(b.Config.Pair, cycle.BuyOrder.Amount, limitPrice)
-	if err != nil {
-		logger.Errorf("Failed to place Limit Sell Order: %v", err)
-		return
-	}
-
-	orderPrice := *order.Price
-	orderAmount := *order.Amount
-
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, cycle.StrategyID)
-	if err != nil {
-		logger.Errorf("Failed to save sell order to database: %v", err)
-		return
-	}
-
-	err = b.db.UpdateCycleSellOrder(cycle.ID, dbOrder.ID)
-	if err != nil {
-		logger.Errorf("Failed to update cycle sell order: %v", err)
-	}
-
-	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, cycle.ID)
-	message += fmt.Sprintf("\nℹ️ New Sell Order: %d (%s)", dbOrder.ID, *order.Id)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(orderAmount), b.market.BaseAsset)
-	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(orderPrice), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", orderAmount*orderPrice, b.market.QuoteAsset)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
-	}
-
-	logger.Infof("[%s] Limit Sell Order placed: %f %s at %f %s (ID=%v, DB_ID=%v, Cycle=%v)",
-		b.Config.ExchangeName,
-		orderAmount, b.market.BaseAsset, orderPrice, b.market.QuoteAsset, order.Id, dbOrder.ID, cycle.ID)
 }
 
 func (b *Bot) processOrder(dbOrder database.Order) {

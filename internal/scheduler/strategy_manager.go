@@ -151,6 +151,15 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		logger.Errorf("Failed to check sell signals for strategy %s: %v", strategy.Name, err)
 	}
 
+	for _, cycle := range openCycles {
+		if tradingContext.CurrentPrice > cycle.MaxPrice {
+			err = sm.db.UpdateCycleMaxPrice(cycle.ID, tradingContext.CurrentPrice)
+			if err != nil {
+				logger.Errorf("Failed to update max price for cycle %d: %v", cycle.ID, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -182,6 +191,35 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 
 	return nil
 }
+func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cycle database.CycleEnhanced, strategy database.Strategy) error {
+	logger.Infof("Executing sell order for strategy %s: cycle=%d, amount=%.4f, price=%.4f",
+		strategy.Name, cycle.ID, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
+
+	// Place order on exchange
+	order, err := sm.exchange.PlaceLimitSellOrder(sm.pair, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
+	if err != nil {
+		return fmt.Errorf("failed to place sell order on exchange: %w", err)
+	}
+
+	// Save sell order to database with strategy ID
+	dbSellOrder, err := sm.db.CreateOrder(*order.Id, database.Sell, *order.Amount, *order.Price, 0.0, strategy.ID)
+	if err != nil {
+		return fmt.Errorf("failed to save sell order to database: %w", err)
+	}
+
+	// Associate sell order with cycle
+	err = sm.db.UpdateCycleSellOrder(cycle.ID, dbSellOrder.ID)
+	if err != nil {
+		logger.Errorf("Failed to associate sell order with cycle: %v", err)
+		return fmt.Errorf("failed to associate sell order with cycle: %w", err)
+	}
+
+	logger.Infof("✅ Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.4f",
+		dbSellOrder.ID, cycle.ID, strategy.Name,
+		(sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount-cycle.BuyOrder.Fees)
+
+	return nil
+}
 
 // checkSellSignals checks if any positions should be sold
 func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx algorithms.TradingContext, strategy database.Strategy, cycles []database.CycleEnhanced) error {
@@ -194,7 +232,15 @@ func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx 
 
 		if sellSignal.ShouldSell {
 			logger.Infof("Strategy %s: sell signal for cycle %d - %s", strategy.Name, cycle.ID, sellSignal.Reason)
-			// TODO: Implement sell order execution
+
+			// ✅ NOUVELLE IMPLÉMENTATION : Exécuter l'ordre de vente
+			err = sm.executeSellOrder(sellSignal, cycle, strategy)
+			if err != nil {
+				logger.Errorf("Failed to execute sell order for cycle %d: %v", cycle.ID, err)
+				continue
+			}
+
+			logger.Infof("✅ Strategy %s: sell order executed successfully for cycle %d", strategy.Name, cycle.ID)
 		}
 	}
 
