@@ -159,7 +159,7 @@ func main() {
 
 	// create cycles
 	for _, cycle := range cycles {
-		newCycle, err := db.CreateCycle(cycle.BuyOrder.ID)
+		newCycle, err := db.CreateCycle(cycle.BuyOrder.ID, 1) // StrategyId = 1 (legacy)
 		if err != nil {
 			logger.Fatalf("Failed to create cycle: %v", err)
 		}

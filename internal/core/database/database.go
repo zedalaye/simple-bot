@@ -356,9 +356,9 @@ func (db *DB) applyMigrations() error {
 }
 
 // Positions
-func (db *DB) CreatePosition(price, targetPrice, amount float64) (*Position, error) {
-	query := `INSERT INTO positions (price, target_price, amount) VALUES (?, ?, ?)`
-	result, err := db.conn.Exec(query, price, targetPrice, amount)
+func (db *DB) CreatePosition(price, targetPrice, amount float64, strategyId int) (*Position, error) {
+	query := `INSERT INTO positions (price, target_price, amount, strategy_id) VALUES (?, ?, ?, ?)`
+	result, err := db.conn.Exec(query, price, targetPrice, amount, strategyId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create position: %w", err)
 	}
@@ -380,14 +380,14 @@ func (db *DB) GetPosition(id int) (*Position, error) {
 	row := db.conn.QueryRow(query, id)
 
 	var pos Position
-	var strategyID sql.NullInt64
-	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyID, &pos.CreatedAt, &pos.UpdatedAt)
+	var strategyId sql.NullInt64
+	err := row.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyId, &pos.CreatedAt, &pos.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get position: %w", err)
 	}
 
-	if strategyID.Valid {
-		id := int(strategyID.Int64)
+	if strategyId.Valid {
+		id := int(strategyId.Int64)
 		pos.StrategyID = &id
 	}
 
@@ -476,9 +476,12 @@ func (db *DB) DeletePosition(id int) error {
 }
 
 // Orders
-func (db *DB) CreateOrder(externalID string, side OrderSide, amount, price, fees float64, positionID *int) (*Order, error) {
-	query := `INSERT INTO orders (external_id, side, amount, price, fees, status, position_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	result, err := db.conn.Exec(query, externalID, side, amount, price, fees, Pending, positionID)
+func (db *DB) CreateOrder(externalId string, side OrderSide, amount, price, fees float64, positionId *int, strategyId int) (*Order, error) {
+	query := `
+	  INSERT INTO orders (external_id, side, amount, price, fees, status, position_id, strategy_id) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	result, err := db.conn.Exec(query, externalId, side, amount, price, fees, Pending, positionId, strategyId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
@@ -500,44 +503,48 @@ func (db *DB) GetOrder(id int) (*Order, error) {
 	row := db.conn.QueryRow(query, id)
 
 	var order Order
-	var positionID, strategyID sql.NullInt64
+	var positionId, strategyId sql.NullInt64
 	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-		&order.Status, &positionID, &strategyID, &order.CreatedAt, &order.UpdatedAt)
+		&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order: %w", err)
 	}
 
-	if positionID.Valid {
-		id := int(positionID.Int64)
+	if positionId.Valid {
+		id := int(positionId.Int64)
 		order.PositionID = &id
 	}
-	if strategyID.Valid {
-		id := int(strategyID.Int64)
+	if strategyId.Valid {
+		id := int(strategyId.Int64)
 		order.StrategyID = &id
 	}
 
 	return &order, nil
 }
 
-func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
+func (db *DB) GetOrderByExternalID(externalId string) (*Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders 
 		WHERE external_id = ?
 	`
-	row := db.conn.QueryRow(query, externalID)
+	row := db.conn.QueryRow(query, externalId)
 
 	var order Order
-	var positionID sql.NullInt64
+	var positionId, strategyId sql.NullInt64
 	err := row.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-		&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+		&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get order by external id: %w", err)
 	}
 
-	if positionID.Valid {
-		id := int(positionID.Int64)
+	if positionId.Valid {
+		id := int(positionId.Int64)
 		order.PositionID = &id
+	}
+	if strategyId.Valid {
+		id := int(strategyId.Int64)
+		order.StrategyID = &id
 	}
 
 	return &order, nil
@@ -545,7 +552,7 @@ func (db *DB) GetOrderByExternalID(externalID string) (*Order, error) {
 
 func (db *DB) GetPendingOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders 
 		WHERE status = ? 
 		ORDER BY created_at ASC
@@ -559,16 +566,20 @@ func (db *DB) GetPendingOrders() ([]Order, error) {
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		var positionID sql.NullInt64
+		var positionId, strategyId sql.NullInt64
 		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+			&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
 
-		if positionID.Valid {
-			id := int(positionID.Int64)
+		if positionId.Valid {
+			id := int(positionId.Int64)
 			order.PositionID = &id
+		}
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			order.StrategyID = &id
 		}
 
 		orders = append(orders, order)
@@ -577,14 +588,14 @@ func (db *DB) GetPendingOrders() ([]Order, error) {
 	return orders, nil
 }
 
-func (db *DB) UpdateOrderStatus(externalID string, status OrderStatus) error {
+func (db *DB) UpdateOrderStatus(externalId string, status OrderStatus) error {
 	query := `
 		UPDATE orders SET 
 			status = ?, 
 			updated_at = CURRENT_TIMESTAMP 
 		WHERE external_id = ?
 	`
-	_, err := db.conn.Exec(query, status, externalID)
+	_, err := db.conn.Exec(query, status, externalId)
 	if err != nil {
 		return fmt.Errorf("failed to update order status: %w", err)
 	}
@@ -607,7 +618,7 @@ func (db *DB) UpdateOrderPosition(id int, positionId int) error {
 
 func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders 
 		WHERE status = ? AND created_at < ?
 	`
@@ -620,16 +631,20 @@ func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		var positionID sql.NullInt64
+		var positionId, strategyId sql.NullInt64
 		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+			&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
 
-		if positionID.Valid {
-			id := int(positionID.Int64)
+		if positionId.Valid {
+			id := int(positionId.Int64)
 			order.PositionID = &id
+		}
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			order.StrategyID = &id
 		}
 
 		orders = append(orders, order)
@@ -639,9 +654,9 @@ func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 }
 
 // Cycles
-func (db *DB) CreateCycle(buyOrderId int) (*Cycle, error) {
-	query := `INSERT INTO cycles (buy_order_id) VALUES (?)`
-	result, err := db.conn.Exec(query, buyOrderId)
+func (db *DB) CreateCycle(buyOrderId int, strategyId int) (*Cycle, error) {
+	query := `INSERT INTO cycles (buy_order_id, strategy_id) VALUES (?, ?)`
+	result, err := db.conn.Exec(query, buyOrderId, strategyId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cycle: %w", err)
 	}
@@ -664,14 +679,14 @@ func (db *DB) GetCycle(id int) (*Cycle, error) {
 
 	var cycle Cycle
 	var buyOrderId int64
-	var sellOrderId, strategyID sql.NullInt64
-	err := row.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &strategyID, &cycle.CreatedAt, &cycle.UpdatedAt)
+	var sellOrderId, strategyId sql.NullInt64
+	err := row.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &strategyId, &cycle.CreatedAt, &cycle.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cycle: %w", err)
 	}
 
-	if strategyID.Valid {
-		id := int(strategyID.Int64)
+	if strategyId.Valid {
+		id := int(strategyId.Int64)
 		cycle.StrategyID = &id
 	}
 
@@ -782,7 +797,7 @@ func (db *DB) ForceCycleTimestamps(id int, createdAt time.Time, updatedAt time.T
 
 func (db *DB) GetAllCycles() ([]Cycle, error) {
 	query := `
-		SELECT id, buy_order_id, sell_order_id, created_at, updated_at
+		SELECT id, buy_order_id, sell_order_id, strategy_id, created_at, updated_at
 		FROM cycles 
 		ORDER BY created_at DESC
 	`
@@ -796,10 +811,15 @@ func (db *DB) GetAllCycles() ([]Cycle, error) {
 	for rows.Next() {
 		var cycle Cycle
 		var buyOrderId int64
-		var sellOrderId sql.NullInt64
-		err := rows.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &cycle.CreatedAt, &cycle.UpdatedAt)
+		var sellOrderId, strategyId sql.NullInt64
+		err := rows.Scan(&cycle.ID, &buyOrderId, &sellOrderId, &strategyId, &cycle.CreatedAt, &cycle.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
+		}
+
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			cycle.StrategyID = &id
 		}
 
 		buyOrder, err := db.GetOrder(int(buyOrderId))
@@ -936,7 +956,7 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 // GetAllOrders récupère tous les ordres (pas seulement pending)
 func (db *DB) GetAllOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders 
 		ORDER BY created_at DESC
 	`
@@ -949,16 +969,20 @@ func (db *DB) GetAllOrders() ([]Order, error) {
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		var positionID sql.NullInt64
+		var positionId, strategyId sql.NullInt64
 		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+			&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan order: %w", err)
 		}
 
-		if positionID.Valid {
-			id := int(positionID.Int64)
+		if positionId.Valid {
+			id := int(positionId.Int64)
 			order.PositionID = &id
+		}
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			order.StrategyID = &id
 		}
 
 		orders = append(orders, order)
@@ -987,18 +1011,18 @@ func (db *DB) CleanupOldData(olderThanDays int) error {
 }
 
 // GetPositionWithSellOrders récupère une position avec ses ordres de vente associés
-func (db *DB) GetPositionWithSellOrders(positionID int) (*Position, []Order, error) {
-	position, err := db.GetPosition(positionID)
+func (db *DB) GetPositionWithSellOrders(positionId int) (*Position, []Order, error) {
+	position, err := db.GetPosition(positionId)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders 
 		WHERE position_id = ? AND side = ?
 	`
-	rows, err := db.conn.Query(query, positionID, Sell)
+	rows, err := db.conn.Query(query, positionId, Sell)
 	if err != nil {
 		return position, nil, fmt.Errorf("failed to get sell orders for position: %w", err)
 	}
@@ -1007,16 +1031,20 @@ func (db *DB) GetPositionWithSellOrders(positionID int) (*Position, []Order, err
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		var posID sql.NullInt64
+		var posId, strategyId sql.NullInt64
 		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &posID, &order.CreatedAt, &order.UpdatedAt)
+			&order.Status, &posId, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return position, nil, fmt.Errorf("failed to scan sell order: %w", err)
 		}
 
-		if posID.Valid {
-			id := int(posID.Int64)
+		if posId.Valid {
+			id := int(posId.Int64)
 			order.PositionID = &id
+		}
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			order.StrategyID = &id
 		}
 
 		orders = append(orders, order)
@@ -1130,7 +1158,7 @@ func (db *DB) GetOrdersWithPagination(status OrderStatus, limit, offset int) ([]
 
 	// Récupérer les ordres
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, position_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, position_id, strategy_id, created_at, updated_at 
 		FROM orders
 	`
 
@@ -1155,16 +1183,20 @@ func (db *DB) GetOrdersWithPagination(status OrderStatus, limit, offset int) ([]
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		var positionID sql.NullInt64
+		var positionId, strategyId sql.NullInt64
 		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &positionID, &order.CreatedAt, &order.UpdatedAt)
+			&order.Status, &positionId, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan order: %w", err)
 		}
 
-		if positionID.Valid {
-			id := int(positionID.Int64)
+		if positionId.Valid {
+			id := int(positionId.Int64)
 			order.PositionID = &id
+		}
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
+			order.StrategyID = &id
 		}
 
 		orders = append(orders, order)
@@ -1607,25 +1639,25 @@ func (db *DB) GetLastCandle(pair, timeframe string) (*Candle, error) {
 	return &candle, nil
 }
 
-func (db *DB) GetActiveTimeframes() ([]ActiveTimeframe, error) {
+func (db *DB) GetActiveTimeframes(pair string) ([]ActiveTimeframe, error) {
 	query := `
-		SELECT DISTINCT 'UBTC/USDC' as pair, s.rsi_timeframe as timeframe
+		SELECT DISTINCT pair, s.rsi_timeframe as timeframe
 		FROM strategies s
-		WHERE s.enabled = 1 AND s.rsi_timeframe IS NOT NULL
+		WHERE s.pair = ? AND s.enabled = 1 AND s.rsi_timeframe IS NOT NULL
 		UNION
-		SELECT DISTINCT 'UBTC/USDC' as pair, s.volatility_timeframe as timeframe
+		SELECT DISTINCT pair, s.volatility_timeframe as timeframe
 		FROM strategies s
-		WHERE s.enabled = 1 AND s.volatility_timeframe IS NOT NULL
+		WHERE s.pair = ? AND s.enabled = 1 AND s.volatility_timeframe IS NOT NULL
 		UNION
-		SELECT DISTINCT 'UBTC/USDC' as pair, s.macd_timeframe as timeframe
+		SELECT DISTINCT pair, s.macd_timeframe as timeframe
 		FROM strategies s
-		WHERE s.enabled = 1 AND s.macd_timeframe IS NOT NULL
+		WHERE s.pair = ? AND s.enabled = 1 AND s.macd_timeframe IS NOT NULL
 		UNION
-		SELECT DISTINCT 'UBTC/USDC' as pair, s.bb_timeframe as timeframe
+		SELECT DISTINCT pair, s.bb_timeframe as timeframe
 		FROM strategies s
-		WHERE s.enabled = 1 AND s.bb_timeframe IS NOT NULL
+		WHERE s.pair = ? AND s.enabled = 1 AND s.bb_timeframe IS NOT NULL
 	`
-	rows, err := db.conn.Query(query)
+	rows, err := db.conn.Query(query, pair, pair, pair, pair)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active timeframes: %w", err)
 	}
@@ -1661,59 +1693,10 @@ func (db *DB) CleanupOldCandles(olderThanDays int) error {
 }
 
 // ===============================
-// EXTENDED METHODS WITH STRATEGY SUPPORT
-// ===============================
-
-func (db *DB) CreateOrderWithStrategy(externalID string, side OrderSide, amount, price, fees float64, positionID *int, strategyID int) (*Order, error) {
-	query := `INSERT INTO orders (external_id, side, amount, price, fees, status, position_id, strategy_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	result, err := db.conn.Exec(query, externalID, side, amount, price, fees, Pending, positionID, strategyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create order with strategy: %w", err)
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last insert id: %w", err)
-	}
-
-	return db.GetOrder(int(id))
-}
-
-func (db *DB) CreatePositionWithStrategy(price, targetPrice, amount float64, strategyID int) (*Position, error) {
-	query := `INSERT INTO positions (price, target_price, amount, strategy_id) VALUES (?, ?, ?, ?)`
-	result, err := db.conn.Exec(query, price, targetPrice, amount, strategyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create position with strategy: %w", err)
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last insert id: %w", err)
-	}
-
-	return db.GetPosition(int(id))
-}
-
-func (db *DB) CreateCycleWithStrategy(buyOrderId int, strategyID int) (*Cycle, error) {
-	query := `INSERT INTO cycles (buy_order_id, strategy_id) VALUES (?, ?)`
-	result, err := db.conn.Exec(query, buyOrderId, strategyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cycle with strategy: %w", err)
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last insert id: %w", err)
-	}
-
-	return db.GetCycle(int(id))
-}
-
-// ===============================
 // STRATEGY-SPECIFIC METHODS
 // ===============================
 
-func (db *DB) GetOpenPositionsForStrategy(strategyID int) ([]Position, error) {
+func (db *DB) GetOpenPositionsForStrategy(strategyId int) ([]Position, error) {
 	query := `
 		SELECT p.id, p.price, p.amount, p.max_price, p.target_price, p.strategy_id, p.created_at, p.updated_at
 		FROM positions p
@@ -1723,7 +1706,7 @@ func (db *DB) GetOpenPositionsForStrategy(strategyID int) ([]Position, error) {
 		)
 		ORDER BY created_at DESC
 	`
-	rows, err := db.conn.Query(query, strategyID)
+	rows, err := db.conn.Query(query, strategyId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open positions for strategy: %w", err)
 	}
@@ -1732,14 +1715,14 @@ func (db *DB) GetOpenPositionsForStrategy(strategyID int) ([]Position, error) {
 	var positions []Position
 	for rows.Next() {
 		var pos Position
-		var strategyID sql.NullInt64
-		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyID, &pos.CreatedAt, &pos.UpdatedAt)
+		var strategyId sql.NullInt64
+		err := rows.Scan(&pos.ID, &pos.Price, &pos.Amount, &pos.MaxPrice, &pos.TargetPrice, &strategyId, &pos.CreatedAt, &pos.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
 
-		if strategyID.Valid {
-			id := int(strategyID.Int64)
+		if strategyId.Valid {
+			id := int(strategyId.Int64)
 			pos.StrategyID = &id
 		}
 
@@ -1749,26 +1732,26 @@ func (db *DB) GetOpenPositionsForStrategy(strategyID int) ([]Position, error) {
 	return positions, nil
 }
 
-func (db *DB) CountActiveOrdersForStrategy(strategyID int) (int, error) {
+func (db *DB) CountActiveOrdersForStrategy(strategyId int) (int, error) {
 	query := `SELECT COUNT(*) FROM orders WHERE strategy_id = ? AND status = ?`
 	var count int
-	err := db.conn.QueryRow(query, strategyID, Pending).Scan(&count)
+	err := db.conn.QueryRow(query, strategyId, Pending).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count active orders for strategy: %w", err)
 	}
 	return count, nil
 }
 
-func (db *DB) UpdateStrategyNextExecution(strategyID int, nextExecution time.Time) error {
+func (db *DB) UpdateStrategyNextExecution(strategyId int, nextExecution time.Time) error {
 	query := `UPDATE strategies SET next_execution_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-	_, err := db.conn.Exec(query, nextExecution, strategyID)
+	_, err := db.conn.Exec(query, nextExecution, strategyId)
 	if err != nil {
 		return fmt.Errorf("failed to update strategy next execution: %w", err)
 	}
 	return nil
 }
 
-func (db *DB) GetStrategyStats(strategyID int) (map[string]interface{}, error) {
+func (db *DB) GetStrategyStats(strategyId int) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
 	// Count orders by status for this strategy
@@ -1781,7 +1764,7 @@ func (db *DB) GetStrategyStats(strategyID int) (map[string]interface{}, error) {
 		WHERE strategy_id = ?
 	`
 	var pending, filled, cancelled int
-	err := db.conn.QueryRow(query, strategyID).Scan(&pending, &filled, &cancelled)
+	err := db.conn.QueryRow(query, strategyId).Scan(&pending, &filled, &cancelled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get strategy order stats: %w", err)
 	}
@@ -1792,7 +1775,7 @@ func (db *DB) GetStrategyStats(strategyID int) (map[string]interface{}, error) {
 
 	// Count positions for this strategy
 	var positionsCount int
-	err = db.conn.QueryRow(`SELECT COUNT(*) FROM positions WHERE strategy_id = ?`, strategyID).Scan(&positionsCount)
+	err = db.conn.QueryRow(`SELECT COUNT(*) FROM positions WHERE strategy_id = ?`, strategyId).Scan(&positionsCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get strategy positions count: %w", err)
 	}

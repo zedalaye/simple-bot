@@ -297,7 +297,7 @@ func (b *Bot) placeSellOrderLegacy(pos database.Position, currentPrice float64) 
 	orderPrice := *order.Price
 	orderAmount := *order.Amount
 
-	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, &pos.ID)
+	dbOrder, err := b.db.CreateOrder(*order.Id, database.Sell, orderAmount, orderPrice, 0.0, &pos.ID, *pos.StrategyID)
 	if err != nil {
 		logger.Errorf("Failed to save sell order to database: %v", err)
 		return
@@ -415,7 +415,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	// Par défaut, le prix cible est basé sur le profit target configuré
 	targetPrice := *order.Price * (1.0 + b.Config.ProfitTarget/100.0)
 
-	position, err := b.db.CreatePosition(*order.Price, targetPrice, *order.Amount)
+	position, err := b.db.CreatePosition(*order.Price, targetPrice, *order.Amount, *dbOrder.StrategyID)
 	if err != nil {
 		logger.Errorf("Failed to create position in database: %v", err)
 	} else {
