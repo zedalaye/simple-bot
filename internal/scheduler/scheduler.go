@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"bot/internal/algorithms"
@@ -11,11 +13,13 @@ import (
 	"bot/internal/market"
 
 	"github.com/go-co-op/gocron/v2"
+	"github.com/robfig/cron/v3"
 )
 
 // StrategyScheduler manages cron-based execution of trading strategies
 type StrategyScheduler struct {
 	scheduler       gocron.Scheduler
+	started         bool
 	db              *database.DB
 	strategyManager *StrategyManager
 	ctx             context.Context
@@ -39,6 +43,7 @@ func NewStrategyScheduler(pair string, db *database.DB, marketCollector *market.
 
 	return &StrategyScheduler{
 		scheduler:       s,
+		started:         false,
 		db:              db,
 		strategyManager: strategyManager,
 		ctx:             ctx,
@@ -72,6 +77,25 @@ func (ss *StrategyScheduler) Start() error {
 	// Start the scheduler
 	ss.scheduler.Start()
 	logger.Info("✓ Strategy scheduler started successfully")
+	ss.started = true
+
+	jobs := ss.scheduler.Jobs()
+	for _, job := range jobs {
+		if nextRun, err := job.NextRun(); err == nil {
+			// Extraire l'ID de la stratégie depuis les tags
+			tags := job.Tags()
+			for _, tag := range tags {
+				if strings.HasPrefix(tag, "strategy-") {
+					if strategyID, parseErr := strconv.Atoi(strings.TrimPrefix(tag, "strategy-")); parseErr == nil {
+						if updateErr := ss.updateStrategyNextRun(strategyID, nextRun); updateErr != nil {
+							logger.Warnf("Failed to update next run time for strategy %d: %v", strategyID, updateErr)
+						}
+					}
+					break
+				}
+			}
+		}
+	}
 
 	return nil
 }
@@ -90,14 +114,17 @@ func (ss *StrategyScheduler) ScheduleStrategy(strategy database.Strategy) error 
 		return fmt.Errorf("failed to create job for strategy %s: %w", strategy.Name, err)
 	}
 
-	// Get next execution time
-	nextRun, err := job.NextRun()
-	if err == nil {
-		logger.Infof("Job created for strategy %s (ID: %d), next run: %v", strategy.Name, strategy.ID, nextRun)
+	if ss.started {
+		nextRun, err := job.NextRun()
+		if err == nil {
+			logger.Infof("Job created for strategy %s (ID: %d), next run: %v", strategy.Name, strategy.ID, nextRun)
+			if updateErr := ss.updateStrategyNextRun(strategy.ID, nextRun); updateErr != nil {
+				logger.Warnf("Failed to update next run time for strategy %d: %v", strategy.ID, updateErr)
+			}
+		}
 	} else {
 		logger.Infof("Job created for strategy %s (ID: %d)", strategy.Name, strategy.ID)
 	}
-
 	return nil
 }
 
@@ -132,6 +159,34 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 	}
 
 	logger.Infof("✅ Strategy '%s' executed successfully at %v", strategy.Name, now.Format("15:04:05"))
+
+	var baseTime time.Time
+	if strategy.NextExecutionAt != nil {
+		baseTime = *strategy.NextExecutionAt
+	} else {
+		baseTime = now.Add(time.Minute)
+	}
+	nextRun, err := ss.calculateNextExecution(strategy.CronExpression, baseTime)
+	if err != nil {
+		logger.Warnf("Failed to calculate next run for strategy %d: %v", strategyID, err)
+	} else {
+		if updateErr := ss.updateStrategyNextRun(strategyID, nextRun); updateErr != nil {
+			logger.Warnf("Failed to update next run time for strategy %d: %v", strategyID, updateErr)
+		} else {
+			logger.Infof("✅ Strategy %d next run scheduled for: %v", strategyID, nextRun.Format("15:04:05"))
+		}
+	}
+}
+
+func (ss *StrategyScheduler) calculateNextExecution(cronExpr string, fromTime time.Time) (time.Time, error) {
+	schedule, err := cron.ParseStandard(cronExpr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid cron expression %s: %w", cronExpr, err)
+	}
+
+	// Calculer la prochaine exécution à partir de maintenant
+	nextRun := schedule.Next(fromTime)
+	return nextRun, nil
 }
 
 // AddStrategy adds a new strategy to the scheduler at runtime
@@ -174,6 +229,8 @@ func (ss *StrategyScheduler) Stop() error {
 	}
 
 	logger.Info("✓ Strategy scheduler stopped")
+	ss.started = false
+
 	return nil
 }
 
@@ -208,8 +265,5 @@ func (ss *StrategyScheduler) GetStats() map[string]interface{} {
 
 // updateStrategyNextRun updates the next execution time in database
 func (ss *StrategyScheduler) updateStrategyNextRun(strategyID int, nextRun time.Time) error {
-	// TODO: Add proper method to database package for updating next execution time
-	// For now, we'll skip this functionality
-	logger.Debugf("Would update strategy %d next run time to %v", strategyID, nextRun)
-	return nil
+	return ss.db.UpdateStrategyNextExecution(strategyID, nextRun)
 }
