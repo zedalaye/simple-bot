@@ -103,26 +103,19 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 
 	// Initialize market data services with adapter
 	exchangeAdapter := newBotExchangeAdapter(exchange)
-	bot.marketCollector = market.NewMarketDataCollector(db, exchangeAdapter)
+	bot.marketCollector = market.NewMarketDataCollector(config.Pair, db, exchangeAdapter)
 	bot.Calculator = market.NewCalculator(db, bot.marketCollector)
 
 	// Initialize algorithm registry
 	bot.algorithmRegistry = algorithms.NewAlgorithmRegistry()
 	logger.Infof("[%s] Algorithm registry initialized with %d algorithms", config.ExchangeName, len(bot.algorithmRegistry.List()))
 
-	// Initialize strategy scheduler (always active now - no more legacy mode)
-	strategies, err := db.GetEnabledStrategies()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load strategies: %w", err)
-	}
-	logger.Infof("[%s] Found %d enabled strategies in database", config.ExchangeName, len(strategies))
-
-	strategyScheduler, err := scheduler.NewStrategyScheduler(db, bot.marketCollector, bot.Calculator, bot.algorithmRegistry, bot)
+	strategyScheduler, err := scheduler.NewStrategyScheduler(config.Pair, db, bot.marketCollector, bot.Calculator, bot.algorithmRegistry, bot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create strategy scheduler: %w", err)
 	}
 	bot.strategyScheduler = strategyScheduler
-	logger.Infof("[%s] ✓ Strategy scheduler initialized with %d strategies", config.ExchangeName, len(strategies))
+	logger.Infof("[%s] ✓ Initialized Strategy Scheduler with %d strategies", config.ExchangeName, len(bot.strategyScheduler.List()))
 
 	// Initial market data collection
 	logger.Infof("[%s] Initializing market data collection...", config.ExchangeName)

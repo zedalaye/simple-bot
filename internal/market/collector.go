@@ -24,13 +24,15 @@ type Exchange interface {
 
 // MarketDataCollector manages candle data collection and storage
 type MarketDataCollector struct {
+	pair     string
 	db       *database.DB
 	exchange Exchange
 }
 
 // NewMarketDataCollector creates a new market data collector
-func NewMarketDataCollector(db *database.DB, exchange Exchange) *MarketDataCollector {
+func NewMarketDataCollector(pair string, db *database.DB, exchange Exchange) *MarketDataCollector {
 	return &MarketDataCollector{
+		pair:     pair,
 		db:       db,
 		exchange: exchange,
 	}
@@ -91,7 +93,7 @@ func (mdc *MarketDataCollector) CollectAllActiveTimeframes() error {
 	logger.Debug("Collecting candles for all active timeframes...")
 
 	// Get all active timeframes from enabled strategies
-	activeTimeframes, err := mdc.db.GetActiveTimeframes()
+	activeTimeframes, err := mdc.db.GetActiveTimeframes(mdc.pair)
 	if err != nil {
 		return fmt.Errorf("failed to get active timeframes: %w", err)
 	}

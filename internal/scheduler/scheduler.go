@@ -23,7 +23,7 @@ type StrategyScheduler struct {
 }
 
 // NewStrategyScheduler creates a new strategy scheduler
-func NewStrategyScheduler(db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) (*StrategyScheduler, error) {
+func NewStrategyScheduler(pair string, db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) (*StrategyScheduler, error) {
 	// Create the scheduler with options
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),
@@ -35,7 +35,7 @@ func NewStrategyScheduler(db *database.DB, marketCollector *market.MarketDataCol
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create strategy manager for orchestrating execution
-	strategyManager := NewStrategyManager(db, marketCollector, calculator, algorithmRegistry, exchange)
+	strategyManager := NewStrategyManager(pair, db, marketCollector, calculator, algorithmRegistry, exchange)
 
 	return &StrategyScheduler{
 		scheduler:       s,
@@ -175,6 +175,10 @@ func (ss *StrategyScheduler) Stop() error {
 
 	logger.Info("✓ Strategy scheduler stopped")
 	return nil
+}
+
+func (ss *StrategyScheduler) List() []gocron.Job {
+	return ss.scheduler.Jobs()
 }
 
 // GetStats returns scheduler statistics and job information

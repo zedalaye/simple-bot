@@ -31,6 +31,7 @@ type ExchangeOrder struct {
 
 // StrategyManager orchestrates the execution of trading strategies
 type StrategyManager struct {
+	pair              string
 	db                *database.DB
 	marketCollector   *market.MarketDataCollector
 	calculator        *market.Calculator
@@ -40,8 +41,9 @@ type StrategyManager struct {
 }
 
 // NewStrategyManager creates a new strategy manager
-func NewStrategyManager(db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) *StrategyManager {
+func NewStrategyManager(pair string, db *database.DB, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) *StrategyManager {
 	return &StrategyManager{
+		pair:              pair,
 		db:                db,
 		marketCollector:   marketCollector,
 		calculator:        calculator,
@@ -79,7 +81,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	}
 
 	// Get current market data
-	currentPrice, err := sm.exchange.GetPrice("HYPE/USDC") // TODO: Get from strategy config
+	currentPrice, err := sm.exchange.GetPrice(sm.pair)
 	if err != nil {
 		return fmt.Errorf("failed to get current price: %w", err)
 	}
@@ -104,7 +106,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 
 	// Create trading context
 	tradingContext := algorithms.TradingContext{
-		Pair:          "HYPE/USDC", // TODO: Get from strategy config
+		Pair:          sm.pair,
 		CurrentPrice:  currentPrice,
 		Balance:       balance,
 		OpenPositions: openPositions,
@@ -158,19 +160,19 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 		strategy.Name, buySignal.Amount, buySignal.LimitPrice)
 
 	// Place order on exchange
-	order, err := sm.exchange.PlaceLimitBuyOrder("HYPE/USDC", buySignal.Amount, buySignal.LimitPrice)
+	order, err := sm.exchange.PlaceLimitBuyOrder(sm.pair, buySignal.Amount, buySignal.LimitPrice)
 	if err != nil {
 		return fmt.Errorf("failed to place buy order on exchange: %w", err)
 	}
 
 	// Save order to database with strategy ID
-	dbOrder, err := sm.db.CreateOrderWithStrategy(*order.Id, database.Buy, *order.Amount, *order.Price, 0.0, nil, strategy.ID)
+	dbOrder, err := sm.db.CreateOrder(*order.Id, database.Buy, *order.Amount, *order.Price, 0.0, nil, strategy.ID)
 	if err != nil {
 		return fmt.Errorf("failed to save buy order to database: %w", err)
 	}
 
 	// Create position with pre-calculated target price
-	position, err := sm.db.CreatePositionWithStrategy(*order.Price, buySignal.TargetPrice, *order.Amount, strategy.ID)
+	position, err := sm.db.CreatePosition(*order.Price, buySignal.TargetPrice, *order.Amount, strategy.ID)
 	if err != nil {
 		logger.Errorf("Failed to create position: %v", err)
 	} else {
@@ -182,7 +184,7 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 	}
 
 	// Create cycle with strategy ID
-	cycle, err := sm.db.CreateCycleWithStrategy(dbOrder.ID, strategy.ID)
+	cycle, err := sm.db.CreateCycle(dbOrder.ID, strategy.ID)
 	if err != nil {
 		logger.Errorf("Failed to create cycle: %v", err)
 	}
