@@ -82,15 +82,17 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	}
 
 	// Check if strategy has reached max concurrent orders
-	activeOrders, err := sm.countActiveOrdersForStrategy(strategy.ID)
-	if err != nil {
-		return fmt.Errorf("failed to count active orders: %w", err)
-	}
+	if strategy.MaxConcurrentOrders > 0 {
+		activeOrders, err := sm.countActiveOrdersForStrategy(strategy.ID)
+		if err != nil {
+			return fmt.Errorf("failed to count active orders: %w", err)
+		}
 
-	if activeOrders >= strategy.MaxConcurrentOrders {
-		logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping execution",
-			sm.exchangeName, strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
-		return nil
+		if activeOrders >= strategy.MaxConcurrentOrders {
+			logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping execution",
+				sm.exchangeName, strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
+			return nil
+		}
 	}
 
 	// Get current market data
