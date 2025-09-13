@@ -318,9 +318,9 @@ var migrations = []Migration{
 		Name: "migrate_max_price_and_target_price_to_cycles",
 		SQL: `
 			ALTER TABLE cycles 
-				ADD COLUMN max_price REAL NOT NULL DEFAULT 0.0;
+				ADD COLUMN max_price REAL DEFAULT 0.0;
 			ALTER TABLE cycles 
-				ADD COLUMN target_price REAL NOT NULL DEFAULT 0.0;
+				ADD COLUMN target_price REAL DEFAULT 0.0;
 
 			UPDATE cycles SET 
 			  max_price = (
@@ -329,6 +329,9 @@ var migrations = []Migration{
 					JOIN orders bo ON p.id = bo.position_id 
 					WHERE bo.id = cycles.buy_order_id
 				);
+			UPDATE cycles SET
+			  max_price = 0.0
+			WHERE max_price IS NULL;
 
 			UPDATE cycles SET
 				target_price = (
@@ -337,6 +340,9 @@ var migrations = []Migration{
 					JOIN orders bo ON p.id = bo.position_id 
 					WHERE bo.id = cycles.buy_order_id
 				);
+			UPDATE cycles SET
+			  target_price = 0.0
+			WHERE target_price IS NULL;				
 		`,
 	},
 	{
