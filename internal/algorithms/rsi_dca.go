@@ -104,11 +104,16 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	dynamicOffset := ctx.CurrentPrice * dynamicOffsetPercent
 	limitPrice := ctx.CurrentPrice + dynamicOffset
 
+	// Round limit price according to market precision
+	limitPrice = RoundPrice(limitPrice, ctx.Precision)
+
 	// PRÉ-CALCULER le prix cible ici ! Plus besoin de le recalculer constamment
 	targetPrice := limitPrice * (1.0 + dynamicProfitPercent)
+	targetPrice = RoundPrice(targetPrice, ctx.Precision)
 
-	// Calculate amount to buy
+	// Calculate amount to buy and round according to market precision
 	baseAmount := strategy.QuoteAmount / limitPrice
+	baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%%, TargetPrice=%.4f",
 		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100, targetPrice)
@@ -136,6 +141,9 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 			// Price has dropped from max, time to sell
 			priceOffset := ctx.CurrentPrice * (strategy.SellOffset / 100.0)
 			limitPrice := ctx.CurrentPrice + priceOffset
+
+			// Round limit price according to market precision
+			limitPrice = RoundPrice(limitPrice, ctx.Precision)
 
 			logger.Infof("[%s] RSI_DCA.ShouldSell: SELL signal - Trailing Stop triggered for position in cycle %d", ctx.ExchangeName, cycle.ID)
 

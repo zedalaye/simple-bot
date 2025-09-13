@@ -68,8 +68,13 @@ func (a *MACD_Cross) ShouldBuy(ctx TradingContext, strategy database.Strategy) (
 	if macd > signal && histogram > 0 {
 		// Simple buy at market price
 		limitPrice := ctx.CurrentPrice
+		limitPrice = RoundPrice(limitPrice, ctx.Precision)
+
 		targetPrice := limitPrice * (1.0 + strategy.ProfitTarget/100.0)
+		targetPrice = RoundPrice(targetPrice, ctx.Precision)
+
 		baseAmount := strategy.QuoteAmount / limitPrice
+		baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
 		logger.Infof("MACD_Cross.ShouldBuy: BUY signal - MACD %.4f > Signal %.4f", macd, signal)
 
@@ -102,6 +107,9 @@ func (a *MACD_Cross) ShouldSell(ctx TradingContext, cycle database.Cycle, strate
 			// Price has dropped from max, time to sell
 			priceOffset := ctx.CurrentPrice * (strategy.SellOffset / 100.0)
 			limitPrice := ctx.CurrentPrice + priceOffset
+
+			// Round limit price according to market precision
+			limitPrice = RoundPrice(limitPrice, ctx.Precision)
 
 			logger.Infof("MACD_Cross.ShouldSell: SELL signal - target reached and trailing stop triggered")
 

@@ -5,6 +5,14 @@ import (
 	"bot/internal/market"
 )
 
+// MarketPrecision represents market precision information
+type MarketPrecision struct {
+	Price          float64
+	PriceDecimals  int
+	Amount         float64
+	AmountDecimals int
+}
+
 // TradingContext provides all necessary data for trading decisions
 type TradingContext struct {
 	ExchangeName string
@@ -13,6 +21,7 @@ type TradingContext struct {
 	Balance      map[string]Balance
 	OpenCycles   []database.CycleEnhanced
 	Calculator   *market.Calculator
+	Precision    MarketPrecision // Ajout des précisions du marché
 }
 
 // Balance represents asset balance
@@ -94,4 +103,21 @@ func (ar *AlgorithmRegistry) List() []string {
 // GetAll returns all registered algorithms
 func (ar *AlgorithmRegistry) GetAll() map[string]Algorithm {
 	return ar.algorithms
+}
+
+// RoundToPrecision rounds a value according to the specified precision
+// This is a common utility function for all algorithms
+func RoundToPrecision(value, precision float64) float64 {
+	factor := 1 / precision
+	return float64(int64(value*factor)) / factor
+}
+
+// RoundPrice rounds a price according to market precision
+func RoundPrice(price float64, precision MarketPrecision) float64 {
+	return RoundToPrecision(price, precision.Price)
+}
+
+// RoundAmount rounds an amount according to market precision
+func RoundAmount(amount float64, precision MarketPrecision) float64 {
+	return RoundToPrecision(amount, precision.Amount)
 }

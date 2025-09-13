@@ -469,6 +469,15 @@ func (m *Market) GetQuoteAsset() string {
 	return m.QuoteAsset
 }
 
+func (m *Market) GetPrecision() algorithms.MarketPrecision {
+	return algorithms.MarketPrecision{
+		Price:          m.Precision.Price,
+		PriceDecimals:  m.Precision.PriceDecimals,
+		Amount:         m.Precision.Amount,
+		AmountDecimals: m.Precision.AmountDecimals,
+	}
+}
+
 // ===============================
 // EXCHANGE ADAPTER FOR MARKET DATA
 // ===============================

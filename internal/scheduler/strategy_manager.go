@@ -36,6 +36,7 @@ type StrategyMarket interface {
 	FormatPrice(price float64) string
 	GetBaseAsset() string
 	GetQuoteAsset() string
+	GetPrecision() algorithms.MarketPrecision
 }
 
 // StrategyManager orchestrates the execution of trading strategies
@@ -127,6 +128,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		Balance:      balance,
 		OpenCycles:   openCycles,
 		Calculator:   sm.calculator,
+		Precision:    sm.market.GetPrecision(),
 	}
 
 	// Check if algorithm wants to buy
