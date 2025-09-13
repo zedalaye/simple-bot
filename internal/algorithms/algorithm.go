@@ -105,19 +105,15 @@ func (ar *AlgorithmRegistry) GetAll() map[string]Algorithm {
 	return ar.algorithms
 }
 
-// RoundToPrecision rounds a value according to the specified precision
-// This is a common utility function for all algorithms
-func RoundToPrecision(value, precision float64) float64 {
-	factor := 1 / precision
-	return float64(int64(value*factor)) / factor
-}
-
 // RoundPrice rounds a price according to market precision
 func RoundPrice(price float64, precision MarketPrecision) float64 {
-	return RoundToPrecision(price, precision.Price)
+	factor := 1 / precision.Price
+	return float64(int64(price*factor)) / factor
 }
 
-// RoundAmount rounds an amount according to market precision
+// RoundAmountUp rounds an amount UP according to market precision
+// This ensures that the order value meets minimum requirements
 func RoundAmount(amount float64, precision MarketPrecision) float64 {
-	return RoundToPrecision(amount, precision.Amount)
+	factor := 1 / precision.Amount
+	return float64(int64(amount*factor)+1) / factor
 }

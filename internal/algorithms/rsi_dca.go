@@ -111,7 +111,8 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	targetPrice := limitPrice * (1.0 + dynamicProfitPercent)
 	targetPrice = RoundPrice(targetPrice, ctx.Precision)
 
-	// Calculate amount to buy and round according to market precision
+	// Calculate amount to buy and round UP according to market precision
+	// This ensures the order value meets the minimum quote amount requirement
 	baseAmount := strategy.QuoteAmount / limitPrice
 	baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
