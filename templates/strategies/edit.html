@@ -3,7 +3,7 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1>Nouvelle Stratégie</h1>
+                <h1>Modification de la Stratégie</h1>
                 <a href="/strategies" class="btn btn-secondary">
                     <i class="fas fa-arrow-left"></i> Retour
                 </a>
@@ -13,29 +13,29 @@
                 <div class="col-lg-10">
                     <div class="card">
                         <div class="card-header">
-                            <h5 class="mb-0">Configuration de la stratégie</h5>
+                            <h5 class="mb-0">Édition de la stratégie</h5>
                         </div>
                         <div class="card-body">
-                            <form method="POST" action="/strategies">
+                            <form method="POST" action="/strategies/{{.strategy.ID}}/update">
                                 <!-- Basic Strategy Info -->
                                 <div class="row mb-3">
                                     <div class="col-md-4">
                                         <label for="name" class="form-label">Nom de la stratégie *</label>
-                                        <input type="text" class="form-control" id="name" name="name" required 
+                                        <input type="text" class="form-control" id="name" name="name" value="{{.strategy.Name}}" required 
                                                placeholder="ex: Scalping Agressif">
                                     </div>
                                     <div class="col-md-4">
                                         <label for="algorithm" class="form-label">Algorithme *</label>
                                         <select class="form-select" id="algorithm" name="algorithm" required onchange="updateAlgorithmFields()">
                                             <option value="">Sélectionner un algorithme</option>
-                                            <option value="rsi_dca">RSI DCA (Dollar Cost Averaging)</option>
-                                            <option value="macd_cross">MACD Crossover</option>
+                                            <option value="rsi_dca" {{if eq .strategy.AlgorithmName "rsi_dca"}}selected{{end}}>RSI DCA (Dollar Cost Averaging)</option>
+                                            <option value="macd_cross" {{if eq .strategy.AlgorithmName "macd_cross"}}selected{{end}}>MACD Crossover</option>
                                         </select>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Statut</label>
                                         <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" checked>
+                                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {{if .strategy.Enabled}}checked{{end}}>
                                             <label class="form-check-label" for="enabled">
                                                 Stratégie activée
                                             </label>
@@ -46,27 +46,27 @@
                                 <div class="mb-3">
                                     <label for="description" class="form-label">Description</label>
                                     <textarea class="form-control" id="description" name="description" rows="2" 
-                                              placeholder="Description de la stratégie..."></textarea>
+                                              placeholder="Description de la stratégie...">{{.strategy.Description}}</textarea>
                                 </div>
 
                                 <!-- Scheduling & Basic Config -->
                                 <div class="row mb-3">
                                     <div class="col-md-4">
                                         <label for="cron" class="form-label">Expression Cron *</label>
-                                        <input type="text" class="form-control" id="cron" name="cron" required 
+                                        <input type="text" class="form-control" id="cron" name="cron" value="{{.strategy.CronExpression}}" required 
                                                placeholder="0 */4 * * *" onchange="updateCronDescription()">
                                         <div class="form-text" id="cron-description">Format: minute heure jour mois jour-semaine</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="quote_amount" class="form-label">Montant par ordre (USDT) *</label>
-                                        <input type="number" step="0.01" class="form-control" id="quote_amount" name="quote_amount" required 
-                                               placeholder="25.00">
+                                        <input type="number" step="0.01" class="form-control" id="quote_amount" name="quote_amount" 
+                                               value="{{.strategy.QuoteAmount}}" required placeholder="25.00">
                                         <div class="form-text">Montant investi par ordre</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="concurrent_orders" class="form-label">Ordres simultanés max *</label>
                                         <input type="number" step="1" class="form-control" id="concurrent_orders" name="concurrent_orders" 
-                                               value="1" required placeholder="1">
+                                               value="{{.strategy.MaxConcurrentOrders}}" required placeholder="1">
                                         <div class="form-text">Limite d'ordres ouverts en même temps</div>
                                     </div>
                                 </div>
@@ -76,20 +76,20 @@
                                 <div class="row mb-4">
                                     <div class="col-md-4">
                                         <label for="profit_target" class="form-label">Objectif profit (%) *</label>
-                                        <input type="number" step="0.1" class="form-control" id="profit_target" name="profit_target" required 
-                                               placeholder="2.0">
+                                        <input type="number" step="0.1" class="form-control" id="profit_target" name="profit_target" 
+                                               value="{{.strategy.ProfitTarget}}" required placeholder="2.0">
                                         <div class="form-text">Profit visé par cycle</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="trailing_stop_delta" class="form-label">Trailing Stop (%)</label>
                                         <input type="number" step="0.01" class="form-control" id="trailing_stop_delta" name="trailing_stop_delta" 
-                                               placeholder="0.1" value="0.1">
+                                               value="{{.strategy.TrailingStopDelta}}" placeholder="0.1">
                                         <div class="form-text">Protection contre les chutes</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="sell_offset" class="form-label">Offset vente (%)</label>
                                         <input type="number" step="0.01" class="form-control" id="sell_offset" name="sell_offset" 
-                                               placeholder="0.1" value="0.1">
+                                               value="{{.strategy.SellOffset}}" placeholder="0.1">
                                         <div class="form-text">Marge de sécurité pour la vente</div>
                                     </div>
                                 </div>
@@ -100,24 +100,24 @@
                                     <div class="col-md-4">
                                         <label for="volatility_period" class="form-label">Période volatilité</label>
                                         <input type="number" class="form-control" id="volatility_period" name="volatility_period" 
-                                               value="7" placeholder="7">
+                                               {{if .strategy.VolatilityPeriod}}value="{{.strategy.VolatilityPeriod}}"{{else}}value="7"{{end}} placeholder="7">
                                         <div class="form-text">Nombre de bougies pour le calcul</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="volatility_adjustment" class="form-label">Ajustement volatilité (%)</label>
                                         <input type="number" step="0.1" class="form-control" id="volatility_adjustment" name="volatility_adjustment" 
-                                               value="50.0" placeholder="50.0">
+                                               {{if .strategy.VolatilityAdjustment}}value="{{.strategy.VolatilityAdjustment}}"{{else}}value="50.0"{{end}} placeholder="50.0">
                                         <div class="form-text">Facteur d'ajustement basé sur la volatilité</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="volatility_timeframe" class="form-label">Timeframe volatilité</label>
                                         <select class="form-select" id="volatility_timeframe" name="volatility_timeframe">
-                                            <option value="1m">1 minute</option>
-                                            <option value="5m">5 minutes</option>
-                                            <option value="15m">15 minutes</option>
-                                            <option value="1h">1 heure</option>
-                                            <option value="4h" selected>4 heures</option>
-                                            <option value="1d">1 jour</option>
+                                            <option value="1m" {{if eq .strategy.VolatilityTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                            <option value="5m" {{if eq .strategy.VolatilityTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                            <option value="15m" {{if eq .strategy.VolatilityTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                            <option value="1h" {{if eq .strategy.VolatilityTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                            <option value="4h" {{if or (eq .strategy.VolatilityTimeframe "4h") (eq .strategy.VolatilityTimeframe "")}}selected{{end}}>4 heures</option>
+                                            <option value="1d" {{if eq .strategy.VolatilityTimeframe "1d"}}selected{{end}}>1 jour</option>
                                         </select>
                                     </div>
                                 </div>
@@ -129,24 +129,24 @@
                                         <div class="col-md-4">
                                             <label for="rsi_threshold" class="form-label">Seuil RSI</label>
                                             <input type="number" step="0.1" class="form-control" id="rsi_threshold" name="rsi_threshold" 
-                                                   placeholder="30.0" value="30.0">
+                                                   {{if .strategy.RSIThreshold}}value="{{.strategy.RSIThreshold}}"{{end}} placeholder="30.0">
                                             <div class="form-text">RSI < seuil = signal d'achat</div>
                                         </div>
                                         <div class="col-md-4">
                                             <label for="rsi_period" class="form-label">Période RSI</label>
                                             <input type="number" class="form-control" id="rsi_period" name="rsi_period" 
-                                                   placeholder="14" value="14">
+                                                   {{if .strategy.RSIPeriod}}value="{{.strategy.RSIPeriod}}"{{else}}value="14"{{end}} placeholder="14">
                                             <div class="form-text">Nombre de bougies (14 = standard)</div>
                                         </div>
                                         <div class="col-md-4">
                                             <label for="rsi_timeframe" class="form-label">Timeframe RSI</label>
                                             <select class="form-select" id="rsi_timeframe" name="rsi_timeframe">
-                                                <option value="1m">1 minute</option>
-                                                <option value="5m">5 minutes</option>
-                                                <option value="15m">15 minutes</option>
-                                                <option value="1h">1 heure</option>
-                                                <option value="4h" selected>4 heures</option>
-                                                <option value="1d">1 jour</option>
+                                                <option value="1m" {{if eq .strategy.RSITimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.RSITimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.RSITimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if eq .strategy.RSITimeframe "1h"}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if or (eq .strategy.RSITimeframe "4h") (eq .strategy.RSITimeframe "")}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.RSITimeframe "1d"}}selected{{end}}>1 jour</option>
                                             </select>
                                         </div>
                                     </div>
@@ -159,30 +159,30 @@
                                         <div class="col-md-3">
                                             <label for="macd_fast_period" class="form-label">EMA Rapide</label>
                                             <input type="number" class="form-control" id="macd_fast_period" name="macd_fast_period" 
-                                                   placeholder="12" value="12">
+                                                   value="{{.strategy.MACDFastPeriod}}" placeholder="12">
                                             <div class="form-text">Période EMA rapide</div>
                                         </div>
                                         <div class="col-md-3">
                                             <label for="macd_slow_period" class="form-label">EMA Lente</label>
                                             <input type="number" class="form-control" id="macd_slow_period" name="macd_slow_period" 
-                                                   placeholder="26" value="26">
+                                                   value="{{.strategy.MACDSlowPeriod}}" placeholder="26">
                                             <div class="form-text">Période EMA lente</div>
                                         </div>
                                         <div class="col-md-3">
                                             <label for="macd_signal_period" class="form-label">Ligne de signal</label>
                                             <input type="number" class="form-control" id="macd_signal_period" name="macd_signal_period" 
-                                                   placeholder="9" value="9">
+                                                   value="{{.strategy.MACDSignalPeriod}}" placeholder="9">
                                             <div class="form-text">Période ligne de signal</div>
                                         </div>
                                         <div class="col-md-3">
                                             <label for="macd_timeframe" class="form-label">Timeframe MACD</label>
                                             <select class="form-select" id="macd_timeframe" name="macd_timeframe">
-                                                <option value="1m">1 minute</option>
-                                                <option value="5m">5 minutes</option>
-                                                <option value="15m">15 minutes</option>
-                                                <option value="1h">1 heure</option>
-                                                <option value="4h" selected>4 heures</option>
-                                                <option value="1d">1 jour</option>
+                                                <option value="1m" {{if eq .strategy.MACDTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.MACDTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.MACDTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if eq .strategy.MACDTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if or (eq .strategy.MACDTimeframe "4h") (eq .strategy.MACDTimeframe "")}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.MACDTimeframe "1d"}}selected{{end}}>1 jour</option>
                                             </select>
                                         </div>
                                     </div>
@@ -195,24 +195,24 @@
                                         <div class="col-md-4">
                                             <label for="bb_period" class="form-label">Période BB</label>
                                             <input type="number" class="form-control" id="bb_period" name="bb_period" 
-                                                   placeholder="20" value="20">
+                                                   value="{{.strategy.BBPeriod}}" placeholder="20">
                                             <div class="form-text">Nombre de périodes pour la moyenne mobile</div>
                                         </div>
                                         <div class="col-md-4">
                                             <label for="bb_multiplier" class="form-label">Multiplicateur BB</label>
                                             <input type="number" step="0.1" class="form-control" id="bb_multiplier" name="bb_multiplier" 
-                                                   placeholder="2.0" value="2.0">
+                                                   value="{{.strategy.BBMultiplier}}" placeholder="2.0">
                                             <div class="form-text">Écart-type multiplié par ce facteur</div>
                                         </div>
                                         <div class="col-md-4">
                                             <label for="bb_timeframe" class="form-label">Timeframe BB</label>
                                             <select class="form-select" id="bb_timeframe" name="bb_timeframe">
-                                                <option value="1m">1 minute</option>
-                                                <option value="5m">5 minutes</option>
-                                                <option value="15m">15 minutes</option>
-                                                <option value="1h" selected>1 heure</option>
-                                                <option value="4h">4 heures</option>
-                                                <option value="1d">1 jour</option>
+                                                <option value="1m" {{if eq .strategy.BBTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.BBTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.BBTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if or (eq .strategy.BBTimeframe "1h") (eq .strategy.BBTimeframe "")}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if eq .strategy.BBTimeframe "4h"}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.BBTimeframe "1d"}}selected{{end}}>1 jour</option>
                                             </select>
                                         </div>
                                     </div>
@@ -221,8 +221,8 @@
                                 <!-- Submit -->
                                 <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
                                     <button type="button" class="btn btn-outline-secondary me-md-2" onclick="window.history.back()">Annuler</button>
-                                    <button type="submit" class="btn btn-success">
-                                        <i class="fas fa-save"></i> Créer la stratégie
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Modifier la stratégie
                                     </button>
                                 </div>
                             </form>

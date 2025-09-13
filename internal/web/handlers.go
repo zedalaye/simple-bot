@@ -248,6 +248,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 		// RSI parameters
 		var rsiThreshold *float64
 		var rsiPeriod *int
+		rsiTimeframe := c.PostForm("rsi_timeframe")
 		if rsiThreshStr := c.PostForm("rsi_threshold"); rsiThreshStr != "" {
 			if val, err := strconv.ParseFloat(rsiThreshStr, 64); err == nil {
 				rsiThreshold = &val
@@ -259,12 +260,182 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			}
 		}
 
-		// Use the new comprehensive method instead of CreateExampleStrategy
+		// MACD parameters
+		macdFastPeriod, _ := strconv.Atoi(c.PostForm("macd_fast_period"))
+		macdSlowPeriod, _ := strconv.Atoi(c.PostForm("macd_slow_period"))
+		macdSignalPeriod, _ := strconv.Atoi(c.PostForm("macd_signal_period"))
+		macdTimeframe := c.PostForm("macd_timeframe")
+		if macdFastPeriod == 0 {
+			macdFastPeriod = 12
+		}
+		if macdSlowPeriod == 0 {
+			macdSlowPeriod = 26
+		}
+		if macdSignalPeriod == 0 {
+			macdSignalPeriod = 9
+		}
+
+		// Bollinger Bands parameters
+		bbPeriod, _ := strconv.Atoi(c.PostForm("bb_period"))
+		bbMultiplier, _ := strconv.ParseFloat(c.PostForm("bb_multiplier"), 64)
+		bbTimeframe := c.PostForm("bb_timeframe")
+		if bbPeriod == 0 {
+			bbPeriod = 20
+		}
+		if bbMultiplier == 0 {
+			bbMultiplier = 2.0
+		}
+
+		// Volatility parameters
+		var volatilityPeriod *int
+		var volatilityAdjustment *float64
+		volatilityTimeframe := c.PostForm("volatility_timeframe")
+		if volPeriodStr := c.PostForm("volatility_period"); volPeriodStr != "" {
+			if val, err := strconv.Atoi(volPeriodStr); err == nil {
+				volatilityPeriod = &val
+			}
+		}
+		if volAdjStr := c.PostForm("volatility_adjustment"); volAdjStr != "" {
+			if val, err := strconv.ParseFloat(volAdjStr, 64); err == nil {
+				volatilityAdjustment = &val
+			}
+		}
+
+		// Use the new comprehensive method
 		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
-			quoteAmount, profitTarget, trailingStopDelta, sellOffset, rsiThreshold, rsiPeriod,
+			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
+			rsiThreshold, rsiPeriod, rsiTimeframe,
+			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
+			bbPeriod, bbMultiplier, bbTimeframe,
+			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			int(concurrentOrders))
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
+			return
+		}
+
+		c.Redirect(http.StatusFound, "/strategies")
+	})
+
+	// Edit strategy form
+	router.GET("/strategies/:id/edit", func(c *gin.Context) {
+		idStr := c.Param("id")
+		strategyID, err := strconv.Atoi(idStr)
+		if err != nil {
+			handleError(c, "Erreur - Stratégies", "strategies", "Invalid strategy ID")
+			return
+		}
+
+		strategy, err := db.GetStrategy(strategyID)
+		if err != nil {
+			handleError(c, "Erreur - Stratégies", "strategies", "Failed to get strategy: "+err.Error())
+			return
+		}
+
+		c.HTML(http.StatusOK, "strategies_edit", gin.H{
+			"title":      makeTitle(exchangeName, "Modifier Stratégie"),
+			"exchange":   exchangeName,
+			"active":     "strategies",
+			"strategy":   strategy,
+			"algorithms": []string{"rsi_dca", "macd_cross"},
+		})
+	})
+
+	// Update strategy
+	router.POST("/strategies/:id/update", func(c *gin.Context) {
+		idStr := c.Param("id")
+		strategyID, err := strconv.Atoi(idStr)
+		if err != nil {
+			handleError(c, "Erreur - Stratégies", "strategies", "Invalid strategy ID")
+			return
+		}
+
+		// Extraire les données du formulaire (similaire à la création)
+		name := c.PostForm("name")
+		description := c.PostForm("description")
+		algorithm := c.PostForm("algorithm")
+		cron := c.PostForm("cron")
+		enabled := c.PostForm("enabled") == "on"
+
+		quoteAmount, _ := strconv.ParseFloat(c.PostForm("quote_amount"), 64)
+		profitTarget, _ := strconv.ParseFloat(c.PostForm("profit_target"), 64)
+		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
+		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
+		concurrentOrders, _ := strconv.ParseInt(c.PostForm("concurrent_orders"), 10, 64)
+
+		// Set defaults if not provided
+		if trailingStopDelta == 0 {
+			trailingStopDelta = 0.1
+		}
+		if sellOffset == 0 {
+			sellOffset = 0.1
+		}
+
+		// RSI parameters
+		var rsiThreshold *float64
+		var rsiPeriod *int
+		rsiTimeframe := c.PostForm("rsi_timeframe")
+		if rsiThreshStr := c.PostForm("rsi_threshold"); rsiThreshStr != "" {
+			if val, err := strconv.ParseFloat(rsiThreshStr, 64); err == nil {
+				rsiThreshold = &val
+			}
+		}
+		if rsiPeriodStr := c.PostForm("rsi_period"); rsiPeriodStr != "" {
+			if val, err := strconv.Atoi(rsiPeriodStr); err == nil {
+				rsiPeriod = &val
+			}
+		}
+
+		// MACD parameters
+		macdFastPeriod, _ := strconv.Atoi(c.PostForm("macd_fast_period"))
+		macdSlowPeriod, _ := strconv.Atoi(c.PostForm("macd_slow_period"))
+		macdSignalPeriod, _ := strconv.Atoi(c.PostForm("macd_signal_period"))
+		macdTimeframe := c.PostForm("macd_timeframe")
+		if macdFastPeriod == 0 {
+			macdFastPeriod = 12
+		}
+		if macdSlowPeriod == 0 {
+			macdSlowPeriod = 26
+		}
+		if macdSignalPeriod == 0 {
+			macdSignalPeriod = 9
+		}
+
+		// Bollinger Bands parameters
+		bbPeriod, _ := strconv.Atoi(c.PostForm("bb_period"))
+		bbMultiplier, _ := strconv.ParseFloat(c.PostForm("bb_multiplier"), 64)
+		bbTimeframe := c.PostForm("bb_timeframe")
+		if bbPeriod == 0 {
+			bbPeriod = 20
+		}
+		if bbMultiplier == 0 {
+			bbMultiplier = 2.0
+		}
+
+		// Volatility parameters
+		var volatilityPeriod *int
+		var volatilityAdjustment *float64
+		volatilityTimeframe := c.PostForm("volatility_timeframe")
+		if volPeriodStr := c.PostForm("volatility_period"); volPeriodStr != "" {
+			if val, err := strconv.Atoi(volPeriodStr); err == nil {
+				volatilityPeriod = &val
+			}
+		}
+		if volAdjStr := c.PostForm("volatility_adjustment"); volAdjStr != "" {
+			if val, err := strconv.ParseFloat(volAdjStr, 64); err == nil {
+				volatilityAdjustment = &val
+			}
+		}
+
+		err = db.UpdateStrategy(strategyID, name, description, algorithm, cron, enabled,
+			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
+			rsiThreshold, rsiPeriod, rsiTimeframe,
+			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
+			bbPeriod, bbMultiplier, bbTimeframe,
+			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
+			int(concurrentOrders))
+		if err != nil {
+			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())
 			return
 		}
 
