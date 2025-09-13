@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -384,6 +385,30 @@ var migrations = []Migration{
 	},
 }
 
+// Helper structures for optimized cycle scanning
+type OrderScanResult struct {
+	ID         sql.NullInt64
+	StrategyID sql.NullInt64
+	ExternalID sql.NullString
+	Side       sql.NullString
+	Amount     sql.NullString
+	Price      sql.NullString
+	Fees       sql.NullString
+	Status     sql.NullString
+	CreatedAt  sql.NullTime
+	UpdatedAt  sql.NullTime
+}
+
+type CycleScanResult struct {
+	ID          int
+	TargetPrice float64
+	MaxPrice    float64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	BuyOrder    OrderScanResult
+	SellOrder   OrderScanResult
+}
+
 type DB struct {
 	conn *sql.DB
 }
@@ -461,37 +486,223 @@ func (db *DB) applyMigrations() error {
 	return nil
 }
 
-func (db *DB) GetOpenCycles() ([]CycleEnhanced, error) {
-	query := `
-		SELECT c.id
-		FROM cycles c
-		LEFT OUTER JOIN orders bo on (bo.id = c.buy_order_id)
-		LEFT OUTER JOIN orders so on (so.id = c.sell_order_id)
-		WHERE (bo.status = 'FILLED') 
-		  and (c.sell_order_id is null or (so.status = 'CANCELLED'))
-		ORDER BY c.created_at DESC
-	`
-	rows, err := db.conn.Query(query)
+// Helper function to build an Order from scan result
+func (db *DB) buildOrderFromScan(scanResult OrderScanResult) *Order {
+	if !scanResult.ID.Valid {
+		return nil
+	}
+
+	order := &Order{
+		ID: int(scanResult.ID.Int64),
+	}
+
+	if scanResult.StrategyID.Valid {
+		id := int(scanResult.StrategyID.Int64)
+		order.StrategyID = &id
+	}
+	if scanResult.ExternalID.Valid {
+		order.ExternalID = scanResult.ExternalID.String
+	}
+	if scanResult.Side.Valid {
+		order.Side = OrderSide(scanResult.Side.String)
+	}
+	if scanResult.Amount.Valid {
+		if val, err := strconv.ParseFloat(scanResult.Amount.String, 64); err == nil {
+			order.Amount = val
+		}
+	}
+	if scanResult.Price.Valid {
+		if val, err := strconv.ParseFloat(scanResult.Price.String, 64); err == nil {
+			order.Price = val
+		}
+	}
+	if scanResult.Fees.Valid {
+		if val, err := strconv.ParseFloat(scanResult.Fees.String, 64); err == nil {
+			order.Fees = val
+		}
+	}
+	if scanResult.Status.Valid {
+		order.Status = OrderStatus(scanResult.Status.String)
+	}
+	if scanResult.CreatedAt.Valid {
+		order.CreatedAt = scanResult.CreatedAt.Time
+	}
+	if scanResult.UpdatedAt.Valid {
+		order.UpdatedAt = scanResult.UpdatedAt.Time
+	}
+
+	return order
+}
+
+// Helper function to build a CycleEnhanced from orders
+func (db *DB) buildCycleEnhancedFromOrders(id int, targetPrice, maxPrice float64, createdAt, updatedAt time.Time, buyOrder *Order, sellOrder *Order) (*CycleEnhanced, error) {
+	if buyOrder == nil {
+		return nil, fmt.Errorf("buy order cannot be nil")
+	}
+
+	cycle := &CycleEnhanced{
+		Cycle: Cycle{
+			ID:          id,
+			BuyOrder:    *buyOrder,
+			SellOrder:   sellOrder,
+			MaxPrice:    maxPrice,
+			TargetPrice: targetPrice,
+			CreatedAt:   createdAt,
+			UpdatedAt:   updatedAt,
+		},
+	}
+
+	// Récupérer le StrategyID depuis le buy order
+	if buyOrder.StrategyID == nil {
+		return nil, fmt.Errorf("buyOrder.StrategyID should not be nil")
+	}
+	cycle.StrategyID = *buyOrder.StrategyID
+
+	// Logique de statut et profit (réutilisée de buildCycleEnhanced)
+	if cycle.SellOrder == nil {
+		switch cycle.BuyOrder.Status {
+		case Pending, Cancelled:
+			cycle.Status = "New"
+		case Filled:
+			cycle.Status = "Open"
+		}
+	} else {
+		switch cycle.SellOrder.Status {
+		case Pending, Cancelled:
+			cycle.Status = "Pending"
+		case Filled:
+			cycle.Status = "Completed"
+		}
+		profit := (cycle.SellOrder.Price - cycle.BuyOrder.Price) * cycle.BuyOrder.Amount
+		profit -= cycle.BuyOrder.Fees
+		profit -= cycle.SellOrder.Fees
+		cycle.Profit = &profit
+	}
+
+	// Calcul de durée (réutilisée de buildCycleEnhanced)
+	var duration time.Duration
+	if cycle.SellOrder != nil {
+		duration = cycle.SellOrder.CreatedAt.Sub(cycle.CreatedAt)
+	} else {
+		duration = time.Since(cycle.BuyOrder.CreatedAt)
+	}
+	cycle.Duration = formatDuration(duration)
+
+	return cycle, nil
+}
+
+// Helper function to scan a cycle row
+func (db *DB) scanCycleRow(rows *sql.Rows) (*CycleScanResult, error) {
+	var result CycleScanResult
+
+	err := rows.Scan(
+		&result.ID, &result.TargetPrice, &result.MaxPrice, &result.CreatedAt, &result.UpdatedAt,
+		// Buy Order
+		&result.BuyOrder.ID, &result.BuyOrder.StrategyID, &result.BuyOrder.ExternalID,
+		&result.BuyOrder.Side, &result.BuyOrder.Amount, &result.BuyOrder.Price,
+		&result.BuyOrder.Fees, &result.BuyOrder.Status, &result.BuyOrder.CreatedAt, &result.BuyOrder.UpdatedAt,
+		// Sell Order (nullable)
+		&result.SellOrder.ID, &result.SellOrder.StrategyID, &result.SellOrder.ExternalID,
+		&result.SellOrder.Side, &result.SellOrder.Amount, &result.SellOrder.Price,
+		&result.SellOrder.Fees, &result.SellOrder.Status, &result.SellOrder.CreatedAt, &result.SellOrder.UpdatedAt,
+	)
+
+	return &result, err
+}
+
+// Helper function to scan a single order row (for direct order queries)
+func (db *DB) scanSingleOrderRow(rows *sql.Rows) (*Order, error) {
+	var order Order
+	var strategyId sql.NullInt64
+
+	err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
+		&order.Status, &strategyId, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get open cycles: %w", err)
+		return nil, fmt.Errorf("failed to scan order: %w", err)
+	}
+
+	if strategyId.Valid {
+		id := int(strategyId.Int64)
+		order.StrategyID = &id
+	}
+
+	return &order, nil
+}
+
+// Common function to execute order queries
+func (db *DB) executeOrderQuery(query string, args ...interface{}) ([]Order, error) {
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute order query: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []Order
+	for rows.Next() {
+		order, err := db.scanSingleOrderRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan order row: %w", err)
+		}
+		orders = append(orders, *order)
+	}
+
+	return orders, nil
+}
+
+// Common function to execute cycle queries
+func (db *DB) executeCycleQuery(query string, args ...interface{}) ([]CycleEnhanced, error) {
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute cycle query: %w", err)
 	}
 	defer rows.Close()
 
 	var cycles []CycleEnhanced
 	for rows.Next() {
-		var id int
-		err := rows.Scan(&id)
+		scanResult, err := db.scanCycleRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan cycle: %w", err)
+			return nil, fmt.Errorf("failed to scan cycle row: %w", err)
 		}
-		cycle, err := db.GetCycle(id)
+
+		// Construire les orders
+		buyOrder := db.buildOrderFromScan(scanResult.BuyOrder)
+		sellOrder := db.buildOrderFromScan(scanResult.SellOrder)
+
+		// Construire le cycle enhanced
+		cycle, err := db.buildCycleEnhancedFromOrders(
+			scanResult.ID,
+			scanResult.TargetPrice,
+			scanResult.MaxPrice,
+			scanResult.CreatedAt,
+			scanResult.UpdatedAt,
+			buyOrder,
+			sellOrder,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get cycle: %w", err)
+			return nil, fmt.Errorf("failed to build cycle enhanced: %w", err)
 		}
+
 		cycles = append(cycles, *cycle)
 	}
 
 	return cycles, nil
+}
+
+func (db *DB) GetOpenCycles() ([]CycleEnhanced, error) {
+	query := `
+		SELECT
+			c.id, c.target_price, c.max_price, c.created_at, c.updated_at,
+			bo.id, bo.strategy_id, bo.external_id, bo.side, bo.amount, bo.price, bo.fees, bo.status, bo.created_at, bo.updated_at,
+			so.id, so.strategy_id, so.external_id, so.side, so.amount, so.price, so.fees, so.status, so.created_at, so.updated_at
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		LEFT JOIN orders so ON c.sell_order_id = so.id
+		WHERE (bo.status = 'FILLED')
+		  AND (c.sell_order_id IS NULL OR (so.status = 'CANCELLED'))
+		ORDER BY c.created_at DESC
+	`
+
+	return db.executeCycleQuery(query)
 }
 
 func (db *DB) UpdateCycleMaxPrice(id int, maxPrice float64) error {
@@ -581,36 +792,12 @@ func (db *DB) GetOrderByExternalID(externalId string) (*Order, error) {
 
 func (db *DB) GetPendingOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at 
-		FROM orders 
-		WHERE status = ? 
+		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
+		FROM orders
+		WHERE status = ?
 		ORDER BY created_at ASC
 	`
-	rows, err := db.conn.Query(query, Pending)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pending orders: %w", err)
-	}
-	defer rows.Close()
-
-	var orders []Order
-	for rows.Next() {
-		var order Order
-		var strategyId sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &strategyId, &order.CreatedAt, &order.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan order: %w", err)
-		}
-
-		if strategyId.Valid {
-			id := int(strategyId.Int64)
-			order.StrategyID = &id
-		}
-
-		orders = append(orders, order)
-	}
-
-	return orders, nil
+	return db.executeOrderQuery(query, Pending)
 }
 
 func (db *DB) UpdateOrderStatus(externalId string, status OrderStatus) error {
@@ -629,35 +816,11 @@ func (db *DB) UpdateOrderStatus(externalId string, status OrderStatus) error {
 
 func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at 
-		FROM orders 
+		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
+		FROM orders
 		WHERE status = ? AND created_at < ?
 	`
-	rows, err := db.conn.Query(query, Pending, olderThan)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get old orders: %w", err)
-	}
-	defer rows.Close()
-
-	var orders []Order
-	for rows.Next() {
-		var order Order
-		var strategyId sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &strategyId, &order.CreatedAt, &order.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan order: %w", err)
-		}
-
-		if strategyId.Valid {
-			id := int(strategyId.Int64)
-			order.StrategyID = &id
-		}
-
-		orders = append(orders, order)
-	}
-
-	return orders, nil
+	return db.executeOrderQuery(query, Pending, olderThan)
 }
 
 // Cycles
@@ -676,94 +839,52 @@ func (db *DB) CreateCycle(buyOrderId int) (*CycleEnhanced, error) {
 	return db.GetCycle(int(id))
 }
 
-func (db *DB) buildCycleEnhanced(
-	id int,
-	buyOrderId int64, sellOrderId sql.NullInt64,
-	targetPrice, maxPrice float64,
-	createdAt, updatedAt time.Time,
-) (*CycleEnhanced, error) {
-	var cycle CycleEnhanced
-	cycle.ID = id
-	cycle.MaxPrice = maxPrice
-	cycle.TargetPrice = targetPrice
-	cycle.CreatedAt = createdAt
-	cycle.UpdatedAt = updatedAt
-
-	buyOrder, err := db.GetOrder(int(buyOrderId))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buy order: %w", err)
-	}
-	cycle.BuyOrder = *buyOrder
-	if buyOrder.StrategyID == nil {
-		return nil, fmt.Errorf("buyOrder.StrategyID should not be nil: %w", err)
-	}
-	cycle.StrategyID = *buyOrder.StrategyID
-
-	if sellOrderId.Valid {
-		sellOrder, err := db.GetOrder(int(sellOrderId.Int64))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get sell order: %w", err)
-		}
-		cycle.SellOrder = sellOrder
-	}
-
-	// Statut et profit
-	if cycle.SellOrder == nil {
-		switch cycle.BuyOrder.Status {
-		case Pending, Cancelled:
-			cycle.Status = "New"
-		case Filled:
-			cycle.Status = "Open"
-		}
-	} else {
-		switch cycle.SellOrder.Status {
-		case Pending, Cancelled:
-			cycle.Status = "Pending"
-		case Filled:
-			cycle.Status = "Completed"
-		}
-		profit := (cycle.SellOrder.Price - cycle.BuyOrder.Price) * cycle.BuyOrder.Amount
-		profit -= cycle.BuyOrder.Fees
-		profit -= cycle.SellOrder.Fees
-		cycle.Profit = &profit
-	}
-
-	// Durée
-	var duration time.Duration
-	if cycle.SellOrder != nil {
-		duration = cycle.SellOrder.CreatedAt.Sub(cycle.CreatedAt)
-	} else {
-		duration = time.Since(cycle.BuyOrder.CreatedAt)
-	}
-	cycle.Duration = formatDuration(duration)
-
-	return &cycle, nil
-}
-
 func (db *DB) GetCycle(id int) (*CycleEnhanced, error) {
 	query := `
-		SELECT id, buy_order_id, sell_order_id, target_price, max_price, created_at, updated_at
-		FROM cycles
-		WHERE id = ?
+		SELECT
+			c.id, c.target_price, c.max_price, c.created_at, c.updated_at,
+			bo.id, bo.strategy_id, bo.external_id, bo.side, bo.amount, bo.price, bo.fees, bo.status, bo.created_at, bo.updated_at,
+			so.id, so.strategy_id, so.external_id, so.side, so.amount, so.price, so.fees, so.status, so.created_at, so.updated_at
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		LEFT JOIN orders so ON c.sell_order_id = so.id
+		WHERE c.id = ?
 	`
-	row := db.conn.QueryRow(query, id)
 
-	var (
-		cycleId     int
-		buyOrderId  int64
-		sellOrderId sql.NullInt64
-		targetPrice float64
-		maxPrice    float64
-		createdAt   time.Time
-		updatedAt   time.Time
-	)
-
-	err := row.Scan(&cycleId, &buyOrderId, &sellOrderId, &targetPrice, &maxPrice, &createdAt, &updatedAt)
+	rows, err := db.conn.Query(query, id)
 	if err != nil {
-		return nil, fmt.Errorf("db.GetCycle() failed to scan cycle row: %w", err)
+		return nil, fmt.Errorf("failed to get cycle: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, fmt.Errorf("cycle not found")
 	}
 
-	return db.buildCycleEnhanced(cycleId, buyOrderId, sellOrderId, targetPrice, maxPrice, createdAt, updatedAt)
+	scanResult, err := db.scanCycleRow(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan cycle row: %w", err)
+	}
+
+	// Construire les orders
+	buyOrder := db.buildOrderFromScan(scanResult.BuyOrder)
+	sellOrder := db.buildOrderFromScan(scanResult.SellOrder)
+
+	// Construire le cycle enhanced
+	cycle, err := db.buildCycleEnhancedFromOrders(
+		scanResult.ID,
+		scanResult.TargetPrice,
+		scanResult.MaxPrice,
+		scanResult.CreatedAt,
+		scanResult.UpdatedAt,
+		buyOrder,
+		sellOrder,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build cycle enhanced: %w", err)
+	}
+
+	return cycle, nil
 }
 
 func (db *DB) GetCycleForBuyOrder(buyOrderId int) (*CycleEnhanced, error) {
@@ -855,39 +976,17 @@ func (db *DB) ForceCycleTimestamps(id int, createdAt time.Time, updatedAt time.T
 
 func (db *DB) GetAllCycles() ([]CycleEnhanced, error) {
 	query := `
-		SELECT id, buy_order_id, sell_order_id, target_price, max_price, created_at, updated_at
-		FROM cycles 
-		ORDER BY created_at DESC
+		SELECT
+			c.id, c.target_price, c.max_price, c.created_at, c.updated_at,
+			bo.id, bo.strategy_id, bo.external_id, bo.side, bo.amount, bo.price, bo.fees, bo.status, bo.created_at, bo.updated_at,
+			so.id, so.strategy_id, so.external_id, so.side, so.amount, so.price, so.fees, so.status, so.created_at, so.updated_at
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		LEFT JOIN orders so ON c.sell_order_id = so.id
+		ORDER BY c.created_at DESC
 	`
-	rows, err := db.conn.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("db.GetAllCycles() failed to get cycles: %w", err)
-	}
-	defer rows.Close()
 
-	var cycles []CycleEnhanced
-	for rows.Next() {
-		var (
-			id          int
-			buyOrderId  int64
-			sellOrderId sql.NullInt64
-			targetPrice float64
-			maxPrice    float64
-			createdAt   time.Time
-			updatedAt   time.Time
-		)
-		err := rows.Scan(&id, &buyOrderId, &sellOrderId, &targetPrice, &maxPrice, &createdAt, &updatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan cycle row: %w", err)
-		}
-		cycle, err := db.buildCycleEnhanced(id, buyOrderId, sellOrderId, targetPrice, maxPrice, createdAt, updatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build cycle: %w", err)
-		}
-		cycles = append(cycles, *cycle)
-	}
-
-	return cycles, nil
+	return db.executeCycleQuery(query)
 }
 
 // Méthodes utilitaires
@@ -984,35 +1083,11 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 // GetAllOrders récupère tous les ordres (pas seulement pending)
 func (db *DB) GetAllOrders() ([]Order, error) {
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at 
-		FROM orders 
+		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
+		FROM orders
 		ORDER BY created_at DESC
 	`
-	rows, err := db.conn.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all orders: %w", err)
-	}
-	defer rows.Close()
-
-	var orders []Order
-	for rows.Next() {
-		var order Order
-		var strategyId sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &strategyId, &order.CreatedAt, &order.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan order: %w", err)
-		}
-
-		if strategyId.Valid {
-			id := int(strategyId.Int64)
-			order.StrategyID = &id
-		}
-
-		orders = append(orders, order)
-	}
-
-	return orders, nil
+	return db.executeOrderQuery(query)
 }
 
 // CleanupOldData supprime les anciens ordres terminés (plus anciens que X jours)
@@ -1131,58 +1206,36 @@ func (db *DB) GetOrdersWithPagination(status OrderStatus, limit, offset int) ([]
 	// Compter le total
 	var total int
 	countQuery := `SELECT COUNT(*) FROM orders`
-	var args []interface{}
+	var countArgs []interface{}
 
 	if status != "" {
 		countQuery += ` WHERE status = ?`
-		args = append(args, status)
+		countArgs = append(countArgs, status)
 	}
 
-	err := db.conn.QueryRow(countQuery, args...).Scan(&total)
+	err := db.conn.QueryRow(countQuery, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count orders: %w", err)
 	}
 
-	// Récupérer les ordres
+	// Récupérer les ordres avec la fonction commune
 	query := `
-		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at 
+		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
 		FROM orders
 	`
 
+	var queryArgs []interface{}
 	if status != "" {
 		query += ` WHERE status = ?`
+		queryArgs = append(queryArgs, status)
 	}
 
 	query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	queryArgs = append(queryArgs, limit, offset)
 
-	if status != "" {
-		args = append(args, limit, offset)
-	} else {
-		args = []interface{}{limit, offset}
-	}
-
-	rows, err := db.conn.Query(query, args...)
+	orders, err := db.executeOrderQuery(query, queryArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get orders with pagination: %w", err)
-	}
-	defer rows.Close()
-
-	var orders []Order
-	for rows.Next() {
-		var order Order
-		var strategyId sql.NullInt64
-		err := rows.Scan(&order.ID, &order.ExternalID, &order.Side, &order.Amount, &order.Price, &order.Fees,
-			&order.Status, &strategyId, &order.CreatedAt, &order.UpdatedAt)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan order: %w", err)
-		}
-
-		if strategyId.Valid {
-			id := int(strategyId.Int64)
-			order.StrategyID = &id
-		}
-
-		orders = append(orders, order)
 	}
 
 	return orders, total, nil
@@ -1711,35 +1764,18 @@ func (db *DB) CleanupOldCandles(olderThanDays int) error {
 
 func (db *DB) GetOpenCyclesForStrategy(strategyId int) ([]CycleEnhanced, error) {
 	query := `
-		SELECT c.id
+		SELECT
+			c.id, c.target_price, c.max_price, c.created_at, c.updated_at,
+			bo.id, bo.strategy_id, bo.external_id, bo.side, bo.amount, bo.price, bo.fees, bo.status, bo.created_at, bo.updated_at,
+			so.id, so.strategy_id, so.external_id, so.side, so.amount, so.price, so.fees, so.status, so.created_at, so.updated_at
 		FROM cycles c
-		JOIN orders bo ON (bo.id = c.buy_order_id)
-		LEFT OUTER JOIN orders so ON (so.id = c.sell_order_id)
+		JOIN orders bo ON c.buy_order_id = bo.id
+		LEFT JOIN orders so ON c.sell_order_id = so.id
 		WHERE bo.strategy_id = ? AND (c.sell_order_id IS NULL OR so.status = 'CANCELLED')
 		ORDER BY c.created_at DESC
 	`
-	rows, err := db.conn.Query(query, strategyId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get open cycles for strategy: %w", err)
-	}
-	defer rows.Close()
 
-	var cycles []CycleEnhanced
-	for rows.Next() {
-		var id int
-		err := rows.Scan(&id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-		cycle, err := db.GetCycle(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get cycle: %w", err)
-		}
-
-		cycles = append(cycles, *cycle)
-	}
-
-	return cycles, nil
+	return db.executeCycleQuery(query, strategyId)
 }
 
 func (db *DB) CountActiveOrdersForStrategy(strategyId int) (int, error) {
@@ -1784,13 +1820,13 @@ func (db *DB) GetStrategyStats(strategyId int) (map[string]interface{}, error) {
 	stats["filled_orders"] = filled
 	stats["cancelled_orders"] = cancelled
 
-	// Count positions for this strategy
-	var positionsCount int
-	err = db.conn.QueryRow(`SELECT COUNT(*) FROM positions WHERE strategy_id = ?`, strategyId).Scan(&positionsCount)
+	// Count active cycles for this strategy
+	var activeCyclesCount int
+	err = db.conn.QueryRow(`SELECT COUNT(*) FROM cycles c JOIN orders bo ON c.buy_order_id = bo.id WHERE bo.strategy_id = ? AND c.sell_order_id IS NULL`, strategyId).Scan(&activeCyclesCount)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get strategy positions count: %w", err)
+		return nil, fmt.Errorf("failed to get strategy active cycles count: %w", err)
 	}
-	stats["active_positions"] = positionsCount
+	stats["active_cycles"] = activeCyclesCount
 
 	return stats, nil
 }
