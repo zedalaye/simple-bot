@@ -7,6 +7,7 @@ import (
 
 // TradingContext provides all necessary data for trading decisions
 type TradingContext struct {
+	ExchangeName string
 	Pair         string
 	CurrentPrice float64
 	Balance      map[string]Balance

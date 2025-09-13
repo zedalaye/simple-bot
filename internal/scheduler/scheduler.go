@@ -134,7 +134,7 @@ func (ss *StrategyScheduler) ScheduleStrategy(strategy database.Strategy) error 
 
 // executeStrategy is called by the scheduler to execute a strategy
 func (ss *StrategyScheduler) executeStrategy(strategyID int) {
-	logger.Infof("[%s] 🎯 Executing strategy ID: %d", ss.exchangeName, strategyID)
+	logger.Infof("[%s] Executing strategy ID: %d", ss.exchangeName, strategyID)
 
 	// Load strategy from database
 	strategy, err := ss.db.GetStrategy(strategyID)
@@ -162,7 +162,7 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 		logger.Errorf("Failed to update strategy execution time: %v", err)
 	}
 
-	logger.Infof("[%s] ✅ Strategy '%s' executed successfully at %v", ss.exchangeName, strategy.Name, now.Format("15:04:05"))
+	logger.Infof("[%s] Strategy '%s' executed successfully at %v", ss.exchangeName, strategy.Name, now.Format("15:04:05"))
 
 	var baseTime time.Time
 	if strategy.NextExecutionAt != nil {
@@ -177,7 +177,7 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 		if updateErr := ss.updateStrategyNextRun(strategyID, nextRun); updateErr != nil {
 			logger.Warnf("[%s] Failed to update next run time for strategy %d: %v", ss.exchangeName, strategyID, updateErr)
 		} else {
-			logger.Infof("[%s] ✅ Strategy %d next run scheduled for: %v", ss.exchangeName, strategyID, nextRun.Format("15:04:05"))
+			logger.Infof("[%s] Strategy %d next run scheduled for: %v", ss.exchangeName, strategyID, nextRun.Format("15:04:05"))
 		}
 	}
 }

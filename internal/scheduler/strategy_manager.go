@@ -68,7 +68,7 @@ func NewStrategyManager(exchangeName, pair string, db *database.DB, market Strat
 
 // ExecuteStrategy executes a single strategy
 func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
-	logger.Infof("[%s] 🎯 Executing strategy '%s' (algorithm: %s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
+	logger.Infof("[%s] Executing strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
 
 	// Get the algorithm for this strategy
 	algorithm, exists := sm.algorithmRegistry.Get(strategy.AlgorithmName)
@@ -119,6 +119,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 
 	// Create trading context
 	tradingContext := algorithms.TradingContext{
+		ExchangeName: sm.exchangeName,
 		Pair:         sm.pair,
 		CurrentPrice: currentPrice,
 		Balance:      balance,
@@ -153,9 +154,9 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 			return fmt.Errorf("failed to execute buy order: %w", err)
 		}
 
-		logger.Infof("[%s] ✅ Strategy %s: buy order executed successfully", sm.exchangeName, strategy.Name)
+		logger.Infof("[%s] Strategy %s: buy order executed successfully", sm.exchangeName, strategy.Name)
 	} else {
-		logger.Debugf("Strategy %s: no buy signal - %s", strategy.Name, buySignal.Reason)
+		logger.Debugf("[%s] Strategy %s: no buy signal - %s", sm.exchangeName, strategy.Name, buySignal.Reason)
 	}
 
 	// Check sell signals for open positions
@@ -213,15 +214,15 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 		logger.Errorf("Failed to send Telegram notification: %v", err)
 	}
 
-	logger.Infof("✅ Buy order created: Order ID=%d, Cycle ID=%d, Strategy=%s",
-		dbOrder.ID, cycle.ID, strategy.Name)
+	logger.Infof("[%s] Buy order created: Order ID=%d, Cycle ID=%d, Strategy=%s",
+		sm.exchangeName, dbOrder.ID, cycle.ID, strategy.Name)
 
 	return nil
 }
 
 func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cycle database.CycleEnhanced, strategy database.Strategy) error {
-	logger.Infof("Executing sell order for strategy %s: cycle=%d, amount=%.4f, price=%.4f",
-		strategy.Name, cycle.ID, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
+	logger.Infof("[%s] Executing sell order for strategy %s: Cycle=%d, Amount=%.4f, Price=%.4f",
+		sm.exchangeName, strategy.Name, cycle.ID, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
 
 	// Place order on exchange
 	order, err := sm.exchange.PlaceLimitSellOrder(sm.pair, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
@@ -258,7 +259,8 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 		logger.Errorf("Failed to send Telegram notification: %v", err)
 	}
 
-	logger.Infof("✅ Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.4f",
+	logger.Infof("[%s] Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.4f",
+		sm.exchangeName,
 		dbSellOrder.ID, cycle.ID, strategy.Name,
 		(sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount-cycle.BuyOrder.Fees)
 
@@ -275,7 +277,7 @@ func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx 
 		}
 
 		if sellSignal.ShouldSell {
-			logger.Infof("Strategy %s: sell signal for cycle %d - %s", strategy.Name, cycle.ID, sellSignal.Reason)
+			logger.Infof("[%s] Strategy %s: sell signal for cycle %d - %s", sm.exchangeName, strategy.Name, cycle.ID, sellSignal.Reason)
 
 			// ✅ NOUVELLE IMPLÉMENTATION : Exécuter l'ordre de vente
 			err = sm.executeSellOrder(sellSignal, cycle, strategy)
@@ -284,7 +286,7 @@ func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx 
 				continue
 			}
 
-			logger.Infof("✅ Strategy %s: sell order executed successfully for cycle %d", strategy.Name, cycle.ID)
+			logger.Infof("[%s] Strategy %s: sell order executed successfully for cycle %d", sm.exchangeName, strategy.Name, cycle.ID)
 		}
 	}
 

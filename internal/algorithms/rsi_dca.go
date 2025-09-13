@@ -56,7 +56,7 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		return BuySignal{}, fmt.Errorf("missing required RSI parameters for RSI_DCA algorithm")
 	}
 
-	logger.Debugf("RSI_DCA.ShouldBuy: checking RSI for %s", ctx.Pair)
+	logger.Debugf("[%s] RSI_DCA.ShouldBuy: checking RSI for %s", ctx.ExchangeName, ctx.Pair)
 
 	// Calculate RSI using cached data
 	rsi, err := ctx.Calculator.CalculateRSI(ctx.Pair, strategy.RSITimeframe, *strategy.RSIPeriod)
@@ -64,7 +64,7 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		return BuySignal{}, fmt.Errorf("failed to calculate RSI: %w", err)
 	}
 
-	logger.Debugf("RSI_DCA.ShouldBuy: RSI = %.2f, threshold = %.2f", rsi, *strategy.RSIThreshold)
+	logger.Infof("[%s] RSI_DCA.ShouldBuy: RSI = %.2f, threshold = %.2f", ctx.ExchangeName, rsi, *strategy.RSIThreshold)
 
 	// Check RSI threshold
 	if rsi > *strategy.RSIThreshold {
@@ -79,11 +79,11 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	if strategy.VolatilityPeriod != nil && strategy.VolatilityAdjustment != nil {
 		volatility, err = ctx.Calculator.CalculateVolatility(ctx.Pair, strategy.VolatilityTimeframe, *strategy.VolatilityPeriod)
 		if err != nil {
-			logger.Warnf("Failed to calculate volatility, using default %.2f%%: %v", volatility, err)
+			logger.Warnf("[%s] Failed to calculate volatility, using default %.2f%%: %v", ctx.ExchangeName, volatility, err)
 		}
 	}
 
-	logger.Debugf("RSI_DCA.ShouldBuy: volatility = %.2f%%", volatility)
+	logger.Infof("[%s] RSI_DCA.ShouldBuy: volatility = %.2f%%", ctx.ExchangeName, volatility)
 
 	// Calculate dynamic profit target based on volatility
 	// Same logic as in the original bot.go
@@ -110,22 +110,22 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	// Calculate amount to buy
 	baseAmount := strategy.QuoteAmount / limitPrice
 
-	logger.Infof("RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, volatility=%.2f%%, target_profit=%.2f%%, target_price=%.4f",
-		rsi, volatility, dynamicProfitPercent*100, targetPrice)
+	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%%, TargetPrice=%.4f",
+		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100, targetPrice)
 
 	return BuySignal{
 		ShouldBuy:   true,
 		Amount:      baseAmount,
 		LimitPrice:  limitPrice,
-		TargetPrice: targetPrice, // ✅ PRÉ-CALCULÉ !
-		Reason: fmt.Sprintf("RSI %.2f < threshold %.2f, volatility %.2f%%, dynamic profit target %.2f%%",
+		TargetPrice: targetPrice,
+		Reason: fmt.Sprintf("RSI %.2f < %.2f, Volatility=%.2f%%, DynamicProfitTarget=%.2f%%",
 			rsi, *strategy.RSIThreshold, volatility, dynamicProfitPercent*100),
 	}, nil
 }
 
 // ShouldSell determines if we should sell a position
 func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy database.Strategy) (SellSignal, error) {
-	logger.Debugf("RSI_DCA.ShouldSell: checking cycle %d", cycle.ID)
+	logger.Debugf("[%s] RSI_DCA.ShouldSell: checking cycle %d", ctx.ExchangeName, cycle.ID)
 
 	// Check if current price has reached the target price
 	if ctx.CurrentPrice >= cycle.TargetPrice {
@@ -137,12 +137,12 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 			priceOffset := ctx.CurrentPrice * (strategy.SellOffset / 100.0)
 			limitPrice := ctx.CurrentPrice + priceOffset
 
-			logger.Infof("RSI_DCA.ShouldSell: SELL signal - trailing stop triggered for position %d", cycle.ID)
+			logger.Infof("[%s] RSI_DCA.ShouldSell: SELL signal - Trailing Stop triggered for position in cycle %d", ctx.ExchangeName, cycle.ID)
 
 			return SellSignal{
 				ShouldSell: true,
 				LimitPrice: limitPrice,
-				Reason: fmt.Sprintf("Trailing stop: current %.4f < max %.4f * %.4f%% = %.4f",
+				Reason: fmt.Sprintf("Trailing Stop: %.4f < Max %.4f * %.4f%% = %.4f",
 					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100, cycle.MaxPrice*trailingStopThreshold),
 			}, nil
 		}
