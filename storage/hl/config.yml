@@ -4,24 +4,12 @@
 exchange:
   name: hyperliquid             # Supported: mexc, hyperliquid, binance, etc.
   
-# Trading parameters
-trading: 
-  pair: UBTC/USDC               # Trading pair
-
-  quote_amount: 15.0            # Amount in USDC per buy order
-  max_buys_per_day: 4           # Max buy orders per day
-  rsi_period: 14                # Days of data (4h candles) for RSI calculation (14 is standard)
-  rsi_threshold: 70.0           # RSI threshold (> 70 = no buy signal), 100 to disable
-
-  profit_target: 2.0            # Base profit target (2.0 = 2% profit)
-  volatility_period: 7          # Days of data (4h candles) for volatility calculation
-  volatility_adjustment: 50.0   # Profit threshold adjustment percentage per 1% volatility (50.0 = 50% adjustment per 1% volatility)
-  trailing_stop_delta: 0.1      # Trailing Stop Delta in % (sell when the price drop under 0.1% < of MaxPrice)
-  sell_offset: 0.1               # Sell Offset in % above current price to stay maker
+# Trading parameters (strategy-specific parameters are configured per strategy)
+trading:
+  pair: UBTC/USDC               # Default trading pair for this exchange
   
 # Timing intervals
 intervals:
-  buy_interval_hours: 1         # Hours between buy attempts
   check_interval_minutes: 5     # Minutes between price/order checks
 
 # Database configuration

@@ -341,16 +341,14 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
 
-	// Par défaut, le prix cible est basé sur le profit target configuré
-	targetPrice := *order.Price * (1.0 + b.Config.ProfitTarget/100.0)
-
-	// Mais il peut-être différent selon la stratégie
+	// Le prix cible est défini par la stratégie
 	strategy, err := b.db.GetStrategy(dbCycle.StrategyID)
-	if err == nil {
-		targetPrice = *order.Price * (1.0 + strategy.ProfitTarget/100.0)
-	} else {
+	if err != nil {
 		logger.Errorf("Failed to get strategy for cycle : %v", err)
+		return
 	}
+
+	targetPrice := *order.Price * (1.0 + strategy.ProfitTarget/100.0)
 
 	err = b.db.UpdateCycleTargetPrice(dbCycle.ID, targetPrice)
 	if err != nil {

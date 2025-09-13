@@ -75,8 +75,9 @@ func main() {
 
 	logStep("Prepare configuration...")
 	botConfig := fileConfig.ToBotConfig()
-	logger.Infof("✓ Configuration loaded: Pair=%s, Amount=%v, MaxBuys/Day=%d, RSIThreshold=%.2f, ProfitTarget=%.2f, VolatilityAdjustmment=%.2f",
-		botConfig.Pair, botConfig.QuoteAmount, botConfig.MaxBuysPerDay, botConfig.RSIThreshold, botConfig.ProfitTarget, botConfig.VolatilityAdjustment)
+	logger.Infof("✓ Configuration loaded: Exchange=%s, Pair=%s, CheckInterval=%v",
+		botConfig.ExchangeName, botConfig.Pair, botConfig.CheckInterval)
+	logger.Info("  Trading parameters are configured per strategy")
 
 	logStep("Check Telegram Bot configuration")
 	useTelegram := os.Getenv("TELEGRAM") == "1"
@@ -137,9 +138,10 @@ func main() {
 	logger.Infof("✓ %s balance: %s", baseAsset, market.FormatAmount(baseBalance))
 	logger.Infof("✓ %s balance: %s", quoteAsset, market.FormatAmount(quoteBalance))
 
-	if quoteBalance < botConfig.QuoteAmount {
+	// Note: Trading amounts are now configured per strategy, not globally
+	if quoteBalance < MinQuoteAmount {
 		logger.Warnf("⚠️  Warning: Insufficient %s balance (%.6f < %.2f)",
-			quoteAsset, quoteBalance, botConfig.QuoteAmount)
+			quoteAsset, quoteBalance, MinQuoteAmount)
 	}
 
 	// 4. Vérifier le prix de la devise de base
@@ -178,8 +180,9 @@ func main() {
 	// 5. Créer un ordre d'achat limite de 1au prix - offset
 	logStep("Create limit buy order...")
 
-	buyAmountInQuoteAsset := max(min(quoteBalance, botConfig.QuoteAmount)*0.01, MinQuoteAmount)
-	logger.Infof("   Buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
+	// Use a small test amount since quote amounts are now configured per strategy
+	buyAmountInQuoteAsset := max(min(quoteBalance, 50.0)*0.01, MinQuoteAmount)
+	logger.Infof("   Test buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
 
 	// For testing, use a simple fixed offset (similar to old behavior)
 	testOffset := 10.0 // Use a small fixed offset for testing

@@ -50,14 +50,10 @@ func LoadBot(projectRoot, botDir string) (*bot.Bot, error) {
 
 	logger.Info("✓ Configuration loaded")
 	logger.Infof("  Exchange                %s", botConfig.ExchangeName)
-	logger.Infof("  Pair                    %s", botConfig.Pair)
-	logger.Infof("  Amount per Trade        %.2f", botConfig.QuoteAmount)
-	logger.Infof("  Max Buys per Day        %d", botConfig.MaxBuysPerDay)
-	logger.Infof("  RSI Threshold           %.2f", botConfig.RSIThreshold)
-	logger.Infof("  Profit Target           %.2f%%", botConfig.ProfitTarget)
-	logger.Infof("  Volatility Adjustmment  %.2f%%", botConfig.VolatilityAdjustment)
-	logger.Infof("  Trailing Stop Delta     %.2f%%", botConfig.TrailingStopDelta)
-	logger.Infof("  Sell Offset             %.2f%%", botConfig.SellOffset)
+	logger.Infof("  Default Pair            %s", botConfig.Pair)
+	logger.Infof("  Check Interval          %v", botConfig.CheckInterval)
+	logger.Infof("  Web Port                %s", botConfig.WebPort)
+	logger.Info("  Trading parameters are configured per strategy")
 
 	// Initialisation de la base de données
 	db, err := database.NewDB(fileConfig.Database.Path)
