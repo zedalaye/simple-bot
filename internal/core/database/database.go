@@ -1752,6 +1752,16 @@ func (db *DB) CountActiveOrdersForStrategy(strategyId int) (int, error) {
 	return count, nil
 }
 
+func (db *DB) CountOrdersForStrategy(strategyId int) (int, error) {
+	query := `SELECT COUNT(*) FROM orders WHERE strategy_id = ?`
+	var count int
+	err := db.conn.QueryRow(query, strategyId).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count orders for strategy: %w", err)
+	}
+	return count, nil
+}
+
 func (db *DB) GetStrategyStats(strategyId int) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
@@ -1949,11 +1959,15 @@ func (db *DB) ToggleStrategyEnabled(id int) error {
 }
 
 func (db *DB) DeleteStrategy(id int) error {
-	// Prevent deletion of Legacy Strategy
-	if id == 1 {
-		return fmt.Errorf("cannot delete Legacy Strategy (ID=1)")
+	ordersCount, err := db.CountOrdersForStrategy(id)
+	if err != nil {
+		return fmt.Errorf("failed to check orders for strategy: %w", err)
+	}
+	if ordersCount > 0 {
+		return fmt.Errorf("cannot delete strategy: %d orders are associated with this strategy", ordersCount)
 	}
 
+	// Safe to delete
 	query := `DELETE FROM strategies WHERE id = ?`
 	result, err := db.conn.Exec(query, id)
 	if err != nil {
