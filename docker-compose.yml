@@ -9,6 +9,8 @@ services:
     env_file:
       - ./storage/${EXCHANGE}/.env
       - ./storage/.env.tg
+    environment:
+      - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     restart: unless-stopped
     networks:
       - bot-network
@@ -22,6 +24,8 @@ services:
       - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
       - ./storage/${EXCHANGE}/.env
+    environment:
+      - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     ports:
       - "${WEB_PORT:-8080:8080}"
     restart: unless-stopped

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bot/internal/core/database"
+	"bot/internal/logger"
 	"fmt"
 	"html/template"
 	"log"
@@ -14,6 +15,9 @@ import (
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 )
+
+// Variable globale pour le client bot
+var botClient *BotClient
 
 // Fonctions helper pour les templates
 var templateFuncs = template.FuncMap{
@@ -108,7 +112,9 @@ func makeTitle(exchangeName string, title string) string {
 	return fmt.Sprintf("%s - %s - Simple Bot by PrY", exchangeName, title)
 }
 
-func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) {
+func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, client *BotClient) {
+	// Assigner le client bot global
+	botClient = client
 	// Configuration des templates
 
 	// router.LoadHTMLGlob("templates/*")
@@ -314,6 +320,11 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			return
 		}
 
+		// Notifier le bot après création de stratégie
+		if err := botClient.NotifyReload(); err != nil {
+			logger.Warnf("Failed to notify bot of strategy creation: %v", err)
+		}
+
 		c.Redirect(http.StatusFound, "/strategies")
 	})
 
@@ -439,6 +450,11 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			return
 		}
 
+		// Notifier le bot après mise à jour de stratégie
+		if err := botClient.NotifyReload(); err != nil {
+			logger.Warnf("Failed to notify bot of strategy update: %v", err)
+		}
+
 		c.Redirect(http.StatusFound, "/strategies")
 	})
 
@@ -458,6 +474,11 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			return
 		}
 
+		// Notifier le bot après toggle de stratégie
+		if err := botClient.NotifyReload(); err != nil {
+			logger.Warnf("Failed to notify bot of strategy toggle: %v", err)
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Strategy status toggled successfully"})
 	})
 
@@ -470,17 +491,16 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			return
 		}
 
-		// Prevent deletion of Legacy Strategy (ID=1)
-		if strategyID == 1 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete Legacy Strategy"})
-			return
-		}
-
 		// Delete strategy
 		err = db.DeleteStrategy(strategyID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Notifier le bot après suppression de stratégie
+		if err := botClient.NotifyReload(); err != nil {
+			logger.Warnf("Failed to notify bot of strategy deletion: %v", err)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Strategy deleted successfully"})
@@ -558,6 +578,34 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB) 
 			}
 			c.JSON(http.StatusOK, strategies)
 		})
+
+		// Bot Status API
+		api.GET("/bot/status", func(c *gin.Context) {
+			if botClient == nil {
+				c.JSON(http.StatusOK, gin.H{
+					"status":    "unknown",
+					"message":   "Bot client not configured",
+					"timestamp": time.Now().Format(time.RFC3339),
+				})
+				return
+			}
+
+			err := botClient.CheckHealth()
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"status":    "offline",
+					"message":   err.Error(),
+					"timestamp": time.Now().Format(time.RFC3339),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":    "online",
+				"message":   "Bot is running normally",
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+		})
 	}
 }
 
@@ -589,8 +637,11 @@ func SetupServer(exchangeName string, db *database.DB) *gin.Engine {
 	// Servir les fichiers statiques si nécessaire
 	router.Static("/static", "./static")
 
+	// Initialiser le client bot
+	client := NewBotClient()
+
 	// Enregistrer les handlers
-	registerHandlers(router, exchangeName, db)
+	registerHandlers(router, exchangeName, db, client)
 
 	return router
 }

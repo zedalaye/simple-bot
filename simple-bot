@@ -4,6 +4,9 @@
 # Usage: ./simple-bot [mexc|hl|all] [action]
 # Actions: up, down, restart, logs, status, backup
 
+# We need the BOT_RELOAD_TOKEN environment variable
+source storage/.env
+
 EXCHANGE=${1:-mexc}
 ACTION=${2:-up}
 
@@ -18,7 +21,7 @@ launch_exchange() {
     fi
 
     echo "=== Lancement de $ex (port $port) ==="
-    EXCHANGE=$ex WEB_PORT=$port docker compose -p $project up -d
+    EXCHANGE=$ex WEB_PORT=$port RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p $project up -d
 }
 
 stop_exchange() {

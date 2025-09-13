@@ -20,6 +20,57 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+        .bot-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        .bot-status.online {
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #198754;
+            border: 1px solid rgba(25, 135, 84, 0.5);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .bot-status.offline {
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #dc3545;
+            border: 1px solid rgba(220, 53, 69, 0.5);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .bot-status.unknown {
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #6c757d;
+            border: 1px solid rgba(108, 117, 125, 0.5);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .bot-status-icon {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        .bot-status.online .bot-status-icon {
+            background-color: #198754;
+        }
+        .bot-status.offline .bot-status-icon {
+            background-color: #dc3545;
+            animation: none;
+        }
+        .bot-status.unknown .bot-status-icon {
+            background-color: #6c757d;
+            animation: none;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -63,6 +114,12 @@
                     {{.exchange}}
                 </span>
             </span>
+            <span class="navbar-text me-3">
+                <div id="bot-status" class="bot-status unknown" title="Statut du bot">
+                    <div class="bot-status-icon"></div>
+                    <span id="bot-status-text">Vérification...</span>
+                </div>
+            </span>
             <span class="navbar-text">
                 <i class="bi bi-clock me-1"></i>
                 <span id="current-time"></span>
@@ -89,10 +146,54 @@
     updateTime();
     setInterval(updateTime, 1000);
 
+    // Fonction pour mettre à jour le statut du bot
+    async function updateBotStatus() {
+        const statusElement = document.getElementById('bot-status');
+        const statusTextElement = document.getElementById('bot-status-text');
+        
+        try {
+            const response = await fetch('/api/bot/status');
+            const data = await response.json();
+            
+            // Enlever toutes les classes de statut
+            statusElement.classList.remove('online', 'offline', 'unknown');
+            
+            // Ajouter la nouvelle classe et mettre à jour le texte
+            switch(data.status) {
+                case 'online':
+                    statusElement.classList.add('online');
+                    statusTextElement.textContent = 'Bot En Ligne';
+                    statusElement.title = 'Bot en ligne - ' + new Date(data.timestamp).toLocaleTimeString();
+                    break;
+                case 'offline':
+                    statusElement.classList.add('offline');
+                    statusTextElement.textContent = 'Bot Hors Ligne';
+                    statusElement.title = 'Bot hors ligne - ' + data.message;
+                    break;
+                case 'unknown':
+                default:
+                    statusElement.classList.add('unknown');
+                    statusTextElement.textContent = 'Statut Inconnu';
+                    statusElement.title = data.message;
+                    break;
+            }
+        } catch (error) {
+            // En cas d'erreur, marquer comme hors ligne
+            statusElement.classList.remove('online', 'offline', 'unknown');
+            statusElement.classList.add('offline');
+            statusTextElement.textContent = 'Erreur Réseau';
+            statusElement.title = 'Impossible de vérifier le statut du bot';
+        }
+    }
+
+    // Mettre à jour le statut du bot au chargement et toutes les 10 secondes
+    updateBotStatus();
+    setInterval(updateBotStatus, 10000);
+
     // Auto-refresh de la page toutes les 30 secondes (optionnel)
-    {{if .autoRefresh}}
-    setTimeout(() => window.location.reload(), 30000);
-    {{end}}
+    {{ if .autoRefresh }}
+    setTimeout(function() { window.location.reload(); }, 30000);
+    {{ end }}
 </script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bot/internal/api"
 	"bot/internal/bot"
 	"bot/internal/loader"
 	"bot/internal/logger"
@@ -33,6 +34,10 @@ func main() {
 		log.Fatalf("Failed to load bot: %v", err)
 	}
 	defer tradingBot.Cleanup()
+
+	// Démarrer l'API de rechargement
+	reloadAPI := api.NewReloadAPI(tradingBot)
+	reloadAPI.Start()
 
 	// Démarrer le bot
 	err = tradingBot.Start(*buyAtLaunch)

@@ -137,6 +137,10 @@ func (b *Bot) Cleanup() {
 	}
 }
 
+func (b *Bot) ExchangeName() string {
+	return b.Config.ExchangeName
+}
+
 func (b *Bot) initializeMarketPrecision() error {
 	logger.Infof("[%s] Fetching market data...", b.Config.ExchangeName)
 	b.market = b.exchange.GetMarket(b.Config.Pair)
@@ -400,6 +404,50 @@ func (b *Bot) ShowStatistics() {
 			stats["cancelled_orders"],
 		)
 	}
+}
+
+// ReloadStrategies reloads all strategies from database
+func (b *Bot) ReloadStrategies() error {
+	logger.Infof("[%s] Reloading strategies...", b.Config.ExchangeName)
+
+	if b.strategyScheduler == nil {
+		return fmt.Errorf("strategy scheduler not initialized")
+	}
+
+	// Stop the current scheduler with timeout handling
+	stopErr := b.strategyScheduler.Stop()
+	if stopErr != nil {
+		logger.Warnf("Warning: Failed to stop strategy scheduler gracefully: %v", stopErr)
+		// Continue anyway - we'll try to restart
+	}
+
+	// Create a new strategy scheduler instead of restarting the old one
+	strategyScheduler, err := scheduler.NewStrategyScheduler(
+		b.Config.ExchangeName,
+		b.Config.Pair,
+		b.db,
+		&b.market,
+		b.marketCollector,
+		b.Calculator,
+		b.algorithmRegistry,
+		b)
+	if err != nil {
+		logger.Errorf("Failed to create new strategy scheduler: %v", err)
+		return err
+	}
+
+	// Replace the old scheduler with the new one
+	b.strategyScheduler = strategyScheduler
+
+	// Start the new scheduler with fresh strategies from database
+	err = b.strategyScheduler.Start()
+	if err != nil {
+		logger.Errorf("Failed to start new strategy scheduler: %v", err)
+		return err
+	}
+
+	logger.Infof("[%s] Strategies reloaded successfully", b.Config.ExchangeName)
+	return nil
 }
 
 func (b *Bot) roundToPrecision(value, precision float64) float64 {
