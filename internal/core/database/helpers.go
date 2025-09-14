@@ -83,17 +83,18 @@ func (db *DB) buildCycleEnhancedFromOrders(id int, targetPrice, maxPrice float64
 	if cycle.SellOrder == nil {
 		switch cycle.BuyOrder.Status {
 		case Pending, Cancelled:
-			cycle.Status = "New"
+			cycle.Status = New
 		case Filled:
-			cycle.Status = "Open"
+			cycle.Status = Open
 		}
 	} else {
 		switch cycle.SellOrder.Status {
 		case Pending, Cancelled:
-			cycle.Status = "Pending"
+			cycle.Status = Running
 		case Filled:
-			cycle.Status = "Completed"
+			cycle.Status = Completed
 		}
+
 		profit := (cycle.SellOrder.Price - cycle.BuyOrder.Price) * cycle.BuyOrder.Amount
 		profit -= cycle.BuyOrder.Fees
 		profit -= cycle.SellOrder.Fees

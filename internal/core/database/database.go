@@ -27,6 +27,15 @@ const (
 	Cancelled OrderStatus = "CANCELLED"
 )
 
+type CycleStatus string
+
+const (
+	New       CycleStatus = "New"
+	Open      CycleStatus = "Open"
+	Running   CycleStatus = "Running"
+	Completed CycleStatus = "Completed"
+)
+
 // Core data structures
 type Strategy struct {
 	ID                   int        `json:"id"`
@@ -85,10 +94,10 @@ type Cycle struct {
 // Le status du cycle est déterminé par le status des ordres d'achat et de vente
 type CycleEnhanced struct {
 	Cycle
-	StrategyID int      `json:"strategy_id"`
-	Status     string   `json:"status"`
-	Profit     *float64 `json:"profit,omitempty"`
-	Duration   string   `json:"duration"`
+	StrategyID int         `json:"strategy_id"`
+	Status     CycleStatus `json:"status"`
+	Profit     *float64    `json:"profit,omitempty"`
+	Duration   string      `json:"duration"`
 }
 
 type Candle struct {
