@@ -4,7 +4,6 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"fmt"
-	"math"
 )
 
 // RSI_DCA implements RSI-based Dollar Cost Averaging algorithm
@@ -86,21 +85,28 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: volatility = %.2f%%", ctx.ExchangeName, volatility)
 
 	// Calculate dynamic profit target based on volatility
-	// Same logic as in the original bot.go
 	volatilityFactor := (volatility - strategy.ProfitTarget) / 100.0
 	adjustmentPercent := volatilityFactor * (*strategy.VolatilityAdjustment / 100.0)
 	dynamicProfitPercent := (strategy.ProfitTarget / 100.0) + adjustmentPercent
 
-	// Clamp dynamic profit between 0.1% and 10%
+	// Clamp dynamic profit over 0.1%
 	if dynamicProfitPercent < 0.001 {
 		dynamicProfitPercent = 0.001
-	} else if dynamicProfitPercent > 0.10 {
-		dynamicProfitPercent = 0.10
 	}
 
-	// Calculate buy price with dynamic offset based on RSI
-	// Same logic as in original bot.go handleBuySignal()
+	// Calculate buy price with dynamic offset proportional to the RSI, the lower the RSI, the closer to the currentPrice
 	dynamicOffsetPercent := -((0.1 / 100.0) + (rsi/100.0)/100.0)
+	// When ProfitTarget is < 1%, we are in Scalping mode so we want to buy more closely to the current price
+	if dynamicProfitPercent < 0.01 {
+		baseOffsetPercent := dynamicOffsetPercent
+
+		profitTargetFactor := dynamicProfitPercent * 100.0
+		dynamicOffsetPercent = dynamicOffsetPercent * profitTargetFactor
+
+		logger.Infof("[%s] RSI_DCA.ShouldBuy: Reducing offset due to low profit target - Factor=%.3f, OriginalOffset=%.4f%%, AdjustedOffset=%.4f%%",
+			ctx.ExchangeName,
+			profitTargetFactor, baseOffsetPercent*100.0, dynamicOffsetPercent*100.0)
+	}
 	dynamicOffset := ctx.CurrentPrice * dynamicOffsetPercent
 	limitPrice := ctx.CurrentPrice + dynamicOffset
 
@@ -117,7 +123,7 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%%, TargetPrice=%.4f",
-		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100, targetPrice)
+		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100.0, targetPrice)
 
 	return BuySignal{
 		ShouldBuy:   true,
@@ -125,7 +131,7 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		LimitPrice:  limitPrice,
 		TargetPrice: targetPrice,
 		Reason: fmt.Sprintf("RSI %.2f < %.2f, Volatility=%.2f%%, DynamicProfitTarget=%.2f%%",
-			rsi, *strategy.RSIThreshold, volatility, dynamicProfitPercent*100),
+			rsi, *strategy.RSIThreshold, volatility, dynamicProfitPercent*100.0),
 	}, nil
 }
 
@@ -136,7 +142,7 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 	// Check if current price has reached the target price
 	if ctx.CurrentPrice >= cycle.TargetPrice {
 		// Apply trailing stop logic (same as original bot.go)
-		trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100)
+		trailingStopThreshold := 1.0 - (strategy.TrailingStopDelta / 100.0)
 
 		if ctx.CurrentPrice < (cycle.MaxPrice * trailingStopThreshold) {
 			// Price has dropped from max, time to sell
@@ -152,7 +158,7 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 				ShouldSell: true,
 				LimitPrice: limitPrice,
 				Reason: fmt.Sprintf("Trailing Stop: %.4f < Max %.4f * %.4f%% = %.4f",
-					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100, cycle.MaxPrice*trailingStopThreshold),
+					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100.0, cycle.MaxPrice*trailingStopThreshold),
 			}, nil
 		}
 	}
@@ -163,16 +169,6 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 		Reason: fmt.Sprintf("Holding position - current %.4f, target %.4f, max %.4f",
 			ctx.CurrentPrice, cycle.TargetPrice, cycle.MaxPrice),
 	}, nil
-}
-
-// CalculateDynamicProfitTarget calculates profit target based on volatility (helper method)
-func (a *RSI_DCA) CalculateDynamicProfitTarget(baseProfitTarget, volatility, volatilityAdjustment float64) float64 {
-	volatilityFactor := (volatility - baseProfitTarget) / 100.0
-	adjustmentPercent := volatilityFactor * (volatilityAdjustment / 100.0)
-	dynamicProfitPercent := (baseProfitTarget / 100.0) + adjustmentPercent
-
-	// Clamp between reasonable bounds
-	return math.Max(0.001, math.Min(0.10, dynamicProfitPercent))
 }
 
 // GetParameterHints returns hints for configuring this algorithm
