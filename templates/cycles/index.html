@@ -19,11 +19,12 @@
                 <thead class="table-dark">
                 <tr>
                     <th><i class="bi bi-hash me-1"></i>ID</th>
-                    <th><i class="bi bi-arrow-down-circle me-1"></i>Prix Achat</th>
-                    <th><i class="bi bi-arrow-up-circle me-1"></i>Prix Vente</th>
-                    <th><i class="bi bi-pie-chart me-1"></i>Quantité</th>
-                    <th><i class="bi bi-currency-euro me-1"></i>Profit</th>
-                    <th><i class="bi bi-flag me-1"></i>Statut</th>
+                    <th class="text-end"><i class="bi bi-arrow-down-circle me-1"></i>Prix Achat</th>
+                    <th class="text-end"><i class="bi bi-bullseye me-1"></i>Cible</th>
+                    <th class="text-end"><i class="bi bi-arrow-up-circle me-1"></i>Prix Vente</th>
+                    <th class="text-end"><i class="bi bi-pie-chart me-1"></i>Quantité</th>
+                    <th class="text-end"><i class="bi bi-currency-euro me-1"></i>Profit</th>
+                    <th class="text-center"><i class="bi bi-flag me-1"></i>Statut</th>
                     <th><i class="bi bi-calendar me-1"></i>Créé le</th>
                     <th><i class="bi bi-clock me-1"></i>Durée</th>
                 </tr>
@@ -32,16 +33,17 @@
                 {{range .cycles}}
                 <tr>
                     <td><strong>#{{.ID}}</strong></td>
-                    <td class="text-info">{{printf "%.2f" .BuyOrder.Price}}</td>
-                    <td>
+                    <td class="text-info text-end">{{printf "%.2f" .BuyOrder.Price}}</td>
+                    <td class="text-muted text-end">{{printf "%.2f" .TargetPrice}}</td>
+                    <td class="text-info text-end">
                     {{if .SellOrder}}
                         <span class="text-success">{{printf "%.2f" .SellOrder.Price}}</span>
                     {{else}}
-                        <span class="text-muted">-</span>
+                        <span class="text-muted"><i class="bi bi-graph-up-arrow"></i> {{printf "%.2f" .MaxPrice}}</span>
                     {{end}}
                     </td>
-                    <td>{{printf "%.6f" .BuyOrder.Amount}}</td>
-                    <td>
+                    <td class="text-info text-end">{{printf "%.6f" .BuyOrder.Amount}}</td>
+                    <td class="text-info text-end">
                 {{if .SellOrder}}
                     {{$profit := sub (mul .SellOrder.Price .BuyOrder.Amount) (mul .BuyOrder.Price .BuyOrder.Amount)}}
                     {{$profit = sub $profit .BuyOrder.Fees}}
@@ -55,7 +57,7 @@
                         <span class="text-muted">-</span>
                 {{end}}
                     </td>
-                    <td>
+                    <td class="text-info text-center">
                         {{if eq .Status "New"}}
                             <span class="badge bg-secondary">
                                 <i class="bi bi-plus-circle me-1"></i>Nouveau

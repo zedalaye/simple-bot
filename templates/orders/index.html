@@ -29,10 +29,10 @@
                     <th><i class="bi bi-hash me-1"></i>ID</th>
                     <th><i class="bi bi-link-45deg me-1"></i>ID Externe</th>
                     <th><i class="bi bi-arrow-left-right me-1"></i>Type</th>
-                    <th><i class="bi bi-currency-euro me-1"></i>Prix</th>
-                    <th><i class="bi bi-pie-chart me-1"></i>Quantité</th>
-                    <th><i class="bi bi-currency-euro me-1"></i>Frais</th>
-                    <th><i class="bi bi-flag me-1"></i>Statut</th>
+                    <th class="text-end"><i class="bi bi-currency-euro me-1"></i>Prix</th>
+                    <th class="text-end"><i class="bi bi-pie-chart me-1"></i>Quantité</th>
+                    <th class="text-end"><i class="bi bi-currency-euro me-1"></i>Frais</th>
+                    <th class="text-center"><i class="bi bi-flag me-1"></i>Statut</th>
                     <th><i class="bi bi-calendar me-1"></i>Créé le</th>
                 </tr>
                 </thead>
@@ -54,10 +54,10 @@
                                 </span>
                         {{end}}
                     </td>
-                    <td class="fw-bold">{{printf "%.2f" .Price}}</td>
-                    <td>{{printf "%.6f" .Amount}}</td>
-                    <td class="text-muted">{{printf "%.2f" .Fees}}</td>
-                    <td>
+                    <td class="fw-bold text-end">{{printf "%.2f" .Price}}</td>
+                    <td class="text-end">{{printf "%.6f" .Amount}}</td>
+                    <td class="text-muted text-end">{{printf "%.2f" .Fees}}</td>
+                    <td class="text-center">
                         {{if eq .Status "PENDING"}}
                         <span class="badge bg-info">
                                     <i class="bi bi-clock me-1"></i>En attente
