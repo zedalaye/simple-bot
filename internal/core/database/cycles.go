@@ -7,9 +7,9 @@ import (
 )
 
 // CreateCycle creates a new cycle in the database
-func (db *DB) CreateCycle(buyOrderId int) (*CycleEnhanced, error) {
-	query := `INSERT INTO cycles (buy_order_id) VALUES (?)`
-	result, err := db.conn.Exec(query, buyOrderId)
+func (db *DB) CreateCycle(buyOrderId int, targetPrice float64) (*CycleEnhanced, error) {
+	query := `INSERT INTO cycles (buy_order_id, target_price) VALUES (?, ?)`
+	result, err := db.conn.Exec(query, buyOrderId, targetPrice)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cycle: %w", err)
 	}

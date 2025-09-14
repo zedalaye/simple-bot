@@ -199,7 +199,7 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 	}
 
 	// Create cycle with strategy ID
-	cycle, err := sm.db.CreateCycle(dbOrder.ID)
+	cycle, err := sm.db.CreateCycle(dbOrder.ID, buySignal.TargetPrice)
 	if err != nil {
 		logger.Errorf("Failed to create cycle: %v", err)
 	}
