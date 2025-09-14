@@ -1,5 +1,7 @@
 # Makefile pour simplifier la compilation
 
+DOCKER_IMAGE ?= zedalaye/simple-bot
+
 .PHONY: build-all \
         build-bot build-admin build-test build-volatility build-rsi build-order \
         build-image push-image \
@@ -33,10 +35,10 @@ build-order:
 
 # Construction de l'image docker
 build-image:
-	docker build -t zedalaye/simple-bot .
+	docker build -t ${DOCKER_IMAGE} .
 
-push-image: build-image
-  docker push zedalaye/simple-bot:latest
+push-image:
+	docker push ${DOCKER_IMAGE}
 
 # Nettoyer les binaires
 clean:
