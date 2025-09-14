@@ -2,7 +2,7 @@
 
 .PHONY: build-all \
         build-bot build-admin build-test build-volatility build-rsi build-order \
-        build-image \
+        build-image push-image \
         clean \
         run-bot run-admin run-web run-test
 
@@ -29,11 +29,14 @@ build-rsi:
 	go build -o bin/rsi ./cmd/rsi
 
 build-order:
-	go build -o bin/order ./cmd/order	
+	go build -o bin/order ./cmd/order
 
 # Construction de l'image docker
 build-image:
 	docker build -t zedalaye/simple-bot .
+
+push-image: build-image
+  docker push zedalaye/simple-bot:latest
 
 # Nettoyer les binaires
 clean:
