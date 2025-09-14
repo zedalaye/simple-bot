@@ -308,7 +308,7 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	} else {
 		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
 	}
-	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(dbOrder.Amount*dbOrder.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -329,7 +329,7 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 	message += fmt.Sprintf("\n✅ Buy Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(*order.Amount**order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
@@ -367,12 +367,12 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	message += fmt.Sprintf("\n✅ Sell Order Filled: %s", *order.Id)
 	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
 	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %s %s", b.market.FormatPrice(*order.Amount**order.Price), b.market.QuoteAsset)
+	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
 
 	buyValue := dbCycle.BuyOrder.Price * dbCycle.BuyOrder.Amount
 	win := *dbCycle.Profit
 	winPercent := (win / buyValue) * 100
-	message += fmt.Sprintf("\n🤑 Profit: %s %s (%+.1f%%)", b.market.FormatPrice(win), b.market.QuoteAsset, winPercent)
+	message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
 
 	err = telegram.SendMessage(message)
 	if err != nil {
