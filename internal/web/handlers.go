@@ -145,7 +145,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			"avgProfit":   metrics["avg_profit"],
 			"totalProfit": metrics["total_profit"],
 			"successRate": metrics["success_rate"],
-			"autoRefresh": true,
+			"autoRefresh": false,
 		})
 	})
 
@@ -577,6 +577,76 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 				return
 			}
 			c.JSON(http.StatusOK, strategies)
+		})
+
+		api.GET("/pairs", func(c *gin.Context) {
+			pairs, err := db.GetPairs()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, pairs)
+		})
+
+		// Candles API with intelligent data collection
+		api.GET("/candles", func(c *gin.Context) {
+			pair := c.Query("pair")
+			timeframe := c.Query("timeframe")
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "500"))
+
+			if pair == "" || timeframe == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "pair and timeframe are required"})
+				return
+			}
+
+			// Check if we need to update data based on last candle timestamp
+			lastCandle, err := db.GetLastCandle(pair, timeframe)
+			if err != nil {
+				// If error getting last candle, continue with what we have
+				logger.Warnf("Failed to get last candle for update check: %v", err)
+			}
+
+			var since *int64
+			if lastCandle == nil {
+				// No candles at all - definitely need to collect
+				logger.Infof("No candles found for %s %s - will collect initial data", pair, timeframe)
+			} else {
+				sinceTime := lastCandle.Timestamp + 1
+				since = &sinceTime
+			}
+
+			if botClient != nil {
+				// Request collection from bot (MarketCollector will only fetch what's missing)
+				_, err := botClient.RequestCandleCollection(pair, timeframe, since, limit)
+				if err != nil {
+					logger.Warnf("Failed to collect candles from bot: %v", err)
+					// Continue with existing data even if collection failed
+				} else {
+					logger.Infof("Successfully updated candles for %s %s", pair, timeframe)
+				}
+			}
+
+			// Get candles from database (including any newly collected ones)
+			candles, err := db.GetCandles(pair, timeframe, limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Format for TradingView
+			var data []map[string]interface{}
+			for _, candle := range candles {
+				data = append(data, map[string]interface{}{
+					"time":   candle.Timestamp / 1000,
+					"open":   candle.OpenPrice,
+					"high":   candle.HighPrice,
+					"low":    candle.LowPrice,
+					"close":  candle.ClosePrice,
+					"volume": candle.Volume,
+				})
+			}
+
+			c.JSON(http.StatusOK, data)
 		})
 
 		// Bot Status API

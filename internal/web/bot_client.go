@@ -23,6 +23,21 @@ type BotResponse struct {
 	Error   string `json:"error"`
 }
 
+type CollectCandlesRequest struct {
+	Pair      string `json:"pair"`
+	Timeframe string `json:"timeframe"`
+	Since     *int64 `json:"since,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+type CollectCandlesResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
+	Fetched int    `json:"fetched,omitempty"`
+	Saved   int    `json:"saved,omitempty"`
+}
+
 func NewBotClient() *BotClient {
 	baseURL := os.Getenv("BOT_API_URL")
 	if baseURL == "" {
@@ -85,6 +100,63 @@ func (bc *BotClient) NotifyReload() error {
 
 	logger.Infof("Bot strategies reload notification sent successfully")
 	return nil
+}
+
+// RequestCandleCollection demande au bot de collecter des bougies pour une paire/timeframe
+func (bc *BotClient) RequestCandleCollection(pair, timeframe string, since *int64, limit int) (*CollectCandlesResponse, error) {
+	if bc.authToken == "" {
+		return nil, fmt.Errorf("bot reload token not configured")
+	}
+
+	url := fmt.Sprintf("%s/collect/candles", bc.baseURL)
+
+	request := CollectCandlesRequest{
+		Pair:      pair,
+		Timeframe: timeframe,
+		Since:     since,
+		Limit:     limit,
+	}
+
+	requestBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bc.authToken)
+
+	logger.Debugf("Requesting candle collection from bot: %s %s (limit: %d)", pair, timeframe, limit)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send collection request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var collectResponse CollectCandlesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&collectResponse); err != nil {
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("candle collection failed with status code: %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		errorMsg := collectResponse.Error
+		if errorMsg == "" {
+			errorMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("candle collection failed: %s", errorMsg)
+	}
+
+	logger.Infof("Bot candle collection completed: fetched %d, saved %d new candles for %s %s",
+		collectResponse.Fetched, collectResponse.Saved, pair, timeframe)
+	return &collectResponse, nil
 }
 
 // CheckHealth vérifie si le bot API est accessible

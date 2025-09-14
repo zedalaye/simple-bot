@@ -77,6 +77,31 @@ func (db *DB) GetLastCandle(pair, timeframe string) (*Candle, error) {
 	return &candle, nil
 }
 
+// GetPairs retrieves the distinct list of pairs with candles
+func (db *DB) GetPairs() ([]string, error) {
+	query := `
+	  SELECT DISTINCT pair FROM candles ORDER by 1
+	`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pairs: %w", err)
+	}
+	defer rows.Close()
+
+	var pairs []string
+	for rows.Next() {
+		var pair string
+		err := rows.Scan(&pair)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan candle: %w", err)
+		}
+		pairs = append(pairs, pair)
+	}
+
+	return pairs, nil
+}
+
 // GetActiveTimeframes retrieves active timeframes for a specific pair
 func (db *DB) GetActiveTimeframes(pair string) ([]ActiveTimeframe, error) {
 	query := `

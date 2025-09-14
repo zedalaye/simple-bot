@@ -448,6 +448,41 @@ func (b *Bot) ReloadStrategies() error {
 	return nil
 }
 
+// CollectCandles collects candles using the market collector and returns count statistics
+func (b *Bot) CollectCandles(pair, timeframe string, limit int) (int, int, error) {
+	logger.Infof("[%s] Collecting candles for %s %s (limit: %d)", b.Config.ExchangeName, pair, timeframe, limit)
+
+	// Get candles count before collection
+	beforeCandles, err := b.db.GetCandles(pair, timeframe, 10000) // Get a large number to count
+	if err != nil {
+		logger.Warnf("Failed to get candles count before collection: %v", err)
+	}
+	beforeCount := len(beforeCandles)
+
+	// Use the existing market collector
+	err = b.marketCollector.CollectCandles(pair, timeframe, limit)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to collect candles: %w", err)
+	}
+
+	// Get candles count after collection
+	afterCandles, err := b.db.GetCandles(pair, timeframe, 10000) // Get a large number to count
+	if err != nil {
+		logger.Warnf("Failed to get candles count after collection: %v", err)
+		// Return success with unknown saved count
+		return limit, 0, nil
+	}
+	afterCount := len(afterCandles)
+
+	fetched := limit                  // We requested this many
+	saved := afterCount - beforeCount // This many were actually saved (new ones)
+
+	logger.Infof("[%s] Collection completed: fetched %d, saved %d new candles for %s %s",
+		b.Config.ExchangeName, fetched, saved, pair, timeframe)
+
+	return fetched, saved, nil
+}
+
 func (b *Bot) roundToPrecision(value, precision float64) float64 {
 	factor := 1 / precision
 	return float64(int64(value*factor)) / factor

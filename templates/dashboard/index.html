@@ -8,12 +8,35 @@
     </a>
 </div>
 
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title text-gradient mb-0">
+                        <i class="bi bi-graph-up me-2"></i>Graphique de Prix
+                    </h5>
+                    <div>
+                        <select id="pair-selector" class="form-select form-select-sm me-2 d-inline-block" style="width: auto;">
+                            <!-- Sera peuplé dynamiquement -->
+                        </select>
+                        <div id="timeframe-buttons" class="btn-group" role="group">
+                            <!-- Sera peuplé dynamiquement -->
+                        </div>
+                    </div>
+                </div>
+                <div id="chart-container" style="height: 400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Statistiques -->
 <div class="row g-4 mb-4">
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-info mb-2">{{.stats.cycles_count}}</div>
+                <div id="cycles-count" class="display-6 text-info mb-2">{{.stats.cycles_count}}</div>
                 <h6 class="card-subtitle text-muted">Cycles</h6>
             </div>
         </div>
@@ -21,7 +44,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-warning mb-2">{{.stats.active_cycles_count}}</div>
+                <div id="active-cycles-count" class="display-6 text-warning mb-2">{{.stats.active_cycles_count}}</div>
                 <h6 class="card-subtitle text-muted">Cycles Actifs</h6>
             </div>
         </div>
@@ -29,7 +52,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-success mb-2">{{.stats.completed_cycles_count}}</div>
+                <div id="completed-cycles-count" class="display-6 text-success mb-2">{{.stats.completed_cycles_count}}</div>
                 <h6 class="card-subtitle text-muted">Cycles Terminés</h6>
             </div>
         </div>
@@ -40,7 +63,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-success mb-2">
+                <div id="avg-profit" class="display-6 text-success mb-2">
                     {{printf "%.2f" .avgProfit}}
                 </div>
                 <h6 class="card-subtitle text-muted">Profit Moyen/Cycle</h6>
@@ -50,7 +73,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-success mb-2">
+                <div id="total-profit" class="display-6 text-success mb-2">
                     {{printf "%.2f" .totalProfit}}
                 </div>
                 <h6 class="card-subtitle text-muted">Profit Total</h6>
@@ -60,7 +83,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-primary mb-2">{{.stats.pending_orders}}</div>
+                <div id="pending-orders" class="display-6 text-primary mb-2">{{.stats.pending_orders}}</div>
                 <h6 class="card-subtitle text-muted">Ordres En Attente</h6>
             </div>
         </div>
@@ -68,7 +91,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div class="display-6 text-info mb-2">{{printf "%.1f" .successRate}}%</div>
+                <div id="success-rate" class="display-6 text-info mb-2">{{printf "%.1f" .successRate}}%</div>
                 <h6 class="card-subtitle text-muted">Taux de Réussite</h6>
             </div>
         </div>
@@ -76,19 +99,265 @@
 </div>
 
 <!-- Alertes et informations -->
-{{if gt .stats.pending_orders 10}}
-<div class="alert alert-warning alert-dismissible fade show" role="alert">
-    <i class="bi bi-exclamation-triangle me-2"></i>
-    Attention : Vous avez {{.stats.pending_orders}} ordres en attente.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{{end}}
+<div id="alerts-container">
+    {{if gt .stats.pending_orders 10}}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Vous avez <span id="alert-pending-orders">{{.stats.pending_orders}}</span> ordres en attente.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {{end}}
 
-{{if eq .stats.active_cycles_count 0}}
-<div class="alert alert-info alert-dismissible fade show" role="alert">
-    <i class="bi bi-info-circle me-2"></i>
-    Aucun cycle actif en cours. Le bot est en attente d'opportunités.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    {{if eq .stats.active_cycles_count 0}}
+    <div id="no-active-cycles-alert" class="alert alert-info alert-dismissible fade show" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        Aucun cycle actif en cours. Le bot est en attente d'opportunités.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {{end}}
 </div>
-{{end}}
+
+<script>
+// Liste exhaustive des timeframes supportés (commune aux deux exchanges)
+const ALL_TIMEFRAMES = [
+  '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M',
+];
+
+let chart = null;
+let candleSeries = null;
+let currentPair = '';
+let currentTimeframe = '4h';
+let availableTimeframes = ALL_TIMEFRAMES; // Tous les timeframes sont disponibles par défaut
+
+function initChart() {
+    chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+        width: document.getElementById('chart-container').offsetWidth,
+        height: 400,
+        layout: {
+            backgroundColor: '#ffffff',
+            textColor: '#333',
+        },
+        grid: {
+            vertLines: { color: '#f0f3fa' },
+            horzLines: { color: '#f0f3fa' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: '#cccccc' },
+        timeScale: { borderColor: '#cccccc' },
+    });
+
+    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, { 
+        upColor: '#26a69a', downColor: '#ef5350', 
+        borderVisible: false, 
+        wickUpColor: '#26a69a', wickDownColor: '#ef5350' 
+    });
+}
+
+async function loadChartData() {
+    try {
+        console.log(`Will load chart data for ${currentPair}...`);
+        const encodedPair = encodeURIComponent(currentPair);
+        const response = await fetch(`/api/candles?pair=${encodedPair}&timeframe=${currentTimeframe}`);
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            candleSeries.setData(data);
+        }
+    } catch (error) {
+        console.error('Erreur lors du chargement des données:', error);
+    }
+}
+
+
+function renderTimeframeButtons() {
+    const container = document.getElementById('timeframe-buttons');
+    container.innerHTML = '';
+    
+    ALL_TIMEFRAMES.forEach(tf => {
+        const button = document.createElement('button');
+        button.className = 'btn btn-sm btn-outline-primary';
+        button.setAttribute('data-timeframe', tf);
+        button.textContent = tf;
+        
+        // Marquer comme actif si c'est le timeframe courant
+        if (tf === currentTimeframe) {
+            button.classList.add('active');
+        }
+        
+        button.addEventListener('click', (e) => {
+            changeTimeframe(tf);
+        });
+        
+        container.appendChild(button);
+    });
+}
+
+
+async function loadPairs() {
+    try {
+        const response = await fetch('/api/pairs');
+        const data = await response.json();
+
+        if (data && data.length > 0) {
+           const selector = document.getElementById('pair-selector')
+           selector.innerHTML = '';
+           data.forEach(pair => {
+                const option = document.createElement('option');
+                option.value = pair; // ou pair.symbol selon votre format API
+                option.textContent = pair; // ou formatage personnalisé
+                selector.appendChild(option);
+            });
+
+            currentPair = data[0];
+            selector.value = currentPair;
+        }
+    } catch (error) {
+        console.error('Erreur lors du chargement de la liste des paires', error);
+    }
+}
+
+async function changeTimeframe(timeframe) {
+    if (timeframe === currentTimeframe) return;
+    
+    currentTimeframe = timeframe;
+    
+    // Mettre à jour les boutons
+    document.querySelectorAll('[data-timeframe]').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-timeframe') === timeframe) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Charger les données (l'endpoint /api/candles gère automatiquement le téléchargement si nécessaire)
+    loadChartData();
+}
+
+async function changePair(pair) {
+    currentPair = pair;
+    renderTimeframeButtons(); // Réafficher les boutons de timeframes
+    loadChartData();
+}
+
+// Fonction pour rafraîchir les statistiques du dashboard
+async function refreshDashboardStats() {
+    try {
+        const response = await fetch('/api/stats');
+        const stats = await response.json();
+        
+        if (stats) {
+            // Mettre à jour les statistiques
+            document.getElementById('cycles-count').textContent = stats.cycles_count || 0;
+            document.getElementById('active-cycles-count').textContent = stats.active_cycles_count || 0;
+            document.getElementById('completed-cycles-count').textContent = stats.completed_cycles_count || 0;
+            document.getElementById('pending-orders').textContent = stats.pending_orders || 0;
+            document.getElementById('avg-profit').textContent = (stats.avg_profit || 0).toFixed(2);
+            document.getElementById('total-profit').textContent = (stats.total_profit || 0).toFixed(2);
+            document.getElementById('success-rate').textContent = (stats.success_rate || 0).toFixed(1) + '%';
+            
+            // Mettre à jour les alertes
+            updateAlerts(stats);
+        }
+    } catch (error) {
+        console.error('Erreur lors du rafraîchissement des statistiques:', error);
+    }
+}
+
+// Fonction pour mettre à jour les alertes
+function updateAlerts(stats) {
+    const alertsContainer = document.getElementById('alerts-container');
+    
+    // Supprimer les anciennes alertes (sauf celles fermées manuellement)
+    const existingWarning = alertsContainer.querySelector('.alert-warning:not(.d-none)');
+    const existingInfo = alertsContainer.querySelector('#no-active-cycles-alert:not(.d-none)');
+    
+    // Alerte pour trop d'ordres en attente
+    if (stats.pending_orders > 10) {
+        if (existingWarning) {
+            // Mettre à jour le nombre
+            const pendingOrdersSpan = existingWarning.querySelector('#alert-pending-orders');
+            if (pendingOrdersSpan) {
+                pendingOrdersSpan.textContent = stats.pending_orders;
+            }
+        } else {
+            // Créer une nouvelle alerte
+            const warningAlert = document.createElement('div');
+            warningAlert.className = 'alert alert-warning alert-dismissible fade show';
+            warningAlert.setAttribute('role', 'alert');
+            warningAlert.innerHTML = `
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Vous avez <span id="alert-pending-orders">${stats.pending_orders}</span> ordres en attente.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertsContainer.appendChild(warningAlert);
+        }
+    } else if (existingWarning) {
+        existingWarning.remove();
+    }
+    
+    // Alerte pour aucun cycle actif
+    if (stats.active_cycles_count === 0) {
+        if (!existingInfo) {
+            const infoAlert = document.createElement('div');
+            infoAlert.id = 'no-active-cycles-alert';
+            infoAlert.className = 'alert alert-info alert-dismissible fade show';
+            infoAlert.setAttribute('role', 'alert');
+            infoAlert.innerHTML = `
+                <i class="bi bi-info-circle me-2"></i>
+                Aucun cycle actif en cours. Le bot est en attente d'opportunités.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertsContainer.appendChild(infoAlert);
+        }
+    } else if (existingInfo) {
+        existingInfo.remove();
+    }
+}
+
+// Fonction pour rafraîchir uniquement les données du graphique (sans changer la configuration)
+async function refreshChartData() {
+    if (currentPair && currentTimeframe) {
+        try {
+            const encodedPair = encodeURIComponent(currentPair);
+            const response = await fetch(`/api/candles?pair=${encodedPair}&timeframe=${currentTimeframe}`);
+            const data = await response.json();
+            
+            if (data && data.length > 0) {
+                candleSeries.setData(data);
+            }
+        } catch (error) {
+            console.error('Erreur lors du rafraîchissement des données du graphique:', error);
+        }
+    }
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', async function() {
+    initChart();
+    await loadPairs();
+    renderTimeframeButtons(); // Afficher tous les timeframes disponibles
+    loadChartData();
+
+    // Event listeners pour le sélecteur de paires
+    document.getElementById('pair-selector').addEventListener('change', (e) => {
+        changePair(e.target.value);
+    });
+    
+    // Responsiveness
+    window.addEventListener('resize', () => {
+        chart.applyOptions({
+            width: document.getElementById('chart-container').offsetWidth
+        });
+    });
+    
+    // Démarrer le rafraîchissement automatique des données toutes les 30 secondes
+    setInterval(() => {
+        refreshDashboardStats();
+        refreshChartData();
+    }, 30000);
+    
+    console.log('Dashboard initialisé avec téléchargement automatique côté serveur');
+});
+</script>
+
 {{end}}
