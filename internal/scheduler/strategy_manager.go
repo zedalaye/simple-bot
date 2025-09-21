@@ -49,7 +49,6 @@ type StrategyManager struct {
 	calculator        *market.Calculator
 	algorithmRegistry *algorithms.AlgorithmRegistry
 	exchange          StrategyExchange
-	resourceManager   *ResourceManager
 }
 
 // NewStrategyManager creates a new strategy manager
@@ -63,7 +62,6 @@ func NewStrategyManager(exchangeName, pair string, db *database.DB, market Strat
 		calculator:        calculator,
 		algorithmRegistry: algorithmRegistry,
 		exchange:          exchange,
-		resourceManager:   NewResourceManager(exchange),
 	}
 }
 
@@ -138,23 +136,18 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	}
 
 	if buySignal.ShouldBuy {
-		// Try to reserve balance for this purchase
-		reserved, err := sm.resourceManager.ReserveBalance(strategy.QuoteAmount)
-		if err != nil {
-			return fmt.Errorf("failed to check balance availability: %w", err)
+		freeQuoteBalance := 0.0
+		if quoteBalance, exists := balance[sm.market.GetQuoteAsset()]; exists {
+			freeQuoteBalance = quoteBalance.Free
 		}
-
-		if !reserved {
-			logger.Warnf("[%s] Strategy %s: insufficient balance for quote_amount %.2f, skipping buy",
-				sm.exchangeName, strategy.Name, strategy.QuoteAmount)
-			return nil
+		if freeQuoteBalance < strategy.QuoteAmount {
+			logger.Warnf("[%s] Strategy %s: insufficient balance (%.2f < %.2f). Let exchange handle it",
+				sm.exchangeName, strategy.Name, freeQuoteBalance, strategy.QuoteAmount)
 		}
 
 		// Execute buy order
 		err = sm.executeBuyOrder(buySignal, strategy)
 		if err != nil {
-			// Release balance on failure
-			sm.resourceManager.ReleaseBalance(strategy.QuoteAmount)
 			return fmt.Errorf("failed to execute buy order: %w", err)
 		}
 
