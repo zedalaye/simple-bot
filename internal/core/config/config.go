@@ -201,10 +201,10 @@ func (fc *FileConfig) EnvFilePaths() []string {
 	if path, ok := envFileExists("./.env"); ok {
 		envFiles = append(envFiles, path)
 	}
-	if path, ok := envFileExists("../.env.tg"); ok {
+	if path, ok := envFileExists("../.env"); ok {
 		envFiles = append(envFiles, path)
 	}
-	if path, ok := envFileExists("../.env"); ok {
+	if path, ok := envFileExists("../.env.tg"); ok {
 		envFiles = append(envFiles, path)
 	}
 
