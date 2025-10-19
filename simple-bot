@@ -4,7 +4,7 @@
 # Usage: ./simple-bot [mexc|hl|all] [action]
 # Actions: up, down, restart, logs, status, backup
 
-# We need the BOT_RELOAD_TOKEN environment variable
+# We need the CUSTOMER_ID and BOT_RELOAD_TOKEN environment variable
 source storage/.env
 
 EXCHANGE=${1:-mexc}
@@ -21,7 +21,7 @@ launch_exchange() {
     fi
 
     echo "=== Lancement de $ex (port $port) ==="
-    EXCHANGE=$ex WEB_PORT=$port RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p $project up -d
+    EXCHANGE=${ex} CUSTOMER_ID=${CUSTOMER_ID} WEB_PORT=${port} RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p "${project}" up -d
 }
 
 stop_exchange() {
@@ -29,7 +29,7 @@ stop_exchange() {
     local project="bot-$ex"
 
     echo "=== Arrêt de $ex ==="
-    EXCHANGE=$ex docker compose -p $project down
+    EXCHANGE=${ex} docker compose -p "${project}" down
 }
 
 logs_exchange() {
@@ -37,7 +37,7 @@ logs_exchange() {
     local project="bot-$ex"
 
     echo "=== Logs de $ex ==="
-    EXCHANGE=$ex docker compose -p $project logs -f
+    EXCHANGE=${ex} docker compose -p "${project}" logs -f
 }
 
 status_all() {
@@ -69,7 +69,7 @@ run_command() {
     local project="bot-$ex"
 
     echo "=== Exécution de la commande dans le container $ex: /app/$cmd ==="
-    EXCHANGE=$ex docker compose -p $project exec webui /app/$cmd $args
+    EXCHANGE=${ex} docker compose -p "${project}" exec webui /app/$cmd $args
 }
 
 # Si $EXCHANGE est "all", gère tous les exchanges présents dans storage/

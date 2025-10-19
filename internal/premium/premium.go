@@ -26,8 +26,6 @@ func CheckPremiumness() error {
 	h.Write([]byte(customerId))
 	bs := fmt.Sprintf("%x", h.Sum(nil))
 
-	// logger.Debugf("sha256(%s)=%s", customerId, bs)
-
 	if WHITELISTED == bs {
 		logger.Info("Premium check is ok. CustomerId is Whitelisted")
 		return nil

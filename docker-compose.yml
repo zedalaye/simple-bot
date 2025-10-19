@@ -10,6 +10,7 @@ services:
       - ./storage/${EXCHANGE}/.env
       - ./storage/.env.tg
     environment:
+      - CUSTOMER_ID=${CUSTOMER_ID}
       - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     restart: unless-stopped
     networks:
@@ -25,6 +26,7 @@ services:
     env_file:
       - ./storage/${EXCHANGE}/.env
     environment:
+      - CUSTOMER_ID=${CUSTOMER_ID}
       - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     ports:
       - "${WEB_PORT:-8080:8080}"
