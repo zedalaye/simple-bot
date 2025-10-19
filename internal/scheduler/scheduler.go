@@ -149,7 +149,7 @@ func (ss *StrategyScheduler) executeStrategy(strategyID int) {
 	}
 
 	// Execute strategy using StrategyManager
-	err = ss.strategyManager.ExecuteStrategy(*strategy)
+	err = ss.strategyManager.ExecuteBuyStrategy(*strategy)
 	if err != nil {
 		logger.Errorf("Failed to execute strategy %s: %v", strategy.Name, err)
 		return
@@ -219,6 +219,11 @@ func (ss *StrategyScheduler) UpdateStrategy(strategy database.Strategy) error {
 
 	// Add updated strategy
 	return ss.AddStrategy(strategy)
+}
+
+// GetStrategyManager returns the strategy manager instance
+func (ss *StrategyScheduler) GetStrategyManager() *StrategyManager {
+	return ss.strategyManager
 }
 
 // Stop the scheduler gracefully

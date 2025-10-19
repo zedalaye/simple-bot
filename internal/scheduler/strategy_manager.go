@@ -66,26 +66,48 @@ func NewStrategyManager(exchangeName, pair string, db *database.DB, market Strat
 	}
 }
 
-// ExecuteStrategy executes a single strategy
-func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
+// validateAndPrepareStrategy performs common validation and setup for strategy execution
+func (sm *StrategyManager) validateAndPrepareStrategy(strategy database.Strategy) (algorithms.Algorithm,
+	algorithms.TradingContext, error) {
+	// Premium check
 	if err := premium.CheckPremiumness(); err != nil {
-		return fmt.Errorf("premium subscription check failed: %w", err)
+		return nil, algorithms.TradingContext{}, fmt.Errorf("premium subscription check failed: %w", err)
 	}
-
-	logger.Infof("[%s] Executing strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
 
 	// Get the algorithm for this strategy
 	algorithm, exists := sm.algorithmRegistry.Get(strategy.AlgorithmName)
 	if !exists {
-		return fmt.Errorf("algorithm %s not found for strategy %s", strategy.AlgorithmName, strategy.Name)
+		return nil, algorithms.TradingContext{}, fmt.Errorf("algorithm %s not found for strategy %s", strategy.
+			AlgorithmName, strategy.Name)
 	}
 
 	// Validate strategy configuration
 	if err := algorithm.ValidateConfig(strategy); err != nil {
-		return fmt.Errorf("invalid strategy configuration: %w", err)
+		return nil, algorithms.TradingContext{}, fmt.Errorf("invalid strategy configuration: %w", err)
 	}
 
-	// Check if strategy has reached max concurrent orders
+	// Create trading context
+	tradingContext := algorithms.TradingContext{
+		ExchangeName: sm.exchangeName,
+		Pair:         sm.pair,
+		CurrentPrice: 0,
+		Calculator:   sm.calculator,
+		Precision:    sm.market.GetPrecision(),
+	}
+
+	return algorithm, tradingContext, nil
+}
+
+func (sm *StrategyManager) ExecuteBuyStrategy(strategy database.Strategy) error {
+	logger.Infof("[%s] Executing BUY strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
+
+	// Common validation and setup
+	algorithm, tradingContext, err := sm.validateAndPrepareStrategy(strategy)
+	if err != nil {
+		return err
+	}
+
+	// Check if strategy has reached max concurrent orders (buy-specific)
 	if strategy.MaxConcurrentOrders > 0 {
 		activeOrders, err := sm.countActiveOrdersForStrategy(strategy.ID)
 		if err != nil {
@@ -93,7 +115,7 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		}
 
 		if activeOrders >= strategy.MaxConcurrentOrders {
-			logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping execution",
+			logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping buy execution",
 				sm.exchangeName, strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
 			return nil
 		}
@@ -104,34 +126,12 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 	if err != nil {
 		return fmt.Errorf("failed to get current price: %w", err)
 	}
+	tradingContext.CurrentPrice = currentPrice
 
 	// Get balance
-	exchangeBalance, err := sm.exchange.FetchBalance()
+	balance, err := sm.exchange.FetchBalance()
 	if err != nil {
 		return fmt.Errorf("failed to fetch balance: %w", err)
-	}
-
-	// Convert exchange balance to algorithm balance
-	balance := make(map[string]algorithms.Balance)
-	for asset, bal := range exchangeBalance {
-		balance[asset] = algorithms.Balance{Free: bal.Free}
-	}
-
-	// Get open cycles for this strategy
-	openCycles, err := sm.getOpenCyclesForStrategy(strategy.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get open cycles for strategy %v: %w", strategy.ID, err)
-	}
-
-	// Create trading context
-	tradingContext := algorithms.TradingContext{
-		ExchangeName: sm.exchangeName,
-		Pair:         sm.pair,
-		CurrentPrice: currentPrice,
-		Balance:      balance,
-		OpenCycles:   openCycles,
-		Calculator:   sm.calculator,
-		Precision:    sm.market.GetPrecision(),
 	}
 
 	// Check if algorithm wants to buy
@@ -161,19 +161,24 @@ func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
 		logger.Debugf("[%s] Strategy %s: no buy signal - %s", sm.exchangeName, strategy.Name, buySignal.Reason)
 	}
 
+	return nil
+}
+
+func (sm *StrategyManager) ExecuteSellStrategy(strategy database.Strategy, currentPrice float64) error {
+	// Common validation and setup
+	algorithm, tradingContext, err := sm.validateAndPrepareStrategy(strategy)
+	if err != nil {
+		return err
+	}
+	tradingContext.CurrentPrice = currentPrice
+
+	logger.Infof("[%s] Executing SELL strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.
+		AlgorithmName)
+
 	// Check sell signals for open positions
-	err = sm.checkSellSignals(algorithm, tradingContext, strategy, openCycles)
+	err = sm.checkSellSignals(algorithm, tradingContext, strategy)
 	if err != nil {
 		logger.Errorf("Failed to check sell signals for strategy %s: %v", strategy.Name, err)
-	}
-
-	for _, cycle := range openCycles {
-		if tradingContext.CurrentPrice > cycle.MaxPrice {
-			err = sm.db.UpdateCycleMaxPrice(cycle.ID, tradingContext.CurrentPrice)
-			if err != nil {
-				logger.Errorf("Failed to update max price for cycle %d: %v", cycle.ID, err)
-			}
-		}
 	}
 
 	return nil
@@ -270,8 +275,13 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 }
 
 // checkSellSignals checks if any positions should be sold
-func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx algorithms.TradingContext, strategy database.Strategy, cycles []database.CycleEnhanced) error {
-	for _, cycle := range cycles {
+func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx algorithms.TradingContext, strategy database.Strategy) error {
+	openCycles, err := sm.getOpenCyclesForStrategy(strategy.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get open cycles for strategy %d: %w", strategy.ID, err)
+	}
+
+	for _, cycle := range openCycles {
 		sellSignal, err := algorithm.ShouldSell(ctx, cycle.Cycle, strategy)
 		if err != nil {
 			logger.Errorf("Algorithm ShouldSell failed for cycle %d: %v", cycle.ID, err)
@@ -281,7 +291,6 @@ func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx 
 		if sellSignal.ShouldSell {
 			logger.Infof("[%s] Strategy %s: sell signal for cycle %d - %s", sm.exchangeName, strategy.Name, cycle.ID, sellSignal.Reason)
 
-			// ✅ NOUVELLE IMPLÉMENTATION : Exécuter l'ordre de vente
 			err = sm.executeSellOrder(sellSignal, cycle, strategy)
 			if err != nil {
 				logger.Errorf("Failed to execute sell order for cycle %d: %v", cycle.ID, err)

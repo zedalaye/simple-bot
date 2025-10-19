@@ -18,16 +18,11 @@ type TradingContext struct {
 	ExchangeName string
 	Pair         string
 	CurrentPrice float64
-	Balance      map[string]Balance
-	OpenCycles   []database.CycleEnhanced
 	Calculator   *market.Calculator
 	Precision    MarketPrecision // Ajout des précisions du marché
 }
 
 // Balance represents asset balance
-type Balance struct {
-	Free float64
-}
 
 // BuySignal represents a buy decision with pre-calculated target price
 type BuySignal struct {

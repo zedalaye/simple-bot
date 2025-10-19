@@ -224,8 +224,8 @@ func (b *Bot) handlePriceCheck() {
 		logger.Errorf("Failed to get open cycles: %v", err)
 		return
 	}
-	logger.Debugf("Checking %d open cycles for sell signals", len(cycles))
 
+	logger.Debugf("Updating max price for %d open cycles", len(cycles))
 	for _, cycle := range cycles {
 		// Update max price if current price is higher
 		if currentPrice > cycle.MaxPrice {
@@ -237,6 +237,32 @@ func (b *Bot) handlePriceCheck() {
 			cycle.MaxPrice = currentPrice
 			logger.Infof("[%s] Cycle %d updated MaxPrice → %s",
 				b.Config.ExchangeName, cycle.ID, b.market.FormatPrice(cycle.MaxPrice))
+		}
+	}
+
+	logger.Debug("Check for sell signals")
+	b.executeSellStrategies(currentPrice)
+}
+
+func (b *Bot) executeSellStrategies(currentPrice float64) {
+	logger.Debugf("[%s] Executing sell strategies for all strategies", b.Config.ExchangeName)
+
+	strategies, err := b.db.GetAllStrategies()
+	if err != nil {
+		logger.Errorf("[%s] Failed to get enabled strategies for sell execution: %v", b.Config.ExchangeName, err)
+		return
+	}
+
+	strategyManager := b.strategyScheduler.GetStrategyManager()
+
+	for _, strategy := range strategies {
+		logger.Debugf("[%s] Checking sell signals for strategy: %s", b.Config.ExchangeName, strategy.Name)
+
+		// Execute sell logic only
+		err = strategyManager.ExecuteSellStrategy(strategy, currentPrice)
+		if err != nil {
+			logger.Errorf("[%s] Failed to execute sell strategy %s: %v", b.Config.ExchangeName, strategy.Name, err)
+			continue
 		}
 	}
 }
