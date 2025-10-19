@@ -9,6 +9,75 @@ For now, MEXC anf Hyperliquid have been tested.
 
 This bot also uses a SQLite 3 database to store positions and track orders.
 
+## ⚠️ Important Disclaimer
+
+### 🚨 **Not Investment Advice**
+**This software is for educational and research purposes only. It does not constitute investment advice, financial advice, trading
+advice, or any other type of advice. You should not construe any information provided here as a recommendation to buy, sell, or
+hold any security, cryptocurrency, or other asset.**
+
+### 💰 **Financial Risk**
+**Trading cryptocurrencies involves substantial risk of loss. You may lose some or all of your invested capital. Past performance
+does not guarantee future results. Cryptocurrency markets are highly volatile and can experience extreme price movements.**
+
+### 🎓 **Required Knowledge & Experience**
+
+#### **Trading & Financial Knowledge**
+- Understanding of cryptocurrency markets and trading principles
+- Knowledge of technical analysis and trading strategies
+- Risk management and position sizing concepts
+- Experience with algorithmic trading systems
+- Understanding of exchange fees, slippage, and market mechanics
+
+#### **Technical Knowledge**
+- Programming and software development experience
+- System administration and server management
+- Network security and API authentication
+- Database management and backup procedures
+- Docker containerization and orchestration
+
+#### **Production Deployment Experience**
+- Running applications in production environments
+- Monitoring system health and performance
+- Implementing security best practices
+- Backup and disaster recovery procedures
+- Incident response and troubleshooting
+
+### 👶 **Not Suitable for Beginners**
+**This software is NOT intended for beginners or individuals without significant experience in both cryptocurrency trading and
+software development. If you are new to trading, programming, or system administration, you should NOT use this software.**
+
+**Before using this bot:**
+- Paper trade with simulated money first
+- Backtest strategies extensively
+- Start with very small amounts
+- Monitor performance continuously
+- Have a clear exit strategy
+
+### 🛡️ **Your Responsibility**
+**By using this software, you acknowledge that:**
+- You understand and accept all risks involved
+- You have the necessary knowledge and experience
+- You are solely responsible for your trading decisions
+- You will comply with all applicable laws and regulations
+- You have adequate insurance/capital reserves
+
+### 🔒 **Security Notice**
+**Cryptocurrency trading involves sensitive financial information. Ensure you:**
+- Use strong, unique passwords and API keys
+- Secure your private keys and wallet access
+- Regularly update and patch your systems
+- Monitor for security vulnerabilities
+- Use reputable exchanges and services
+
+### 📞 **No Support Guarantee**
+**This is an open-source project provided "as-is" without any warranty or support guarantee. While the community may provide help,
+there is no obligation to do so.**
+
+---
+
+*If you do not agree with these terms or lack the required knowledge and experience, please do not use this software.*
+
 ## The all-in-one script that uses Docker
 
 Make sure [docker](https://www.docker.com/get-started/) is installed with the `docker compose` plugin
@@ -27,6 +96,7 @@ For each exchange you want to use, create a directory structure within the `stor
   .env          # Define WALLET_ADDRESS and PRIVATE_KEY
 
 /storage/
+  .env          # Define CUSTOMER_ID and secrets common to all instances
   .env.tg       # To send notifications through a Telgram Bot Instance  
 ```
 
@@ -75,6 +145,22 @@ Executables are built into `/bin`
 The main executable is `/bin/bot`
 
 ## Run the bot
+
+### Common Configuration
+
+You will need a Reload Token to enabled bot configuration updates from Web UI.
+Create a `storage/.env` file and fill the `BOT_RELOAD_TOKEN` with random values :
+
+```env
+BOT_RELOAD_TOKEN=888067c25c6d1f97a48f5e8e4820546e9a449a1a
+```
+
+Example using Ruby :
+
+```irb
+❯ ruby -r securerandom -e 'puts "BOT_RELOAD_TOKEN=#{SecureRandom.hex(20)}"'
+BOT_RELOAD_TOKEN=888067c25c6d1f97a48f5e8e4820546e9a449a1a
+```
 
 ### For MEXC
 
@@ -135,3 +221,25 @@ When the `storage/.env.tg` file is available, Telegram notifications are automat
 ```bash
 $ ./bin/web --root storage/<exchange>
 ```
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the [`doc/`](doc/) directory:
+
+- **[Quick Start](doc/README.md)** - Documentation hub and navigation
+- **[System Architecture](doc/ARCHITECTURE.md)** - Component design and data flow
+- **[Database Schema](doc/DATABASE.md)** - Tables, migrations, and relationships
+- **[Available Binaries](doc/BINARIES.md)** - Executables and their purposes
+- **[Web API Reference](doc/API.md)** - REST API endpoints and usage
+- **[Development Guide](doc/DEVELOPMENT.md)** - Setup, testing, and contributing
+
+### Key Topics
+
+**For Users:**
+- [Available Binaries](doc/BINARIES.md) - Understanding the different executables
+- [Web API Reference](doc/API.md) - Using the REST API and web interface
+
+**For Developers:**
+- [System Architecture](doc/ARCHITECTURE.md) - Understanding the codebase structure
+- [Database Schema](doc/DATABASE.md) - Data model and migrations
+- [Development Guide](doc/DEVELOPMENT.md) - Contributing and testing
