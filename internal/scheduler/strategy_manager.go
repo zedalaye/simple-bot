@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"bot/internal/algorithms"
+	"bot/internal/premium"
 
 	"bot/internal/core/database"
 	"bot/internal/logger"
@@ -67,6 +68,10 @@ func NewStrategyManager(exchangeName, pair string, db *database.DB, market Strat
 
 // ExecuteStrategy executes a single strategy
 func (sm *StrategyManager) ExecuteStrategy(strategy database.Strategy) error {
+	if err := premium.CheckPremiumness(); err != nil {
+		return fmt.Errorf("premium subscription check failed: %w", err)
+	}
+
 	logger.Infof("[%s] Executing strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
 
 	// Get the algorithm for this strategy
