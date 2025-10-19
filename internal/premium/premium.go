@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -23,9 +24,11 @@ func CheckPremiumness() error {
 
 	h := sha256.New()
 	h.Write([]byte(customerId))
-	bs := h.Sum(nil)
+	bs := fmt.Sprintf("%x", h.Sum(nil))
 
-	if WHITELISTED == string(bs) {
+	// logger.Debugf("sha256(%s)=%s", customerId, bs)
+
+	if WHITELISTED == bs {
 		logger.Info("Premium check is ok. CustomerId is Whitelisted")
 		return nil
 	}
