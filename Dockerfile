@@ -1,24 +1,44 @@
-FROM alpine:latest AS build
+# https://stackoverflow.com/a/76440207
+# https://github.com/tonistiigi/xx
 
-RUN apk add --no-cache --update go gcc g++ make
+## Provide cross-platform compilation helpers
+FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 
-RUN mkdir /go
-ENV GOPATH=/go
+## Builder environment
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
+
+# Install clang and co. for BUILDPLATFORM
+RUN apk add --no-cache --update clang lld make
+
+# Copy helpers
+COPY --from=xx / /
+
+# CGO_ENABLED=1 requires GCC for TARGETPLATFORM... and we need CGO for SQLite3
+ARG TARGETPLATFORM
+RUN xx-apk add musl-dev gcc
 
 WORKDIR /app
-
 COPY go.mod go.sum ./
-RUN go mod download
+
+ENV CGO_ENABLED=1
+RUN xx-go mod download
 
 COPY . ./
-RUN CGO_ENABLED=1 GOOS=linux make
 
+# Wrap xx-go into go so that we can use our Makefile with no changes
+RUN xx-go --wrap
+RUN make 
+
+## Run environment
 FROM alpine:latest
 
-WORKDIR /app
+# To check the architecture of built binaries
+RUN apk add --no-cache --update file
 
+WORKDIR /app
 COPY --from=build /app/templates/ /app/templates/
 COPY --from=build /app/bin/* .
 
+# bin/web provides a WebUI and starts by default on port 8080
 EXPOSE 8080/tcp
 CMD ["./admin"]

@@ -4,7 +4,8 @@ DOCKER_IMAGE ?= zedalaye/simple-bot
 
 .PHONY: build-all \
         build-bot build-admin build-test build-volatility build-rsi build-order \
-        build-image push-image \
+        build-image build-image-arm64 build-image-aarch64 \
+				push-image \
         clean \
         run-bot run-admin run-web run-test
 
@@ -36,6 +37,12 @@ build-order:
 # Construction de l'image docker
 build-image:
 	docker build -t ${DOCKER_IMAGE} .
+
+build-image-arm64:
+	docker build --platform linux/arm64 -t ${DOCKER_IMAGE}:arm64 .
+
+build-image-aarch64:
+	docker build --platform linux/aarch64 -t ${DOCKER_IMAGE}:aarch64 .
 
 push-image:
 	docker push ${DOCKER_IMAGE}
