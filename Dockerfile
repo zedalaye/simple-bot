@@ -27,7 +27,7 @@ COPY . ./
 
 # Wrap xx-go into go so that we can use our Makefile with no changes
 RUN xx-go --wrap
-RUN make 
+RUN make release
 
 ## Run environment
 FROM alpine:latest
