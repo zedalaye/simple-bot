@@ -9,6 +9,7 @@ DOCKER_IMAGE ?= zedalaye/simple-bot
 
 all: build-all
 
+# Use Target Specifioed Variables to "build-all" in release mode (extra -ldflags added to children go build commands)
 release: FLAGS = -ldflags "-s -w"
 release: build-all
 

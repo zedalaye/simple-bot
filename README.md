@@ -129,13 +129,13 @@ Examples:
 Install latest [Go Lang](https://go.dev/learn/) or use [Mise-en-Place](https://mise.jdx.dev/)
 
 ```bash
-$ make
+$ make release
 ```
 
 The bot can also been built using docker.
 
 ```bash
-$ docker build -t zedalaye/simple-bot .
+$ make build-image
 ```
 
 (or `make build-image`)

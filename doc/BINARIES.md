@@ -7,11 +7,11 @@ The Simple Trading Bot provides multiple executables for different purposes, fro
 All binaries are built from the `cmd/` directory and output to `bin/`:
 
 ```bash
-# Build all binaries
-make
+# Build all binaries in release mode
+make release
 
 # Build specific binary
-make bin/bot
+make build-bot
 
 # Build with Docker
 make build-image
@@ -39,14 +39,12 @@ make build-image
 
 # Run for Hyperliquid
 ./bin/bot --root storage/hl
-
-# With custom config
-./bin/bot --root storage/mexc --config custom-config.yml
 ```
 
 **Configuration:**
-- Requires `config.yml` with trading parameters
+- Requires `config.yml` with exchange and trading parameters
 - Requires `.env` with exchange API credentials
+- Requires `../.env` with CUSTOMER_ID and BOT_RELOAD_TOKEN
 - Optional: `../.env.tg` for Telegram notifications
 
 **Processes Started:**
@@ -74,9 +72,6 @@ make build-image
 
 # Custom port
 ./bin/web --root storage/mexc --port 8081
-
-# With reload token for API access
-./bin/web --root storage/mexc --reload-token your-token
 ```
 
 **API Endpoints:**
@@ -110,123 +105,62 @@ make build-image
 ./bin/admin --help
 
 # List all strategies
-./bin/admin --root storage/mexc strategies
+./bin/admin --root storage/mexc --cmd strategies
 
 # Show recent orders
-./bin/admin --root storage/mexc orders --limit 10
-
-# Display cycles with profit analysis
-./bin/admin --root storage/mexc cycles --status closed
+./bin/admin --root storage/mexc --cmd orders
 
 # Database statistics
-./bin/admin --root storage/mexc stats
+./bin/admin --root storage/mexc --cmd stats
 ```
 
 **Commands:**
-- `strategies` - List and manage trading strategies
 - `orders` - Order history and status tracking
 - `cycles` - Trading cycle analysis
 - `stats` - Database and performance statistics
-- `migrations` - Migration status and history
+- `export` - Export database data
 
 ## 🧪 Testing & Development Tools
 
 ### test (`cmd/test/main.go`)
 
-**Purpose**: Integration testing and simulation tool for strategy validation.
+**Purpose**: Integration testing
 
 **Key Features:**
-- End-to-end trading simulation
-- Strategy backtesting against historical data
-- Performance benchmarking
-- Risk analysis and validation
-- Paper trading mode for safe testing
+- Check configuration and exchange API connectivity
+- Place and cancel a buy order
+- Place and cancel a sell order
 
 **Usage:**
 ```bash
 # Run integration tests
 ./bin/test --root storage/mexc
-
-# Backtest strategy against historical data
-./bin/test --root storage/mexc --backtest --strategy rsi_dca --days 30
-
-# Paper trading mode
-./bin/test --root storage/mexc --paper-trade --balance 1000
 ```
-
-**Testing Scenarios:**
-- Market condition simulation
-- Strategy parameter optimization
-- Risk management validation
-- Performance regression testing
 
 ### rsi (`cmd/rsi/main.go`)
 
-**Purpose**: RSI (Relative Strength Index) strategy development and testing tool.
+**Purpose**: Compute RSI (Relative Strength Index)
 
 **Key Features:**
-- RSI indicator calculation and visualization
-- Overbought/oversold signal generation
-- Strategy parameter tuning
-- Historical RSI analysis
-- Integration testing for RSI-based strategies
+- Compute the RSI using the same code as the bot
 
 **Usage:**
 ```bash
-# Analyze RSI for a trading pair
-./bin/rsi --root storage/mexc --pair BTC/USDC
-
-# Test RSI strategy parameters
-./bin/rsi --root storage/mexc --period 14 --overbought 70 --oversold 30
-
-# Generate RSI signals from historical data
-./bin/rsi --root storage/mexc --backtest --days 7
+# Compute the RSI
+./bin/rsi --root storage/mexc
 ```
 
 ### volatility (`cmd/volatility/main.go`)
 
-**Purpose**: Volatility-based strategy development and analysis tool.
+**Purpose**: Compute Volatility
 
 **Key Features:**
-- Volatility calculation using ATR (Average True Range)
-- Bollinger Bands analysis
-- Volatility breakout detection
-- Risk assessment based on market volatility
-- Strategy optimization for different volatility regimes
+- Compute Volatility using the same code as the bot
 
 **Usage:**
 ```bash
-# Analyze volatility for trading pair
-./bin/volatility --root storage/mexc --pair BTC/USDC
-
-# Calculate ATR for risk management
-./bin/volatility --root storage/mexc --atr-period 14
-
-# Test volatility-based entry signals
-./bin/volatility --root storage/mexc --breakout-threshold 2.0
-```
-
-### strategy-demo (`cmd/strategy-demo/main.go`)
-
-**Purpose**: Generic strategy demonstration and prototyping tool.
-
-**Key Features:**
-- Framework for testing custom strategies
-- Indicator combination testing
-- Strategy performance comparison
-- Parameter optimization framework
-- Code generation for new strategies
-
-**Usage:**
-```bash
-# Run strategy demonstration
-./bin/strategy-demo --root storage/mexc
-
-# Test custom strategy logic
-./bin/strategy-demo --root storage/mexc --strategy custom
-
-# Generate strategy template
-./bin/strategy-demo --template --name my_strategy
+# Compute the volatility
+./bin/volatility --root storage/mexc
 ```
 
 ## 🐳 Docker Integration
@@ -281,15 +215,17 @@ Each binary expects specific configuration in the `--root` directory:
 
 ```
 storage/{exchange}/
-├── config.yml          # Main configuration (trading parameters)
-├── .env                # Exchange credentials
+├── config.yml         # Main configuration (trading parameters)
+├── .env               # Exchange credentials
 ├── db/bot.db          # SQLite database
+├── ../.env            # CUSTOMER_ID and BOT_RELOAD_TOKEN
 └── ../.env.tg         # Telegram notifications (optional)
 ```
 
 ### Environment Variables
 
 **Common:**
+- `CUSTOMER_ID` - Your Cryptomancien Premium Customer Id
 - `BOT_RELOAD_TOKEN` - API authentication token
 
 **MEXC:**
