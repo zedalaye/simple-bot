@@ -112,28 +112,28 @@ func createDefaultConfigFile(filename string, defaultConfig *FileConfig) (*FileC
 #
 # Exchange configuration
 exchange:
-	 name: mexc                     # Supported: mexc, hyperliquid, binance, etc.
+	name: mexc                     # Supported: mexc, hyperliquid, binance, etc.
 
 # Trading parameters (strategy-specific parameters are configured per strategy)
 trading:
-	 pair: BTC/USDC                 # Default trading pair for this exchange
+	pair: BTC/USDC                 # Default trading pair for this exchange
 
 # Timing intervals
 intervals:
-	 check_interval_minutes: 5      # Minutes between price/order checks
+	check_interval_minutes: 5      # Minutes between price/order checks
 
 # Database configuration
 database:
-	 path: db/bot.db                # SQLite database file path
+	path: db/bot.db                # SQLite database file path
 
 # Logging configuration
 logging:
-	 level: info                    # Levels: debug, info, warn, error
-	 file: ""                       # Optional log file (empty = stdout only)
+	level: info                    # Levels: debug, info, warn, error
+	file: ""                       # Optional log file (empty = stdout only)
 
 # Web server configuration
 web:
-	 port: ":8080"                  # Port for the web interface
+	port: ":8080"                  # Port for the web interface
 
 # Note: Set API_KEY and API_SECRET environment variables for exchange access in .env
 # Note: Trading parameters (RSI, profit targets, etc.) are now configured per strategy
