@@ -107,16 +107,16 @@ func (sm *StrategyManager) ExecuteBuyStrategy(strategy database.Strategy) error 
 		return err
 	}
 
-	// Check if strategy has reached max concurrent orders (buy-specific)
-	if strategy.MaxConcurrentOrders > 0 {
-		activeOrders, err := sm.countActiveOrdersForStrategy(strategy.ID)
+	// Check if strategy has reached max concurrent cycles
+	if strategy.MaxConcurrentCycles > 0 {
+		activeCycles, err := sm.countActiveCyclesForStrategy(strategy.ID)
 		if err != nil {
 			return fmt.Errorf("failed to count active orders: %w", err)
 		}
 
-		if activeOrders >= strategy.MaxConcurrentOrders {
-			logger.Infof("[%s] Strategy %s has reached max concurrent orders (%d/%d), skipping buy execution",
-				sm.exchangeName, strategy.Name, activeOrders, strategy.MaxConcurrentOrders)
+		if activeCycles >= strategy.MaxConcurrentCycles {
+			logger.Infof("[%s] Strategy %s has reached max concurrent cycles (%d/%d), skipping buy execution",
+				sm.exchangeName, strategy.Name, activeCycles, strategy.MaxConcurrentCycles)
 			return nil
 		}
 	}
@@ -305,8 +305,8 @@ func (sm *StrategyManager) checkSellSignals(algorithm algorithms.Algorithm, ctx 
 }
 
 // Helper methods
-func (sm *StrategyManager) countActiveOrdersForStrategy(strategyID int) (int, error) {
-	return sm.db.CountActiveOrdersForStrategy(strategyID)
+func (sm *StrategyManager) countActiveCyclesForStrategy(strategyID int) (int, error) {
+	return sm.db.CountActiveCyclesForStrategy(strategyID)
 }
 
 func (sm *StrategyManager) getOpenCyclesForStrategy(strategyID int) ([]database.CycleEnhanced, error) {

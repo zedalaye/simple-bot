@@ -43,7 +43,7 @@ Retrieve all trading strategies with their current status and performance metric
       "enabled": true,
       "cron_expression": "*/5 * * * *",
       "quote_amount": 100.0,
-      "max_concurrent_orders": 3,
+      "max_concurrent_cycles": 3,
       "total_orders": 45,
       "successful_orders": 42,
       "total_profit": 1250.50,
@@ -82,7 +82,7 @@ Create a new trading strategy.
   "enabled": true,
   "cron_expression": "*/10 * * * *",
   "quote_amount": 50.0,
-  "max_concurrent_orders": 2
+  "max_concurrent_cycles": 2
 }
 ```
 

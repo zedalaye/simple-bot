@@ -241,7 +241,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		profitTarget, _ := strconv.ParseFloat(c.PostForm("profit_target"), 64)
 		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
 		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
-		concurrentOrders, _ := strconv.ParseInt(c.PostForm("concurrent_orders"), 10, 64)
+		concurrentCycles, _ := strconv.ParseInt(c.PostForm("concurrent_cycles"), 10, 64)
 
 		// Set defaults if not provided
 		if trailingStopDelta == 0 {
@@ -314,7 +314,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
-			int(concurrentOrders))
+			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
 			return
@@ -372,7 +372,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		profitTarget, _ := strconv.ParseFloat(c.PostForm("profit_target"), 64)
 		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
 		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
-		concurrentOrders, _ := strconv.ParseInt(c.PostForm("concurrent_orders"), 10, 64)
+		concurrentCycles, _ := strconv.ParseInt(c.PostForm("concurrent_cycles"), 10, 64)
 
 		// Set defaults if not provided
 		if trailingStopDelta == 0 {
@@ -444,7 +444,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
-			int(concurrentOrders))
+			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())
 			return

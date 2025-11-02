@@ -45,7 +45,7 @@ type Strategy struct {
 	AlgorithmName        string     `json:"algorithm_name"`
 	CronExpression       string     `json:"cron_expression"`
 	QuoteAmount          float64    `json:"quote_amount"`
-	MaxConcurrentOrders  int        `json:"max_concurrent_orders"`
+	MaxConcurrentCycles  int        `json:"max_concurrent_cycles"`
 	RSIThreshold         *float64   `json:"rsi_threshold,omitempty"`
 	RSIPeriod            *int       `json:"rsi_period,omitempty"`
 	RSITimeframe         string     `json:"rsi_timeframe"`
@@ -416,6 +416,14 @@ var migrations = []Migration{
 		Name: "remove_positions",
 		SQL: `
 			DROP TABLE positions;
+		`,
+	},
+	{
+		ID:   14,
+		Name: "rename_max_concurrent_orders",
+		SQL: `
+			ALTER TABLE strategies
+			RENAME COLUMN max_concurrent_orders TO max_concurrent_cycles;
 		`,
 	},
 }

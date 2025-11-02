@@ -9,7 +9,7 @@ import (
 // GetStrategy retrieves a strategy by ID
 func (db *DB) GetStrategy(id int) (*Strategy, error) {
 	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
 			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
@@ -27,7 +27,7 @@ func (db *DB) GetStrategy(id int) (*Strategy, error) {
 	var volatilityAdjustment sql.NullFloat64
 
 	err := row.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-		&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+		&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
 		&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
 		&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
 		&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
@@ -65,7 +65,7 @@ func (db *DB) GetStrategy(id int) (*Strategy, error) {
 // GetEnabledStrategies retrieves all enabled strategies
 func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
 	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
 			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
@@ -90,7 +90,7 @@ func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
 		var volatilityAdjustment sql.NullFloat64
 
 		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
 			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
 			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
 			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
@@ -131,7 +131,7 @@ func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
 // GetAllStrategies retrieves all strategies
 func (db *DB) GetAllStrategies() ([]Strategy, error) {
 	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_orders,
+		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
 			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
@@ -155,7 +155,7 @@ func (db *DB) GetAllStrategies() ([]Strategy, error) {
 		var volatilityAdjustment sql.NullFloat64
 
 		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentOrders,
+			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
 			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
 			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
 			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
@@ -286,7 +286,7 @@ func (db *DB) CreateExampleStrategy(name, description, algorithm, cron string, a
 		INSERT INTO strategies (
 			name, description, enabled, algorithm_name, cron_expression, quote_amount,
 			rsi_threshold, rsi_period, rsi_timeframe, profit_target, trailing_stop_delta, sell_offset,
-			volatility_period, volatility_adjustment, volatility_timeframe, max_concurrent_orders
+			volatility_period, volatility_adjustment, volatility_timeframe, max_concurrent_cycles
 		) VALUES (?, ?, 1, ?, ?, ?, ?, ?, '4h', ?, 0.1, 0.1, 7, 50.0, '4h', 1)
 	`
 
@@ -306,7 +306,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
-	concurrentOrders int) error {
+	concurrentCycles int) error {
 
 	// Check if strategy exists
 	var count int
@@ -341,7 +341,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 			bb_period, bb_multiplier, bb_timeframe,
 			profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
-			max_concurrent_orders
+			max_concurrent_cycles
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
@@ -351,7 +351,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 		bbPeriod, bbMultiplier, bbTimeframe,
 		profitTarget, trailingStopDelta, sellOffset,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
-		concurrentOrders)
+		concurrentCycles)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
 	}
@@ -366,7 +366,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
-	maxConcurrentOrders int) error {
+	maxConcurrentCycles int) error {
 
 	// Set defaults for timeframes if empty
 	if rsiTimeframe == "" {
@@ -406,7 +406,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			volatility_period = ?,
 			volatility_adjustment = ?,
 			volatility_timeframe = ?,
-			max_concurrent_orders = ?,
+			max_concurrent_cycles = ?,
 			updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
 	`
@@ -417,7 +417,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 		bbPeriod, bbMultiplier, bbTimeframe,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
-		maxConcurrentOrders, id)
+		maxConcurrentCycles, id)
 
 	return err
 }

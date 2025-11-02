@@ -214,3 +214,27 @@ func (db *DB) GetOpenCyclesForStrategy(strategyId int) ([]CycleEnhanced, error) 
 
 	return db.executeCycleQuery(query, strategyId)
 }
+
+// CountActiveCycles returns the number of New, Open and Running cycles for a strategy
+func (db *DB) CountActiveCyclesForStrategy(strategyId int) (int, error) {
+	query := `
+		SELECT 
+			COUNT(*) 
+		FROM cycles c 
+		JOIN orders bo ON (c.buy_order_id = bo.id)
+		LEFT JOIN orders so ON (c.sell_order_id = so.id)
+		WHERE (bo.strategy_id = ?) AND 
+			(
+				(bo.status = 'PENDING') OR (
+					(bo.status = 'FILLED') AND (c.sell_order_id is NULL OR so.status <> 'FILLED')
+				)
+			)
+	`
+
+	var count int
+	err := db.conn.QueryRow(query, strategyId).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count active cycles for strategy: %w", err)
+	}
+	return count, nil
+}

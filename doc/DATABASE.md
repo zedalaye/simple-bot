@@ -24,7 +24,7 @@ CREATE TABLE strategies (
     enabled BOOLEAN DEFAULT 1,
     cron_expression TEXT NOT NULL,          -- Cron schedule for buy execution
     quote_amount REAL NOT NULL,             -- Base amount for trades
-    max_concurrent_orders INTEGER DEFAULT 0,-- Max simultaneous orders (0 = unlimited)
+    max_concurrent_cycles INTEGER DEFAULT 1,-- Max simultaneous cycles (0 = unlimited)
 
     -- Performance tracking
     total_orders INTEGER DEFAULT 0,
@@ -47,7 +47,7 @@ CREATE INDEX idx_strategies_algorithm ON strategies(algorithm_name);
 **Key Fields:**
 - `algorithm_name`: References registered algorithms in the codebase
 - `cron_expression`: Standard cron format (e.g., `"*/5 * * * *"` for every 5 minutes)
-- `max_concurrent_orders`: Safety limit to prevent over-trading
+- `max_concurrent_cycles`: Safety limit to prevent over-trading
 
 ### orders
 
