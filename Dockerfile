@@ -33,7 +33,8 @@ RUN make release
 FROM alpine:latest
 
 # To check the architecture of built binaries
-RUN apk add --no-cache --update file
+RUN apk add --no-cache --update file tzdata
+ENV TZ=Europe/Paris
 
 WORKDIR /app
 COPY --from=build /app/templates/ /app/templates/
