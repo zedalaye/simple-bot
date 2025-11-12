@@ -14,7 +14,7 @@ release: FLAGS = -ldflags "-s -w"
 release: build-all
 
 # Construire tous les binaires
-build-all: build-bot build-web build-admin  
+build-all: build-bot build-web build-admin build-test
 
 # Construire chaque binaire individuellement
 build-bot:
