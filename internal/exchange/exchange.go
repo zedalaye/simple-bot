@@ -117,7 +117,11 @@ func NewExchange(exchangeName string) *Exchange {
 			"walletAddress": os.Getenv("WALLET_ADDRESS"),
 			"privateKey":    os.Getenv("PRIVATE_KEY"),
 			"options": map[string]interface{}{
-				"defaultType": "spot",
+				"defaultType":   "spot",
+				"defaultMarket": "spot",
+				"fetchMarkets": map[string]interface{}{
+					"types": []string{"spot"}, // without "swap" and "hip3"
+				},
 			},
 		})
 		exchange.SetSandboxMode(os.Getenv("NETWORK") == "testnet")
