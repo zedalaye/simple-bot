@@ -1,4 +1,5 @@
 DOCKER_IMAGE ?= zedalaye/simple-bot
+PLATFORMS ?= linux/amd64 #,linux/arm64
 
 .PHONY: build-all \
         build-bot build-admin build-web build-test build-volatility build-rsi build-order \
@@ -40,7 +41,7 @@ build-order:
 
 # Construction de l'image docker
 build-image:
-	docker build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} .
+	docker build --platform ${PLATFORMS} -t ${DOCKER_IMAGE} .
 
 push-image:
 	docker push ${DOCKER_IMAGE}
