@@ -1,13 +1,13 @@
 module bot
 
-go 1.25.4
+go 1.25.5
 
 require (
-	github.com/ccxt/ccxt/go/v4 v4.5.26 // direct
+	github.com/ccxt/ccxt/go/v4 v4.5.27 // direct
 	github.com/cinar/indicator/v2 v2.1.22 // direct
 	github.com/gin-contrib/multitemplate v1.1.1 // direct
 	github.com/gin-gonic/gin v1.11.0 // direct
-	github.com/go-co-op/gocron/v2 v2.18.2 // direct
+	github.com/go-co-op/gocron/v2 v2.19.0 // direct
 	github.com/joho/godotenv v1.5.1 // direct
 	github.com/mattn/go-sqlite3 v1.14.32 // direct
 	github.com/robfig/cron/v3 v3.0.1 // direct
@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251208031133-be43a854e4be // indirect
+	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251213223233-751f36331c62 // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.14.2 // indirect
@@ -28,11 +28,11 @@ require (
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
 	github.com/ethereum/go-ethereum v1.16.7 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.11 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.28.0 // indirect
+	github.com/go-playground/validator/v10 v10.29.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -61,5 +61,5 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
