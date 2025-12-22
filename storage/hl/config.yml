@@ -6,7 +6,7 @@ exchange:
   
 # Trading parameters (strategy-specific parameters are configured per strategy)
 trading:
-  pair: UBTC/USDC               # Default trading pair for this exchange
+  pair: BTC/USDC               # Default trading pair for this exchange
   
 # Timing intervals
 intervals:
