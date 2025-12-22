@@ -18,19 +18,6 @@ const (
 // Timeframes supportés universellement
 var SupportedTimeframes = []string{"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"}
 
-// Mapping MEXC vers format universel
-var mexcTimeframeMapping = map[string]string{
-	"1m":  "1m",
-	"5m":  "5m",
-	"15m": "15m",
-	"30m": "30m",
-	"1h":  "60m", // MEXC utilise 60m
-	"4h":  "4h",
-	"1d":  "1d",
-	"1w":  "1W", // MEXC utilise 1W
-	"1M":  "1M",
-}
-
 // MexcErrorResponse représente la structure d'erreur JSON de MEXC
 type MexcErrorResponse struct {
 	Code int    `json:"code"`
@@ -229,12 +216,10 @@ func withFetchOHLCVOptions(timeframe string, since *int64, limit int64) ccxt.Fet
 }
 
 func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]bot.Candle, error) {
-	mappedTimeframe := e.mapTimeframe(timeframe)
-
 	var result []ccxt.OHLCV
 	err := retryWithBackoff(func() error {
 		ohlcv, ohlcvErr := e.IExchange.FetchOHLCV(pair,
-			withFetchOHLCVOptions(mappedTimeframe, since, limit),
+			withFetchOHLCVOptions(timeframe, since, limit),
 		)
 		if ohlcvErr == nil {
 			result = ohlcv
@@ -454,13 +439,4 @@ func toBotTrade(trade ccxt.Trade) bot.Trade {
 		Fee:          trade.Fee.Cost,
 		FeeToken:     feeToken,
 	}
-}
-
-func (e *Exchange) mapTimeframe(universalTimeframe string) string {
-	if e.name == "mexc" {
-		if mapped, exists := mexcTimeframeMapping[universalTimeframe]; exists {
-			return mapped
-		}
-	}
-	return universalTimeframe // Hyperliquid utilise le format universel
 }
