@@ -41,7 +41,7 @@ build-order:
 
 # Construction de l'image docker
 build-image:
-	docker build --platform ${PLATFORMS} -t ${DOCKER_IMAGE} .
+	docker build --pull --platform ${PLATFORMS} -t ${DOCKER_IMAGE} .
 
 push-image:
 	docker push ${DOCKER_IMAGE}
