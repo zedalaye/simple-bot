@@ -91,6 +91,33 @@ func (db *DB) GetOpenCycles() ([]CycleEnhanced, error) {
 
 // GetAllCycles retrieves all cycles
 func (db *DB) GetAllCycles() ([]CycleEnhanced, error) {
+	return db.GetCycles("all")
+}
+
+// GetCycles retourne les cycles selon le filtre donné :
+//   - "all"       : tous les cycles
+//   - "active"    : cycles non terminés (New + Open + Running)
+//   - "new"       : achat en attente, pas de vente
+//   - "open"      : achat rempli, pas encore de vente
+//   - "running"   : vente placée, en attente de remplissage
+//   - "completed" : cycle terminé (achat et vente remplis)
+func (db *DB) GetCycles(filter string) ([]CycleEnhanced, error) {
+	var whereClause string
+	switch filter {
+	case "new":
+		whereClause = "WHERE bo.status IN ('PENDING', 'CANCELLED') AND c.sell_order_id IS NULL"
+	case "open":
+		whereClause = "WHERE bo.status = 'FILLED' AND c.sell_order_id IS NULL"
+	case "running":
+		whereClause = "WHERE bo.status = 'FILLED' AND so.status IN ('PENDING', 'CANCELLED')"
+	case "completed":
+		whereClause = "WHERE bo.status = 'FILLED' AND so.status = 'FILLED'"
+	case "active":
+		whereClause = "WHERE c.sell_order_id IS NULL OR so.status <> 'FILLED'"
+	default: // "all"
+		whereClause = ""
+	}
+
 	query := `
 		SELECT
 			c.id, c.target_price, c.max_price, c.created_at, c.updated_at,
@@ -99,6 +126,7 @@ func (db *DB) GetAllCycles() ([]CycleEnhanced, error) {
 		FROM cycles c
 		JOIN orders bo ON c.buy_order_id = bo.id
 		LEFT JOIN orders so ON c.sell_order_id = so.id
+		` + whereClause + `
 		ORDER BY c.created_at DESC
 	`
 

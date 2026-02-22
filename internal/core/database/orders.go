@@ -77,13 +77,33 @@ func (db *DB) GetOrderByExternalID(externalId string) (*Order, error) {
 
 // GetPendingOrders retrieves all pending orders
 func (db *DB) GetPendingOrders() ([]Order, error) {
+	return db.GetOrders("pending")
+}
+
+// GetOrders retourne les ordres selon le filtre donné :
+//   - "pending"   : ordres en attente
+//   - "filled"    : ordres exécutés
+//   - "cancelled" : ordres annulés
+//   - "all"       : tous les ordres
+func (db *DB) GetOrders(filter string) ([]Order, error) {
 	query := `
 		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
 		FROM orders
-		WHERE status = ?
-		ORDER BY created_at ASC
 	`
-	return db.executeOrderQuery(query, Pending)
+	switch filter {
+	case "pending":
+		query += "WHERE status = 'PENDING'\nORDER BY created_at ASC"
+		return db.executeOrderQuery(query)
+	case "filled":
+		query += "WHERE status = 'FILLED'\nORDER BY created_at DESC"
+		return db.executeOrderQuery(query)
+	case "cancelled":
+		query += "WHERE status = 'CANCELLED'\nORDER BY created_at DESC"
+		return db.executeOrderQuery(query)
+	default: // "all"
+		query += "ORDER BY created_at DESC"
+		return db.executeOrderQuery(query)
+	}
 }
 
 // UpdateOrderStatus updates the status of an order
@@ -113,12 +133,7 @@ func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 
 // GetAllOrders retrieves all orders (not just pending ones)
 func (db *DB) GetAllOrders() ([]Order, error) {
-	query := `
-		SELECT id, external_id, side, amount, price, fees, status, strategy_id, created_at, updated_at
-		FROM orders
-		ORDER BY created_at DESC
-	`
-	return db.executeOrderQuery(query)
+	return db.GetOrders("all")
 }
 
 // GetOrdersWithPagination retrieves orders with pagination

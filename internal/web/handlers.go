@@ -150,57 +150,71 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 	})
 
 	// Ordres en attente
+	// Ordres - helper local pour éviter la répétition
+	serveOrders := func(c *gin.Context, filter, pageTitle, currentURL string) {
+		orders, err := db.GetOrders(filter)
+		if err != nil {
+			handleError(c, "Erreur - Ordres", "orders", "Failed to get orders: "+err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "orders_index", gin.H{
+			"title":      makeTitle(exchangeName, pageTitle),
+			"exchange":   exchangeName,
+			"active":     "orders",
+			"pageTitle":  pageTitle,
+			"orders":     orders,
+			"orderType":  filter,
+			"currentURL": currentURL,
+		})
+	}
+
 	router.GET("/orders", func(c *gin.Context) {
-		orders, err := db.GetPendingOrders()
-		if err != nil {
-			handleError(c, "Erreur - Ordres", "orders", "Failed to get pending orders: "+err.Error())
-			return
-		}
-
-		c.HTML(http.StatusOK, "orders_index", gin.H{
-			"title":      makeTitle(exchangeName, "Ordres En Attente"),
-			"exchange":   exchangeName,
-			"active":     "orders",
-			"pageTitle":  "Ordres En Attente",
-			"orders":     orders,
-			"orderType":  "pending",
-			"currentURL": "/orders",
-		})
+		serveOrders(c, "pending", "Ordres En Attente", "/orders")
 	})
-
-	// Tous les ordres
+	router.GET("/orders/filled", func(c *gin.Context) {
+		serveOrders(c, "filled", "Ordres Exécutés", "/orders/filled")
+	})
+	router.GET("/orders/cancelled", func(c *gin.Context) {
+		serveOrders(c, "cancelled", "Ordres Annulés", "/orders/cancelled")
+	})
 	router.GET("/orders/all", func(c *gin.Context) {
-		orders, err := db.GetAllOrders()
-		if err != nil {
-			handleError(c, "Erreur - Ordres", "orders", "Failed to get all orders: "+err.Error())
-			return
-		}
-
-		c.HTML(http.StatusOK, "orders_index", gin.H{
-			"title":      makeTitle(exchangeName, "Tous les Ordres"),
-			"exchange":   exchangeName,
-			"active":     "orders",
-			"pageTitle":  "Tous les Ordres",
-			"orders":     orders,
-			"orderType":  "all",
-			"currentURL": "/orders/all",
-		})
+		serveOrders(c, "all", "Tous les Ordres", "/orders/all")
 	})
 
-	// Cycles
-	router.GET("/cycles", func(c *gin.Context) {
-		cycles, err := db.GetAllCycles()
+	// Cycles - helper local pour éviter la répétition
+	serveCycles := func(c *gin.Context, filter, titleSuffix, currentURL string) {
+		cycles, err := db.GetCycles(filter)
 		if err != nil {
 			handleError(c, "Erreur - Cycles", "cycles", "Failed to get cycles: "+err.Error())
 			return
 		}
-
 		c.HTML(http.StatusOK, "cycles_index", gin.H{
-			"title":    makeTitle(exchangeName, "Cycles"),
-			"exchange": exchangeName,
-			"active":   "cycles",
-			"cycles":   cycles,
+			"title":      makeTitle(exchangeName, titleSuffix),
+			"exchange":   exchangeName,
+			"active":     "cycles",
+			"cycles":     cycles,
+			"cycleType":  filter,
+			"currentURL": currentURL,
 		})
+	}
+
+	router.GET("/cycles", func(c *gin.Context) {
+		serveCycles(c, "active", "Cycles Actifs", "/cycles")
+	})
+	router.GET("/cycles/new", func(c *gin.Context) {
+		serveCycles(c, "new", "Nouveaux Cycles", "/cycles/new")
+	})
+	router.GET("/cycles/open", func(c *gin.Context) {
+		serveCycles(c, "open", "Cycles Ouverts", "/cycles/open")
+	})
+	router.GET("/cycles/running", func(c *gin.Context) {
+		serveCycles(c, "running", "Cycles En Cours", "/cycles/running")
+	})
+	router.GET("/cycles/completed", func(c *gin.Context) {
+		serveCycles(c, "completed", "Cycles Terminés", "/cycles/completed")
+	})
+	router.GET("/cycles/all", func(c *gin.Context) {
+		serveCycles(c, "all", "Tous les Cycles", "/cycles/all")
 	})
 
 	// Strategies - NEW!
@@ -518,32 +532,35 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			c.JSON(http.StatusOK, metrics)
 		})
 
-		api.GET("/orders", func(c *gin.Context) {
-			orders, err := db.GetPendingOrders()
+		serveAPIOrders := func(c *gin.Context, filter string) {
+			orders, err := db.GetOrders(filter)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, orders)
-		})
+		}
 
-		api.GET("/orders/all", func(c *gin.Context) {
-			orders, err := db.GetAllOrders()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, orders)
-		})
+		api.GET("/orders", func(c *gin.Context) { serveAPIOrders(c, "pending") })
+		api.GET("/orders/filled", func(c *gin.Context) { serveAPIOrders(c, "filled") })
+		api.GET("/orders/cancelled", func(c *gin.Context) { serveAPIOrders(c, "cancelled") })
+		api.GET("/orders/all", func(c *gin.Context) { serveAPIOrders(c, "all") })
 
-		api.GET("/cycles", func(c *gin.Context) {
-			cycles, err := db.GetAllCycles()
+		serveAPICycles := func(c *gin.Context, filter string) {
+			cycles, err := db.GetCycles(filter)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, cycles)
-		})
+		}
+
+		api.GET("/cycles", func(c *gin.Context) { serveAPICycles(c, "all") })
+		api.GET("/cycles/active", func(c *gin.Context) { serveAPICycles(c, "active") })
+		api.GET("/cycles/new", func(c *gin.Context) { serveAPICycles(c, "new") })
+		api.GET("/cycles/open", func(c *gin.Context) { serveAPICycles(c, "open") })
+		api.GET("/cycles/running", func(c *gin.Context) { serveAPICycles(c, "running") })
+		api.GET("/cycles/completed", func(c *gin.Context) { serveAPICycles(c, "completed") })
 
 		// Endpoint pour les profits détaillés
 		api.GET("/profits", func(c *gin.Context) {

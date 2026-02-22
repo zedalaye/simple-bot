@@ -3,9 +3,17 @@
     <h1 class="text-gradient mb-0">
         <i class="bi bi-arrow-repeat me-2"></i>Cycles de Trading
     </h1>
-    <div>
-        <span class="badge bg-primary me-2">{{len .cycles}} cycles</span>
-        <a href="/cycles" class="btn btn-outline-primary">
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-primary">{{len .cycles}} cycles</span>
+        <div class="btn-group" role="group">
+            <a href="/cycles" class="btn btn-outline-secondary {{if eq .cycleType "active"}}active{{end}}">Actifs</a>
+            <a href="/cycles/new" class="btn btn-outline-secondary {{if eq .cycleType "new"}}active{{end}}">Nouveaux</a>
+            <a href="/cycles/open" class="btn btn-outline-secondary {{if eq .cycleType "open"}}active{{end}}">Ouverts</a>
+            <a href="/cycles/running" class="btn btn-outline-secondary {{if eq .cycleType "running"}}active{{end}}">En cours</a>
+            <a href="/cycles/completed" class="btn btn-outline-secondary {{if eq .cycleType "completed"}}active{{end}}">Terminés</a>
+            <a href="/cycles/all" class="btn btn-outline-secondary {{if eq .cycleType "all"}}active{{end}}">Tous</a>
+        </div>
+        <a href="{{.currentURL}}" class="btn btn-outline-primary">
             <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
         </a>
     </div>

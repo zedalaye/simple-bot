@@ -95,10 +95,19 @@
                     <i class="bi bi-gear me-1"></i>Stratégies
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link{{if eq .active "cycles"}} active{{end}}" href="/cycles">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle{{if eq .active "cycles"}} active{{end}}" href="#" role="button" data-bs-toggle="dropdown">
                     <i class="bi bi-arrow-repeat me-1"></i>Cycles
                     </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="/cycles">Actifs</a></li>
+                        <li><a class="dropdown-item" href="/cycles/new">Nouveaux</a></li>
+                        <li><a class="dropdown-item" href="/cycles/open">Ouverts</a></li>
+                        <li><a class="dropdown-item" href="/cycles/running">En cours</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/cycles/completed">Terminés</a></li>
+                        <li><a class="dropdown-item" href="/cycles/all">Tous les Cycles</a></li>
+                    </ul>
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle{{if eq .active "orders"}} active{{end}}" href="#" role="button" data-bs-toggle="dropdown">
@@ -106,6 +115,9 @@
                     </a>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="/orders">En Attente</a></li>
+                        <li><a class="dropdown-item" href="/orders/filled">Exécutés</a></li>
+                        <li><a class="dropdown-item" href="/orders/cancelled">Annulés</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/orders/all">Tous les Ordres</a></li>
                     </ul>
                 </li>
