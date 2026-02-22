@@ -125,7 +125,7 @@ func showCycles(db *database.DB, format string) {
 			var profit string
 			if cycle.SellOrder != nil {
 				sellPrice = fmt.Sprintf("%.2f", cycle.SellOrder.Price)
-				profit = fmt.Sprintf("%.2f", cycle.Profit)
+				profit = fmt.Sprintf("%.2f", *cycle.Profit)
 			} else {
 				sellPrice = ""
 				profit = ""
@@ -161,7 +161,7 @@ func showOrders(db *database.DB, format string) {
 
 		for _, order := range orders {
 			age := time.Since(order.CreatedAt)
-			fmt.Fprintf(w, "%d\t%s\t%s\t%.2f\t%.6f\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%d\t%s\t%s\t%.2f\t%.6f\t%s\t%s\n",
 				order.ID, order.ExternalID, order.Side, order.Price, order.Amount,
 				formatDuration(age), order.CreatedAt.Format("2006-01-02 15:04:05"))
 		}

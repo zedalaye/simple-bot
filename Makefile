@@ -6,7 +6,8 @@ PLATFORMS ?= linux/amd64 #,linux/arm64
         build-image \
 				push-image \
         clean \
-        run-bot run-admin run-web run-test
+        run-bot run-admin run-web run-test \
+        fmt vet check
 
 all: build-all
 
@@ -62,6 +63,15 @@ run-web:
 
 run-test:
 	DEBUG=true go run ./cmd/test
+
+# Vérifications avant commit
+fmt:
+	gofmt -w .
+
+vet:
+	go vet ./...
+
+check: fmt vet build-all
 
 # Installation des dépendances
 deps:
