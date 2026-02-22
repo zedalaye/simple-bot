@@ -602,6 +602,31 @@ func (b *Bot) GetPrice(pair string) (float64, error) {
 	return b.exchange.GetPrice(pair)
 }
 
+// FetchBalances implémente api.BotInterface : retourne les soldes non nuls,
+// la devise de base, la devise de cotation et le prix courant de la paire configurée.
+func (b *Bot) FetchBalances() (map[string]float64, string, string, float64, error) {
+	rawBalances, err := b.exchange.FetchBalance()
+	if err != nil {
+		return nil, "", "", 0, fmt.Errorf("fetch balance: %w", err)
+	}
+
+	balances := make(map[string]float64)
+	for asset, bal := range rawBalances {
+		if bal.Free > 0 {
+			balances[asset] = bal.Free
+		}
+	}
+
+	currentPrice, err := b.exchange.GetPrice(b.market.Symbol)
+	if err != nil {
+		// Prix non disponible : on retourne quand même les soldes
+		logger.Warnf("[%s] Could not fetch price for portfolio valuation: %v", b.ExchangeName(), err)
+		currentPrice = 0
+	}
+
+	return balances, b.market.BaseAsset, b.market.QuoteAsset, currentPrice, nil
+}
+
 func (b *Bot) PlaceLimitBuyOrder(pair string, amount float64, price float64) (scheduler.ExchangeOrder, error) {
 	// Round according to market precision
 	amount = b.roundToPrecision(amount, b.market.Precision.Amount)

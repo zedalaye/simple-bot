@@ -649,6 +649,21 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			c.JSON(http.StatusOK, data)
 		})
 
+		// Balance portefeuille
+		api.GET("/balance", func(c *gin.Context) {
+			if botClient == nil {
+				c.JSON(http.StatusOK, BalanceResponse{Balances: []BalanceEntry{}, TotalValue: 0})
+				return
+			}
+			balance, err := botClient.FetchBalance()
+			if err != nil {
+				logger.Warnf("Failed to fetch balance from bot: %v", err)
+				c.JSON(http.StatusOK, BalanceResponse{Balances: []BalanceEntry{}, TotalValue: 0})
+				return
+			}
+			c.JSON(http.StatusOK, balance)
+		})
+
 		// Bot Status API
 		api.GET("/bot/status", func(c *gin.Context) {
 			if botClient == nil {

@@ -23,6 +23,18 @@ type BotResponse struct {
 	Error   string `json:"error"`
 }
 
+type BalanceEntry struct {
+	Asset string  `json:"asset"`
+	Free  float64 `json:"free"`
+	Value float64 `json:"value"`
+}
+
+type BalanceResponse struct {
+	Balances      []BalanceEntry `json:"balances"`
+	TotalValue    float64        `json:"total_value"`
+	QuoteCurrency string         `json:"quote_currency"`
+}
+
 type CollectCandlesRequest struct {
 	Pair      string `json:"pair"`
 	Timeframe string `json:"timeframe"`
@@ -157,6 +169,39 @@ func (bc *BotClient) RequestCandleCollection(pair, timeframe string, since *int6
 	logger.Infof("Bot candle collection completed: fetched %d, saved %d new candles for %s %s",
 		collectResponse.Fetched, collectResponse.Saved, pair, timeframe)
 	return &collectResponse, nil
+}
+
+// FetchBalance récupère les soldes du portefeuille depuis le bot
+func (bc *BotClient) FetchBalance() (*BalanceResponse, error) {
+	if bc.authToken == "" {
+		return nil, fmt.Errorf("bot reload token not configured")
+	}
+
+	url := fmt.Sprintf("%s/balance", bc.baseURL)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+bc.authToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send balance request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("balance request failed with status code: %d", resp.StatusCode)
+	}
+
+	var balanceResponse BalanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&balanceResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode balance response: %w", err)
+	}
+
+	return &balanceResponse, nil
 }
 
 // CheckHealth vérifie si le bot API est accessible

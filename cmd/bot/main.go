@@ -35,9 +35,9 @@ func main() {
 	}
 	defer tradingBot.Cleanup()
 
-	// Démarrer l'API de rechargement
-	reloadAPI := api.NewReloadAPI(tradingBot)
-	reloadAPI.Start()
+	// Démarrer l'API du bot
+	botAPI := api.NewBotAPI(tradingBot)
+	botAPI.Start()
 
 	// Démarrer le bot
 	err = tradingBot.Start(*buyAtLaunch)

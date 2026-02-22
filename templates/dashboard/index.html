@@ -33,7 +33,7 @@
 
 <!-- Statistiques -->
 <div class="row g-4 mb-4">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
                 <div id="cycles-count" class="display-6 text-info mb-2">{{.stats.cycles_count}}</div>
@@ -41,7 +41,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
                 <div id="active-cycles-count" class="display-6 text-warning mb-2">{{.stats.active_cycles_count}}</div>
@@ -49,7 +49,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
                 <div id="completed-cycles-count" class="display-6 text-success mb-2">{{.stats.completed_cycles_count}}</div>
@@ -57,30 +57,23 @@
             </div>
         </div>
     </div>
-</div>
-
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div id="avg-profit" class="display-6 text-success mb-2">
-                    {{printf "%.2f" .avgProfit}}
-                </div>
+                <div id="avg-profit" class="display-6 text-success mb-2">{{printf "%.2f" .avgProfit}}</div>
                 <h6 class="card-subtitle text-muted">Profit Moyen/Cycle</h6>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
-                <div id="total-profit" class="display-6 text-success mb-2">
-                    {{printf "%.2f" .totalProfit}}
-                </div>
+                <div id="total-profit" class="display-6 text-success mb-2">{{printf "%.2f" .totalProfit}}</div>
                 <h6 class="card-subtitle text-muted">Profit Total</h6>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card stat-card border-0 shadow-sm">
             <div class="card-body text-center">
                 <div id="pending-orders" class="display-6 text-primary mb-2">{{.stats.pending_orders}}</div>
@@ -88,11 +81,19 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card border-0 shadow-sm">
-            <div class="card-body text-center">
-                <div id="success-rate" class="display-6 text-info mb-2">{{printf "%.1f" .successRate}}%</div>
-                <h6 class="card-subtitle text-muted">Taux de Réussite</h6>
+</div>
+
+<!-- Portefeuille -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title text-gradient mb-3">
+                    <i class="bi bi-wallet2 me-2"></i>Portefeuille
+                </h5>
+                <div id="portfolio-content">
+                    <div class="text-muted text-center py-2">Chargement...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -253,7 +254,6 @@ async function refreshDashboardStats() {
             document.getElementById('pending-orders').textContent = stats.pending_orders || 0;
             document.getElementById('avg-profit').textContent = (stats.avg_profit || 0).toFixed(2);
             document.getElementById('total-profit').textContent = (stats.total_profit || 0).toFixed(2);
-            document.getElementById('success-rate').textContent = (stats.success_rate || 0).toFixed(1) + '%';
             
             // Mettre à jour les alertes
             updateAlerts(stats);
@@ -314,6 +314,54 @@ function updateAlerts(stats) {
     }
 }
 
+// Fonction pour rafraîchir le portefeuille
+async function refreshBalance() {
+    const container = document.getElementById('portfolio-content');
+    try {
+        const response = await fetch('/api/balance');
+        const data = await response.json();
+
+        const balances = data.balances || [];
+        const totalValue = data.total_value || 0;
+        const quote = data.quote_currency || '';
+
+        if (balances.length === 0) {
+            container.innerHTML = '<div class="text-muted text-center py-2">Solde indisponible (bot hors ligne ?)</div>';
+            return;
+        }
+
+        let rows = balances.map(b => {
+            const valueStr = b.value > 0 ? b.value.toFixed(2) + ' ' + quote : '—';
+            return `<tr>
+                <td><strong>${b.asset}</strong></td>
+                <td class="text-end font-monospace">${b.free.toFixed(8)}</td>
+                <td class="text-end font-monospace">${valueStr}</td>
+            </tr>`;
+        }).join('');
+
+        container.innerHTML = `
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Token</th>
+                        <th class="text-end">Montant libre</th>
+                        <th class="text-end">Valeur</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td>Total</td>
+                        <td colspan="2" class="text-end font-monospace">${totalValue.toFixed(2)} ${quote}</td>
+                    </tr>
+                </tfoot>
+            </table>`;
+    } catch (error) {
+        container.innerHTML = '<div class="text-muted text-center py-2">Impossible de charger le portefeuille.</div>';
+        console.error('Erreur lors du chargement du portefeuille:', error);
+    }
+}
+
 // Fonction pour rafraîchir uniquement les données du graphique (sans changer la configuration)
 async function refreshChartData() {
     if (currentPair && currentTimeframe) {
@@ -337,6 +385,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     await loadPairs();
     renderTimeframeButtons(); // Afficher tous les timeframes disponibles
     loadChartData();
+    refreshBalance();
 
     // Event listeners pour le sélecteur de paires
     document.getElementById('pair-selector').addEventListener('change', (e) => {
@@ -354,6 +403,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     setInterval(() => {
         refreshDashboardStats();
         refreshChartData();
+        refreshBalance();
     }, 30000);
     
     console.log('Dashboard initialisé avec téléchargement automatique côté serveur');

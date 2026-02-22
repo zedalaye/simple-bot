@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	"bot/internal/logger"
 )
 
-type ReloadAPI struct {
+type BotAPI struct {
 	exchangeName string
 	authToken    string
 	bot          BotInterface
@@ -19,45 +20,60 @@ type BotInterface interface {
 	ExchangeName() string
 	ReloadStrategies() error
 	CollectCandles(pair, timeframe string, limit int) (int, int, error) // fetched, saved, error
+	// FetchBalances returns balances (asset → free amount), base currency, quote currency, current price, error
+	FetchBalances() (map[string]float64, string, string, float64, error)
 }
 
-func NewReloadAPI(bot BotInterface) *ReloadAPI {
+type BalanceEntry struct {
+	Asset string  `json:"asset"`
+	Free  float64 `json:"free"`
+	Value float64 `json:"value"`
+}
+
+type BalanceResponse struct {
+	Balances      []BalanceEntry `json:"balances"`
+	TotalValue    float64        `json:"total_value"`
+	QuoteCurrency string         `json:"quote_currency"`
+}
+
+func NewBotAPI(bot BotInterface) *BotAPI {
 	token := os.Getenv("BOT_RELOAD_TOKEN")
 	if token == "" {
-		logger.Warnf("[%s] BOT_RELOAD_TOKEN not set, reload API will be disabled", bot.ExchangeName())
+		logger.Warnf("[%s] BOT_RELOAD_TOKEN not set, bot API will be disabled", bot.ExchangeName())
 	}
 
-	return &ReloadAPI{
+	return &BotAPI{
 		exchangeName: bot.ExchangeName(),
 		authToken:    token,
 		bot:          bot,
 	}
 }
 
-func (api *ReloadAPI) Start() {
+func (api *BotAPI) Start() {
 	if api.authToken == "" {
-		logger.Infof("[%s] Reload API disabled (no token configured)", api.exchangeName)
+		logger.Infof("[%s] Bot API disabled (no token configured)", api.exchangeName)
 		return
 	}
 
 	http.HandleFunc("/reload", api.handleReload)
 	http.HandleFunc("/collect/candles", api.handleCollectCandles)
 	http.HandleFunc("/health", api.handleHealth)
+	http.HandleFunc("/balance", api.handleBalance)
 
 	port := os.Getenv("BOT_API_PORT")
 	if port == "" {
 		port = "9090"
 	}
 
-	logger.Infof("[%s] Starting reload API on port %s", api.exchangeName, port)
+	logger.Infof("[%s] Starting bot API on port %s", api.exchangeName, port)
 	go func() {
 		if err := http.ListenAndServe(":"+port, nil); err != nil {
-			logger.Errorf("Reload API server error: %v", err)
+			logger.Errorf("Bot API server error: %v", err)
 		}
 	}()
 }
 
-func (api *ReloadAPI) handleReload(w http.ResponseWriter, r *http.Request) {
+func (api *BotAPI) handleReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -95,12 +111,12 @@ func (api *ReloadAPI) handleReload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (api *ReloadAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (api *BotAPI) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }
 
-func (api *ReloadAPI) isValidToken(authHeader string) bool {
+func (api *BotAPI) isValidToken(authHeader string) bool {
 	if api.authToken == "" || authHeader == "" {
 		return false
 	}
@@ -120,7 +136,7 @@ type CollectCandlesRequest struct {
 	Limit     int    `json:"limit,omitempty"`
 }
 
-func (api *ReloadAPI) handleCollectCandles(w http.ResponseWriter, r *http.Request) {
+func (api *BotAPI) handleCollectCandles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -179,5 +195,53 @@ func (api *ReloadAPI) handleCollectCandles(w http.ResponseWriter, r *http.Reques
 		"message": "candles collected successfully",
 		"fetched": fetched,
 		"saved":   saved,
+	})
+}
+
+func (api *BotAPI) handleBalance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	if !api.isValidToken(authHeader) {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	balances, baseAsset, quoteAsset, currentPrice, err := api.bot.FetchBalances()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		logger.Errorf("[%s] Failed to fetch balances: %v", api.exchangeName, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	var entries []BalanceEntry
+	totalValue := 0.0
+	for asset, free := range balances {
+		entry := BalanceEntry{Asset: asset, Free: free}
+		if asset == baseAsset && currentPrice > 0 {
+			entry.Value = free * currentPrice
+		} else if asset == quoteAsset {
+			entry.Value = free
+		}
+		totalValue += entry.Value
+		entries = append(entries, entry)
+	}
+
+	// Tri alphabétique pour un affichage stable
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Asset < entries[j].Asset
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(BalanceResponse{
+		Balances:      entries,
+		TotalValue:    totalValue,
+		QuoteCurrency: quoteAsset,
 	})
 }
