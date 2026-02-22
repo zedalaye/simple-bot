@@ -73,6 +73,30 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		}, nil
 	}
 
+	// Filtre de tendance EMA (optionnel) : n'achète que si EMA rapide > EMA lente
+	if strategy.TrendFilterEnabled && strategy.TrendFilterFastPeriod != nil && strategy.TrendFilterSlowPeriod != nil {
+		tfTimeframe := strategy.TrendFilterTimeframe
+		if tfTimeframe == "" {
+			tfTimeframe = "1d"
+		}
+		emaFast, errFast := ctx.Calculator.CalculateEMA(ctx.Pair, tfTimeframe, *strategy.TrendFilterFastPeriod)
+		emaSlow, errSlow := ctx.Calculator.CalculateEMA(ctx.Pair, tfTimeframe, *strategy.TrendFilterSlowPeriod)
+		if errFast == nil && errSlow == nil {
+			logger.Infof("[%s] RSI_DCA.ShouldBuy: Filtre tendance - EMA%d=%.4f, EMA%d=%.4f",
+				ctx.ExchangeName, *strategy.TrendFilterFastPeriod, emaFast, *strategy.TrendFilterSlowPeriod, emaSlow)
+			if emaFast < emaSlow {
+				return BuySignal{
+					ShouldBuy: false,
+					Reason: fmt.Sprintf("Filtre tendance: EMA%d (%.4f) < EMA%d (%.4f) - tendance baissière",
+						*strategy.TrendFilterFastPeriod, emaFast, *strategy.TrendFilterSlowPeriod, emaSlow),
+				}, nil
+			}
+		} else {
+			logger.Warnf("[%s] RSI_DCA.ShouldBuy: Filtre tendance ignoré (erreur EMA): fast=%v, slow=%v",
+				ctx.ExchangeName, errFast, errSlow)
+		}
+	}
+
 	// Calculate volatility for dynamic profit target
 	var volatility float64 = 2.0 // Default
 	if strategy.VolatilityPeriod != nil && strategy.VolatilityAdjustment != nil {
@@ -174,14 +198,18 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 // GetParameterHints returns hints for configuring this algorithm
 func (a *RSI_DCA) GetParameterHints() map[string]string {
 	return map[string]string{
-		"rsi_threshold":         "RSI threshold for buy signals (30-70 typical range)",
-		"rsi_period":            "RSI calculation period (14 is standard)",
-		"rsi_timeframe":         "Timeframe for RSI calculation (1m, 5m, 15m, 1h, 4h, 1d)",
-		"profit_target":         "Base profit target in percentage (1.0-10.0 typical)",
-		"volatility_period":     "Period for volatility calculation (7 days typical)",
-		"volatility_adjustment": "Volatility adjustment factor (50.0 = 50% per 1% volatility)",
-		"volatility_timeframe":  "Timeframe for volatility calculation",
-		"trailing_stop_delta":   "Trailing stop percentage (0.1-1.0 typical)",
-		"sell_offset":           "Price offset above market for sell orders (0.1-0.5 typical)",
+		"rsi_threshold":            "RSI threshold for buy signals (30-70 typical range)",
+		"rsi_period":               "RSI calculation period (14 is standard)",
+		"rsi_timeframe":            "Timeframe for RSI calculation (1m, 5m, 15m, 1h, 4h, 1d)",
+		"profit_target":            "Base profit target in percentage (1.0-10.0 typical)",
+		"volatility_period":        "Period for volatility calculation (7 days typical)",
+		"volatility_adjustment":    "Volatility adjustment factor (50.0 = 50% per 1% volatility)",
+		"volatility_timeframe":     "Timeframe for volatility calculation",
+		"trailing_stop_delta":      "Trailing stop percentage (0.1-1.0 typical)",
+		"sell_offset":              "Price offset above market for sell orders (0.1-0.5 typical)",
+		"trend_filter_enabled":     "Activer le filtre de tendance EMA (évite d'acheter en tendance baissière)",
+		"trend_filter_fast_period": "Période EMA rapide pour le filtre de tendance (20 typique)",
+		"trend_filter_slow_period": "Période EMA lente pour le filtre de tendance (50 typique)",
+		"trend_filter_timeframe":   "Timeframe pour le filtre de tendance (1d recommandé pour BTC long terme)",
 	}
 }

@@ -6,190 +6,122 @@ import (
 	"time"
 )
 
-// GetStrategy retrieves a strategy by ID
-func (db *DB) GetStrategy(id int) (*Strategy, error) {
-	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
-			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
-			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
-			volatility_period, volatility_adjustment, volatility_timeframe,
-			last_executed_at, next_execution_at, created_at, updated_at
-		FROM strategies
-		WHERE id = ?
-	`
-	row := db.conn.QueryRow(query, id)
+// colonnes SELECT communes à toutes les requêtes de stratégie
+const strategyColumns = `
+	id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
+	rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
+	bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
+	volatility_period, volatility_adjustment, volatility_timeframe,
+	trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
+	last_executed_at, next_execution_at, created_at, updated_at`
 
-	var strategy Strategy
+// rowScanner est implémenté par *sql.Row et *sql.Rows
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanStrategy scanne une ligne SQL en Strategy, gère les champs nullables
+func scanStrategy(row rowScanner) (Strategy, error) {
+	var s Strategy
 	var lastExecutedAt, nextExecutionAt sql.NullTime
 	var rsiThreshold sql.NullFloat64
 	var rsiPeriod sql.NullInt64
 	var volatilityPeriod sql.NullInt64
 	var volatilityAdjustment sql.NullFloat64
+	var trendFilterFastPeriod, trendFilterSlowPeriod sql.NullInt64
 
-	err := row.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-		&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
-		&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
-		&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
-		&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
-		&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
-		&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
+	err := row.Scan(
+		&s.ID, &s.Name, &s.Description, &s.Enabled,
+		&s.AlgorithmName, &s.CronExpression, &s.QuoteAmount, &s.MaxConcurrentCycles,
+		&rsiThreshold, &rsiPeriod, &s.RSITimeframe, &s.MACDFastPeriod, &s.MACDSlowPeriod,
+		&s.MACDSignalPeriod, &s.MACDTimeframe, &s.BBPeriod, &s.BBMultiplier, &s.BBTimeframe,
+		&s.ProfitTarget, &s.TrailingStopDelta, &s.SellOffset,
+		&volatilityPeriod, &volatilityAdjustment, &s.VolatilityTimeframe,
+		&s.TrendFilterEnabled, &trendFilterFastPeriod, &trendFilterSlowPeriod, &s.TrendFilterTimeframe,
+		&lastExecutedAt, &nextExecutionAt, &s.CreatedAt, &s.UpdatedAt,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get strategy: %w", err)
+		return Strategy{}, err
 	}
 
-	// Handle nullable fields
 	if rsiThreshold.Valid {
-		strategy.RSIThreshold = &rsiThreshold.Float64
+		s.RSIThreshold = &rsiThreshold.Float64
 	}
 	if rsiPeriod.Valid {
 		period := int(rsiPeriod.Int64)
-		strategy.RSIPeriod = &period
+		s.RSIPeriod = &period
 	}
 	if volatilityPeriod.Valid {
 		period := int(volatilityPeriod.Int64)
-		strategy.VolatilityPeriod = &period
+		s.VolatilityPeriod = &period
 	}
 	if volatilityAdjustment.Valid {
-		strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
+		s.VolatilityAdjustment = &volatilityAdjustment.Float64
+	}
+	if trendFilterFastPeriod.Valid {
+		period := int(trendFilterFastPeriod.Int64)
+		s.TrendFilterFastPeriod = &period
+	}
+	if trendFilterSlowPeriod.Valid {
+		period := int(trendFilterSlowPeriod.Int64)
+		s.TrendFilterSlowPeriod = &period
 	}
 	if lastExecutedAt.Valid {
-		strategy.LastExecutedAt = &lastExecutedAt.Time
+		s.LastExecutedAt = &lastExecutedAt.Time
 	}
 	if nextExecutionAt.Valid {
-		strategy.NextExecutionAt = &nextExecutionAt.Time
+		s.NextExecutionAt = &nextExecutionAt.Time
 	}
 
-	return &strategy, nil
+	return s, nil
 }
 
-// GetEnabledStrategies retrieves all enabled strategies
-func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
-	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
-			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
-			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
-			volatility_period, volatility_adjustment, volatility_timeframe,
-			last_executed_at, next_execution_at, created_at, updated_at
-		FROM strategies
-		WHERE enabled = 1
-		ORDER BY created_at DESC
-	`
-	rows, err := db.conn.Query(query)
+// queryStrategies exécute une requête et retourne la liste des stratégies scannées
+func (db *DB) queryStrategies(query string, args ...any) ([]Strategy, error) {
+	rows, err := db.conn.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get enabled strategies: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
 	var strategies []Strategy
 	for rows.Next() {
-		var strategy Strategy
-		var lastExecutedAt, nextExecutionAt sql.NullTime
-		var rsiThreshold sql.NullFloat64
-		var rsiPeriod sql.NullInt64
-		var volatilityPeriod sql.NullInt64
-		var volatilityAdjustment sql.NullFloat64
-
-		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
-			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
-			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
-			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
-			&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
-			&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
+		s, err := scanStrategy(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan strategy: %w", err)
 		}
-
-		// Handle nullable fields
-		if rsiThreshold.Valid {
-			strategy.RSIThreshold = &rsiThreshold.Float64
-		}
-		if rsiPeriod.Valid {
-			period := int(rsiPeriod.Int64)
-			strategy.RSIPeriod = &period
-		}
-		if volatilityPeriod.Valid {
-			period := int(volatilityPeriod.Int64)
-			strategy.VolatilityPeriod = &period
-		}
-		if volatilityAdjustment.Valid {
-			strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
-		}
-		if lastExecutedAt.Valid {
-			strategy.LastExecutedAt = &lastExecutedAt.Time
-		}
-		if nextExecutionAt.Valid {
-			strategy.NextExecutionAt = &nextExecutionAt.Time
-		}
-
-		strategies = append(strategies, strategy)
+		strategies = append(strategies, s)
 	}
+	return strategies, nil
+}
 
+// GetStrategy retrieves a strategy by ID
+func (db *DB) GetStrategy(id int) (*Strategy, error) {
+	query := `SELECT` + strategyColumns + ` FROM strategies WHERE id = ?`
+	s, err := scanStrategy(db.conn.QueryRow(query, id))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get strategy: %w", err)
+	}
+	return &s, nil
+}
+
+// GetEnabledStrategies retrieves all enabled strategies
+func (db *DB) GetEnabledStrategies() ([]Strategy, error) {
+	query := `SELECT` + strategyColumns + ` FROM strategies WHERE enabled = 1 ORDER BY created_at DESC`
+	strategies, err := db.queryStrategies(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get enabled strategies: %w", err)
+	}
 	return strategies, nil
 }
 
 // GetAllStrategies retrieves all strategies
 func (db *DB) GetAllStrategies() ([]Strategy, error) {
-	query := `
-		SELECT id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
-			rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
-			bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
-			volatility_period, volatility_adjustment, volatility_timeframe,
-			last_executed_at, next_execution_at, created_at, updated_at
-		FROM strategies
-		ORDER BY created_at DESC
-	`
-	rows, err := db.conn.Query(query)
+	query := `SELECT` + strategyColumns + ` FROM strategies ORDER BY created_at DESC`
+	strategies, err := db.queryStrategies(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all strategies: %w", err)
 	}
-	defer rows.Close()
-
-	var strategies []Strategy
-	for rows.Next() {
-		var strategy Strategy
-		var lastExecutedAt, nextExecutionAt sql.NullTime
-		var rsiThreshold sql.NullFloat64
-		var rsiPeriod sql.NullInt64
-		var volatilityPeriod sql.NullInt64
-		var volatilityAdjustment sql.NullFloat64
-
-		err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.Enabled,
-			&strategy.AlgorithmName, &strategy.CronExpression, &strategy.QuoteAmount, &strategy.MaxConcurrentCycles,
-			&rsiThreshold, &rsiPeriod, &strategy.RSITimeframe, &strategy.MACDFastPeriod, &strategy.MACDSlowPeriod,
-			&strategy.MACDSignalPeriod, &strategy.MACDTimeframe, &strategy.BBPeriod, &strategy.BBMultiplier, &strategy.BBTimeframe,
-			&strategy.ProfitTarget, &strategy.TrailingStopDelta, &strategy.SellOffset,
-			&volatilityPeriod, &volatilityAdjustment, &strategy.VolatilityTimeframe,
-			&lastExecutedAt, &nextExecutionAt, &strategy.CreatedAt, &strategy.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan strategy: %w", err)
-		}
-
-		// Handle nullable fields
-		if rsiThreshold.Valid {
-			strategy.RSIThreshold = &rsiThreshold.Float64
-		}
-		if rsiPeriod.Valid {
-			period := int(rsiPeriod.Int64)
-			strategy.RSIPeriod = &period
-		}
-		if volatilityPeriod.Valid {
-			period := int(volatilityPeriod.Int64)
-			strategy.VolatilityPeriod = &period
-		}
-		if volatilityAdjustment.Valid {
-			strategy.VolatilityAdjustment = &volatilityAdjustment.Float64
-		}
-		if lastExecutedAt.Valid {
-			strategy.LastExecutedAt = &lastExecutedAt.Time
-		}
-		if nextExecutionAt.Valid {
-			strategy.NextExecutionAt = &nextExecutionAt.Time
-		}
-
-		strategies = append(strategies, strategy)
-	}
-
 	return strategies, nil
 }
 
@@ -306,6 +238,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
+	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	concurrentCycles int) error {
 
 	// Check if strategy exists
@@ -331,6 +264,9 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 	if volatilityTimeframe == "" {
 		volatilityTimeframe = "4h"
 	}
+	if trendFilterTimeframe == "" {
+		trendFilterTimeframe = "1d"
+	}
 
 	// Insert strategy with all web form parameters
 	query := `
@@ -341,8 +277,9 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 			bb_period, bb_multiplier, bb_timeframe,
 			profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
+			trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
 			max_concurrent_cycles
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, quoteAmount,
@@ -351,6 +288,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 		bbPeriod, bbMultiplier, bbTimeframe,
 		profitTarget, trailingStopDelta, sellOffset,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
+		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		concurrentCycles)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
@@ -366,6 +304,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
+	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	maxConcurrentCycles int) error {
 
 	// Set defaults for timeframes if empty
@@ -380,6 +319,9 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	}
 	if volatilityTimeframe == "" {
 		volatilityTimeframe = "4h"
+	}
+	if trendFilterTimeframe == "" {
+		trendFilterTimeframe = "1d"
 	}
 
 	query := `
@@ -406,6 +348,10 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			volatility_period = ?,
 			volatility_adjustment = ?,
 			volatility_timeframe = ?,
+			trend_filter_enabled = ?,
+			trend_filter_fast_period = ?,
+			trend_filter_slow_period = ?,
+			trend_filter_timeframe = ?,
 			max_concurrent_cycles = ?,
 			updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
@@ -417,6 +363,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 		bbPeriod, bbMultiplier, bbTimeframe,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
+		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		maxConcurrentCycles, id)
 
 	return err

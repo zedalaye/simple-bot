@@ -321,6 +321,17 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			}
 		}
 
+		// Trend filter parameters
+		trendFilterEnabled := c.PostForm("trend_filter_enabled") == "on"
+		var trendFilterFastPeriod, trendFilterSlowPeriod *int
+		trendFilterTimeframe := c.PostForm("trend_filter_timeframe")
+		if val, err := strconv.Atoi(c.PostForm("trend_filter_fast_period")); err == nil && val > 0 {
+			trendFilterFastPeriod = &val
+		}
+		if val, err := strconv.Atoi(c.PostForm("trend_filter_slow_period")); err == nil && val > 0 {
+			trendFilterSlowPeriod = &val
+		}
+
 		// Use the new comprehensive method
 		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
@@ -328,6 +339,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
+			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
@@ -452,12 +464,24 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			}
 		}
 
+		// Trend filter parameters
+		trendFilterEnabled := c.PostForm("trend_filter_enabled") == "on"
+		var trendFilterFastPeriod, trendFilterSlowPeriod *int
+		trendFilterTimeframe := c.PostForm("trend_filter_timeframe")
+		if val, err := strconv.Atoi(c.PostForm("trend_filter_fast_period")); err == nil && val > 0 {
+			trendFilterFastPeriod = &val
+		}
+		if val, err := strconv.Atoi(c.PostForm("trend_filter_slow_period")); err == nil && val > 0 {
+			trendFilterSlowPeriod = &val
+		}
+
 		err = db.UpdateStrategy(strategyID, name, description, algorithm, cron, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
 			rsiThreshold, rsiPeriod, rsiTimeframe,
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
+			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())

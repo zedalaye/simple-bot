@@ -122,6 +122,43 @@
                                     </div>
                                 </div>
 
+                                <!-- Trend Filter Settings -->
+                                <h6 class="text-info mb-3">📉 Filtre de Tendance EMA</h6>
+                                <div class="row mb-2">
+                                    <div class="col-12">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="trend_filter_enabled" name="trend_filter_enabled"
+                                                   {{if .strategy.TrendFilterEnabled}}checked{{end}} onchange="toggleTrendFilter()">
+                                            <label class="form-check-label" for="trend_filter_enabled">
+                                                Activer le filtre de tendance (bloque les achats si EMA rapide &lt; EMA lente)
+                                            </label>
+                                        </div>
+                                        <div class="form-text">N'achète que si la tendance est haussière ou neutre. Évite d'attraper un couteau qui tombe.</div>
+                                    </div>
+                                </div>
+                                <div id="trend-filter-fields" class="row mb-4" style="display: none;">
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_fast_period" class="form-label">Période EMA rapide</label>
+                                        <input type="number" class="form-control" id="trend_filter_fast_period" name="trend_filter_fast_period"
+                                               {{if .strategy.TrendFilterFastPeriod}}value="{{.strategy.TrendFilterFastPeriod}}"{{else}}value="20"{{end}} placeholder="20">
+                                        <div class="form-text">EMA court terme (20 = standard)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_slow_period" class="form-label">Période EMA lente</label>
+                                        <input type="number" class="form-control" id="trend_filter_slow_period" name="trend_filter_slow_period"
+                                               {{if .strategy.TrendFilterSlowPeriod}}value="{{.strategy.TrendFilterSlowPeriod}}"{{else}}value="50"{{end}} placeholder="50">
+                                        <div class="form-text">EMA long terme (50 = standard)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_timeframe" class="form-label">Timeframe</label>
+                                        <select class="form-select" id="trend_filter_timeframe" name="trend_filter_timeframe">
+                                            <option value="1h" {{if eq .strategy.TrendFilterTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                            <option value="4h" {{if eq .strategy.TrendFilterTimeframe "4h"}}selected{{end}}>4 heures</option>
+                                            <option value="1d" {{if or (eq .strategy.TrendFilterTimeframe "1d") (eq .strategy.TrendFilterTimeframe "")}}selected{{end}}>1 jour (recommandé)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <!-- RSI Specific Fields -->
                                 <div id="rsi-fields" style="display: none;">
                                     <h6 class="text-primary mb-3">📈 Paramètres RSI</h6>
@@ -288,10 +325,16 @@ function updateCronDescription() {
     }
 }
 
+function toggleTrendFilter() {
+    const enabled = document.getElementById('trend_filter_enabled').checked;
+    document.getElementById('trend-filter-fields').style.display = enabled ? 'flex' : 'none';
+}
+
 // Initialize fields display on page load
 document.addEventListener('DOMContentLoaded', function() {
     updateAlgorithmFields();
     updateCronDescription();
+    toggleTrendFilter();
 });
 </script>
 {{end}}

@@ -38,34 +38,38 @@ const (
 
 // Core data structures
 type Strategy struct {
-	ID                   int        `json:"id"`
-	Name                 string     `json:"name"`
-	Description          string     `json:"description"`
-	Enabled              bool       `json:"enabled"`
-	AlgorithmName        string     `json:"algorithm_name"`
-	CronExpression       string     `json:"cron_expression"`
-	QuoteAmount          float64    `json:"quote_amount"`
-	MaxConcurrentCycles  int        `json:"max_concurrent_cycles"`
-	RSIThreshold         *float64   `json:"rsi_threshold,omitempty"`
-	RSIPeriod            *int       `json:"rsi_period,omitempty"`
-	RSITimeframe         string     `json:"rsi_timeframe"`
-	MACDFastPeriod       int        `json:"macd_fast_period"`
-	MACDSlowPeriod       int        `json:"macd_slow_period"`
-	MACDSignalPeriod     int        `json:"macd_signal_period"`
-	MACDTimeframe        string     `json:"macd_timeframe"`
-	BBPeriod             int        `json:"bb_period"`
-	BBMultiplier         float64    `json:"bb_multiplier"`
-	BBTimeframe          string     `json:"bb_timeframe"`
-	ProfitTarget         float64    `json:"profit_target"`
-	TrailingStopDelta    float64    `json:"trailing_stop_delta"`
-	SellOffset           float64    `json:"sell_offset"`
-	VolatilityPeriod     *int       `json:"volatility_period,omitempty"`
-	VolatilityAdjustment *float64   `json:"volatility_adjustment,omitempty"`
-	VolatilityTimeframe  string     `json:"volatility_timeframe"`
-	LastExecutedAt       *time.Time `json:"last_executed_at,omitempty"`
-	NextExecutionAt      *time.Time `json:"next_execution_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                    int        `json:"id"`
+	Name                  string     `json:"name"`
+	Description           string     `json:"description"`
+	Enabled               bool       `json:"enabled"`
+	AlgorithmName         string     `json:"algorithm_name"`
+	CronExpression        string     `json:"cron_expression"`
+	QuoteAmount           float64    `json:"quote_amount"`
+	MaxConcurrentCycles   int        `json:"max_concurrent_cycles"`
+	RSIThreshold          *float64   `json:"rsi_threshold,omitempty"`
+	RSIPeriod             *int       `json:"rsi_period,omitempty"`
+	RSITimeframe          string     `json:"rsi_timeframe"`
+	MACDFastPeriod        int        `json:"macd_fast_period"`
+	MACDSlowPeriod        int        `json:"macd_slow_period"`
+	MACDSignalPeriod      int        `json:"macd_signal_period"`
+	MACDTimeframe         string     `json:"macd_timeframe"`
+	BBPeriod              int        `json:"bb_period"`
+	BBMultiplier          float64    `json:"bb_multiplier"`
+	BBTimeframe           string     `json:"bb_timeframe"`
+	ProfitTarget          float64    `json:"profit_target"`
+	TrailingStopDelta     float64    `json:"trailing_stop_delta"`
+	SellOffset            float64    `json:"sell_offset"`
+	VolatilityPeriod      *int       `json:"volatility_period,omitempty"`
+	VolatilityAdjustment  *float64   `json:"volatility_adjustment,omitempty"`
+	VolatilityTimeframe   string     `json:"volatility_timeframe"`
+	TrendFilterEnabled    bool       `json:"trend_filter_enabled"`
+	TrendFilterFastPeriod *int       `json:"trend_filter_fast_period,omitempty"`
+	TrendFilterSlowPeriod *int       `json:"trend_filter_slow_period,omitempty"`
+	TrendFilterTimeframe  string     `json:"trend_filter_timeframe"`
+	LastExecutedAt        *time.Time `json:"last_executed_at,omitempty"`
+	NextExecutionAt       *time.Time `json:"next_execution_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type Order struct {
@@ -424,6 +428,16 @@ var migrations = []Migration{
 		SQL: `
 			ALTER TABLE strategies
 			RENAME COLUMN max_concurrent_orders TO max_concurrent_cycles;
+		`,
+	},
+	{
+		ID:   15,
+		Name: "add_trend_filter_to_strategies",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN trend_filter_enabled BOOLEAN DEFAULT 0;
+			ALTER TABLE strategies ADD COLUMN trend_filter_fast_period INTEGER DEFAULT 20;
+			ALTER TABLE strategies ADD COLUMN trend_filter_slow_period INTEGER DEFAULT 50;
+			ALTER TABLE strategies ADD COLUMN trend_filter_timeframe TEXT DEFAULT '1d';
 		`,
 	},
 }
