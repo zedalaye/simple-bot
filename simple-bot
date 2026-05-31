@@ -14,14 +14,13 @@ launch_exchange() {
     local ex=$1
     local project="bot-$ex"
 
-    local port=$(grep 'docker:' storage/$ex/config.yml | awk '{print $2}' | tr -d '"')
-    if [ -z "$port" ]; then
-        echo "Impossible de trouver la configuration du mapping des ports webui dans storage/$ex/config.yml"
-        exit 1
-    fi
+    # Lire WEB_PORT depuis le .env de l'instance (format Go ":8080" → "8080")
+    local raw_port=$(grep '^WEB_PORT=' storage/$ex/.env 2>/dev/null | cut -d= -f2)
+    local port=${raw_port#:}
+    port=${port:-8080}
 
     echo "=== Lancement de $ex (port $port) ==="
-    EXCHANGE=${ex} CUSTOMER_ID=${CUSTOMER_ID} WEB_PORT=${port} RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p "${project}" up -d
+    EXCHANGE=${ex} WEB_PORT=${port} RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p "${project}" up -d
 }
 
 stop_exchange() {
