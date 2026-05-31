@@ -25,9 +25,11 @@ RUN xx-go mod download
 
 COPY . ./
 
+ARG VERSION=dev
+
 # Wrap xx-go into go so that we can use our Makefile with no changes
 RUN xx-go --wrap
-RUN make release
+RUN make release VERSION=${VERSION}
 
 ## Run environment
 FROM alpine:latest

@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"bot/internal/algorithms"
-	"bot/internal/premium"
 
 	"bot/internal/core/database"
 	"bot/internal/logger"
@@ -69,11 +68,6 @@ func NewStrategyManager(exchangeName, pair string, db *database.DB, market Strat
 // validateAndPrepareStrategy performs common validation and setup for strategy execution
 func (sm *StrategyManager) validateAndPrepareStrategy(strategy database.Strategy) (algorithms.Algorithm,
 	algorithms.TradingContext, error) {
-	// Premium check
-	if err := premium.CheckPremiumness(); err != nil {
-		return nil, algorithms.TradingContext{}, fmt.Errorf("premium subscription check failed: %w", err)
-	}
-
 	// Get the algorithm for this strategy
 	algorithm, exists := sm.algorithmRegistry.Get(strategy.AlgorithmName)
 	if !exists {

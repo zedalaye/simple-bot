@@ -2,16 +2,13 @@ package main
 
 import (
 	"bot/internal/bot"
-	"bot/internal/core/config"
-	"bot/internal/core/database"
 	"bot/internal/exchange"
+	"bot/internal/loader"
 	"bot/internal/logger"
 	"flag"
 	"log"
 	"os"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 const MinQuoteAmount = 10.0
@@ -28,94 +25,41 @@ func logStep(fmt string, v ...any) {
 }
 
 func main() {
-	projectRoot, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
 	log.SetOutput(os.Stdout)
-
-	// Paramètres de ligne de commande
-	var (
-		botDir = flag.String("root", ".", "Path to the bot directory")
-	)
+	botDir := flag.String("root", ".", "Répertoire racine de l'instance du bot")
 	flag.Parse()
+
+	if *botDir != "." {
+		if err := os.Chdir(*botDir); err != nil {
+			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
+		}
+	}
 
 	log.Println("=== Bot Test Suite ===")
 
-	// Changer le répertoire de travail si nécessaire
-	if *botDir != "." {
-		logStep("Change bot working directory to %s", *botDir)
-		err := os.Chdir(*botDir)
-		if err != nil {
-			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
-		}
-	}
-
-	// 1. Charger la configuration du bot
-	logStep("Loading bot configuration...")
-	fileConfig, err := config.LoadConfig()
+	// 1. Charger la configuration
+	logStep("Loading configuration...")
+	cfg, db, err := loader.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-
-	// Initialiser le logger pour les tests
-	logStep("Initialize logger...")
-	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-
-	// Charge le fichier .env pour obtenir les API Keys
-	logStep("Load .env...")
-	err = godotenv.Load(fileConfig.EnvFilePaths()...)
-	if err != nil {
-		logger.Warn("⚠️ No .env file found, using system environment variables")
-	}
-
-	logStep("Prepare configuration...")
-	botConfig := fileConfig.ToBotConfig()
-	logger.Infof("✓ Configuration loaded: Exchange=%s, Pair=%s, CheckInterval=%v",
-		botConfig.ExchangeName, botConfig.Pair, botConfig.CheckInterval)
-	logger.Info("  Trading parameters are configured per strategy")
-
-	logStep("Check Telegram Bot configuration")
-	useTelegram := os.Getenv("TELEGRAM") == "1"
-	tgBotToken := os.Getenv("TELEGRAM_BOT_TOKEN")
-	tgChatId := os.Getenv("TELEGRAM_CHAT_ID")
-	if useTelegram && tgBotToken != "" && tgChatId != "" {
-		logger.Info("✓ Telegram bot is configured")
-	} else {
-		logger.Warn("⚠️ Telegram bot is not configured properly")
-	}
-
-	logStep("Load or initialize database...")
-	db, err := database.NewDB(fileConfig.Database.Path)
-	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer func(db *database.DB) {
-		err := db.Close()
-		if err != nil {
+	defer func() {
+		if err := db.Close(); err != nil {
 			logger.Fatalf("Failed to close database: %v", err)
 		}
-	}(db)
-	logger.Info("✓ Database initialized successfully")
+	}()
 
-	// Retourne au dossier racine par défaut
-	logStep("Revert to original root directory...")
-	err = os.Chdir(projectRoot)
-	if err != nil {
-		logger.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
-	}
+	botConfig := cfg.ToBotConfig()
+	logger.Infof("✓ Configuration loaded: Exchange=%s, Pair=%s, CheckInterval=%v",
+		botConfig.ExchangeName, botConfig.Pair, botConfig.CheckInterval)
 
 	// 2. Créer l'instance de l'exchange
 	logStep("Creating exchange instance...")
-	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
+	exchg := exchange.NewExchange(cfg.ExchangeName)
 	if exchg == nil {
-		logger.Fatalf("Failed to create %s exchange instance", fileConfig.Exchange.Name)
+		logger.Fatalf("Failed to create %s exchange instance", cfg.ExchangeName)
 	}
-	logger.Infof("✓ %s exchange initialized", fileConfig.Exchange.Name)
+	logger.Infof("✓ %s exchange initialized", cfg.ExchangeName)
 
 	// logStep("Load all markets list...")
 	//for _, market := range exchg.GetMarketsList() {
@@ -208,69 +152,52 @@ func main() {
 		_, err = exchg.CancelOrder(*buyOrder.Id, botConfig.Pair)
 		if err != nil {
 			logger.Errorf("Failed to cancel buy order: %v", err)
-			// Ne pas arrêter le test, continuer
 		} else {
 			logger.Infof("✓ Buy order cancelled: ID=%s", *buyOrder.Id)
 		}
 
 		// Attendre un moment pour que l'annulation soit effective
 		time.Sleep(2 * time.Second)
-	}
 
-	//// 7. Vérifier les fonds disponibles dans la devise de base
-	//logStep("Checking base currency balance...")
-	//baseBalance, err := checkBalance(exchange, baseAsset)
-	//if err != nil {
-	//	logger.Fatalf("Failed to check base balance: %v", err)
-	//}
-	//logger.Infof("✓ %s balance: %.6f", baseAsset, baseBalance)
-	//
-	//if baseBalance <= 0 {
-	//	logger.Warnf("⚠️  Warning: No %s balance for sell order test", baseAsset)
-	//	logger.Info("   Using minimum amount for demonstration...")
-	//	baseBalance = 0.001 // Montant minimal pour le test
-	//}
+		// 7. Créer un ordre de vente limite au prix + offset
+		logStep("Create limit sell order...")
+		sellOffset := currentPrice * 0.002
+		sellPrice := currentPrice + sellOffset
+		sellAmountInBaseAsset := *buyOrder.Amount
 
-	// 8. Créer un ordre de vente limite au prix + offset
-	logStep("Create limit sell order...")
-	sellOffset := currentPrice * 0.002 // 0.2% au-dessus du prix actuel (eq. 200$ pour un BTC à 100k)
-	sellPrice := currentPrice + sellOffset
-	sellAmountInBaseAsset := *buyOrder.Amount
+		logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, sellOffset)
+		logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
 
-	logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, sellOffset)
-	logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
-
-	sellOrder, err := exchg.PlaceLimitSellOrder(botConfig.Pair, sellAmountInBaseAsset, sellPrice)
-	if err != nil {
-		logger.Errorf("Failed to place sell order: %v", err)
-		// Ne pas arrêter le test, continuer
-	} else {
-		sellOrder, err = exchg.FetchOrder(*sellOrder.Id, botConfig.Pair)
+		sellOrder, err := exchg.PlaceLimitSellOrder(botConfig.Pair, sellAmountInBaseAsset, sellPrice)
 		if err != nil {
-			logger.Fatalf("Failed to fetch sell order: %v", err)
-		}
-		logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
-			*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount, *sellOrder.Status)
-
-		// Attendre un moment
-		time.Sleep(2 * time.Second)
-
-		// 9. Annuler l'ordre de vente
-		logStep("Cancel sell order...")
-		_, err = exchg.CancelOrder(*sellOrder.Id, botConfig.Pair)
-		if err != nil {
-			logger.Errorf("Failed to cancel sell order: %v", err)
+			logger.Errorf("Failed to place sell order: %v", err)
 		} else {
-			logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
+			sellOrder, err = exchg.FetchOrder(*sellOrder.Id, botConfig.Pair)
+			if err != nil {
+				logger.Fatalf("Failed to fetch sell order: %v", err)
+			}
+			logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
+				*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount, *sellOrder.Status)
+
+			// Attendre un moment
+			time.Sleep(2 * time.Second)
+
+			// 8. Annuler l'ordre de vente
+			logStep("Cancel sell order...")
+			_, err = exchg.CancelOrder(*sellOrder.Id, botConfig.Pair)
+			if err != nil {
+				logger.Errorf("Failed to cancel sell order: %v", err)
+			} else {
+				logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
+			}
 		}
 	}
 
 	// Résumé final
 	logger.Info("=== Test Summary ===")
-	logger.Infof("Exchange: %s", fileConfig.Exchange.Name)
+	logger.Infof("Exchange: %s", cfg.ExchangeName)
 	logger.Infof("Trading pair: %s", botConfig.Pair)
 	logger.Infof("Current price: %.2f %s", currentPrice, quoteAsset)
-	logger.Infof("Sell offset: %.2f %s", sellOffset, quoteAsset)
 	logger.Infof("%s balance: %.6f", quoteAsset, quoteBalance)
 	logger.Infof("%s balance: %.6f", baseAsset, baseBalance)
 	logger.Info("✓ All tests completed successfully!")

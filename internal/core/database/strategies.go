@@ -201,36 +201,6 @@ func (db *DB) GetStrategyStats(strategyId int) (map[string]interface{}, error) {
 	return stats, nil
 }
 
-// CreateExampleStrategy creates an example strategy (for command line tools)
-func (db *DB) CreateExampleStrategy(name, description, algorithm, cron string, amount, profitTarget float64, rsiThresh *float64, rsiPeriod *int) error {
-	// Check if strategy exists
-	var count int
-	err := db.conn.QueryRow(`SELECT COUNT(*) FROM strategies WHERE name = ?`, name).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("failed to check strategy existence: %w", err)
-	}
-	if count > 0 {
-		return fmt.Errorf("strategy %s already exists", name)
-	}
-
-	// Insert strategy with hardcoded defaults (for cmd tool compatibility)
-	query := `
-		INSERT INTO strategies (
-			name, description, enabled, algorithm_name, cron_expression, quote_amount,
-			rsi_threshold, rsi_period, rsi_timeframe, profit_target, trailing_stop_delta, sell_offset,
-			volatility_period, volatility_adjustment, volatility_timeframe, max_concurrent_cycles
-		) VALUES (?, ?, 1, ?, ?, ?, ?, ?, '4h', ?, 0.1, 0.1, 7, 50.0, '4h', 1)
-	`
-
-	_, err = db.conn.Exec(query, name, description, algorithm, cron, amount,
-		rsiThresh, rsiPeriod, profitTarget)
-	if err != nil {
-		return fmt.Errorf("failed to create strategy: %w", err)
-	}
-
-	return nil
-}
-
 // CreateStrategyFromWeb creates a strategy from web interface with full parameters
 func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, enabled bool,
 	quoteAmount, profitTarget, trailingStopDelta, sellOffset float64,
@@ -404,13 +374,3 @@ func (db *DB) DeleteStrategy(id int) error {
 	return nil
 }
 
-// DeleteNonLegacyStrategies deletes all strategies except the legacy one (ID = 1)
-func (db *DB) DeleteNonLegacyStrategies() (int64, error) {
-	result, err := db.conn.Exec(`DELETE FROM strategies WHERE id != 1`)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete strategies: %w", err)
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	return rowsAffected, nil
-}

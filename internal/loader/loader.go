@@ -6,72 +6,54 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/exchange"
 	"bot/internal/logger"
+	"fmt"
 	"log"
-	"os"
 
 	"github.com/joho/godotenv"
 )
 
-func LoadBot(projectRoot, botDir string) (*bot.Bot, error) {
-	if botDir != "." {
-		err := os.Chdir(botDir)
-		if err != nil {
-			log.Fatalf("Failed to change directory to %s: %v", botDir, err)
-		}
+// LoadConfig charge le fichier .env, lit la configuration depuis l'environnement,
+// initialise le logger et ouvre la base de données.
+func LoadConfig() (config.AppConfig, *database.DB, error) {
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
 	}
-	// En sortant, retourne au dossier racine par défaut
-	defer func(dir string) {
-		err := os.Chdir(dir)
-		if err != nil {
-			log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
-		}
-	}(projectRoot)
 
-	// Chargement de la configuration
-	fileConfig, err := config.LoadConfig()
+	cfg := config.Load()
+
+	if err := logger.InitLogger(cfg.GetLogLevel(), cfg.GetLogFile()); err != nil {
+		return config.AppConfig{}, nil, fmt.Errorf("logger : %w", err)
+	}
+
+	db, err := database.NewDB(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		return config.AppConfig{}, nil, fmt.Errorf("base de données : %w", err)
 	}
 
-	// Initialisation du système de logs
-	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
+	logger.Info("✓ Configuration chargée")
+	logger.Infof("  Exchange        %s", cfg.ExchangeName)
+	logger.Infof("  Paire           %s", cfg.TradingPair)
+	logger.Infof("  Check interval  %v", cfg.CheckInterval)
+	logger.Infof("  Port web        %s", cfg.WebPort)
+
+	return cfg, db, nil
+}
+
+// LoadBot charge la configuration et initialise le bot complet.
+func LoadBot() (*bot.Bot, error) {
+	cfg, db, err := LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
+		return nil, err
 	}
 
-	// Charge le fichier .env pour obtenir les API Keys
-	err = godotenv.Load(fileConfig.EnvFilePaths()...)
+	exchg := exchange.NewExchange(cfg.ExchangeName)
+	logger.Infof("[%s] ✓ Exchange initialisé", cfg.ExchangeName)
+
+	tradingBot, err := bot.NewBot(cfg.ToBotConfig(), db, exchg)
 	if err != nil {
-		logger.Warn("No .env file found, using system environment variables")
+		return nil, fmt.Errorf("création du bot : %w", err)
 	}
-
-	// Conversion vers la configuration du bot
-	botConfig := fileConfig.ToBotConfig()
-
-	logger.Info("✓ Configuration loaded")
-	logger.Infof("  Exchange                %s", botConfig.ExchangeName)
-	logger.Infof("  Default Pair            %s", botConfig.Pair)
-	logger.Infof("  Check Interval          %v", botConfig.CheckInterval)
-	logger.Infof("  Web Port                %s", botConfig.WebPort)
-	logger.Info("  Trading parameters are configured per strategy")
-
-	// Initialisation de la base de données
-	db, err := database.NewDB(fileConfig.Database.Path)
-	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
-	logger.Infof("[%s] ✓ Database initialized successfully", botConfig.ExchangeName)
-
-	// Configuration de l'exchange
-	exchg := exchange.NewExchange(fileConfig.Exchange.Name)
-	logger.Infof("[%s] ✓ Exchange initialized successfully", botConfig.ExchangeName)
-
-	// Création du bot
-	tradingBot, err := bot.NewBot(botConfig, db, exchg)
-	if err != nil {
-		logger.Fatalf("Failed to create bot: %v", err)
-	}
-	logger.Infof("[%s] ✓ Bot initialized successfully", botConfig.ExchangeName)
+	logger.Infof("[%s] ✓ Bot initialisé", cfg.ExchangeName)
 
 	return tradingBot, nil
 }

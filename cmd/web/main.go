@@ -1,86 +1,57 @@
 package main
 
 import (
-	"bot/internal/core/config"
-	"bot/internal/core/database"
+	"bot/internal/loader"
 	"bot/internal/logger"
+	"bot/internal/version"
 	"bot/internal/web"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
-
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	projectRoot, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
 	log.SetOutput(os.Stdout)
+	log.Printf("Starting Simple Bot Web %s", version.Version)
 
-	// Paramètres de ligne de commande
 	var (
-		botDir = flag.String("root", ".", "Path to the bot directory")
-		port   = flag.String("port", "8080", "Port for the web interface")
+		botDir = flag.String("root", ".", "Répertoire racine de l'instance du bot")
+		port   = flag.String("port", "", "Port pour l'interface web (prioritaire sur la variable WEB_PORT)")
 	)
 	flag.Parse()
 
-	// Changer le répertoire de travail si nécessaire
+	rootDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Impossible de déterminer le répertoire courant : %v", err)
+	}
+
 	if *botDir != "." {
-		err := os.Chdir(*botDir)
-		if err != nil {
-			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		if err := os.Chdir(*botDir); err != nil {
+			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
 		}
 	}
 
-	// Load configuration
-	fileConfig, err := config.LoadConfig()
+	cfg, db, err := loader.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("Échec du chargement de la configuration : %v", err)
 	}
-
-	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-
-	// Charge le fichier .env pour obtenir les API Keys
-	err = godotenv.Load(fileConfig.EnvFilePaths()...)
-	if err != nil {
-		logger.Warn("No .env file found, using system environment variables")
-	}
-
-	// Initialize database (read-write mode for strategy management)
-	db, err := database.NewDB(fileConfig.Database.Path)
-	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer func(db *database.DB) {
-		err := db.Close()
-		if err != nil {
-			logger.Fatalf("Failed to close database: %v", err)
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Fatalf("Échec de la fermeture de la DB : %v", err)
 		}
-	}(db)
+	}()
 
-	// Retourne au dossier racine par défaut
-	err = os.Chdir(projectRoot)
-	if err != nil {
-		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
-	}
-
-	// Résoud le port en donnant la priorité à la ligne de commande
-	effectivePort := fileConfig.Web.Port
-	if port != nil {
+	effectivePort := cfg.WebPort
+	if *port != "" {
 		if intPort, err := strconv.Atoi(*port); err == nil {
 			effectivePort = fmt.Sprintf(":%d", intPort)
 		} else {
 			effectivePort = *port
 		}
 	}
-	router := web.SetupServer(fileConfig.Exchange.Name, db)
+
+	router := web.SetupServer(cfg.ExchangeName, db, rootDir)
 	router.Run(effectivePort)
 }

@@ -3,8 +3,10 @@ package exchange
 import (
 	"bot/internal/bot"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	ccxt "github.com/ccxt/ccxt/go/v4"
@@ -51,12 +53,45 @@ func isTimestampError(err error) bool {
 	return false
 }
 
+// callSafe exécute fn en capturant les panics CCXT et en les convertissant en erreurs Go
+func callSafe(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("panic: %v", r)
+			}
+		}
+	}()
+	return fn()
+}
+
+// cleanCCXTError retourne une erreur Go standard sans les stack traces internes de CCXT.
+// On utilise fmt.Errorf plutôt que *ccxt.Error car Error() de ce type ajoute toujours
+// "\nStack:\n..." même quand le champ est vide. L'appel à isTimestampError a déjà eu
+// lieu avant cleanCCXTError dans retryWithBackoff, donc perdre le type *ccxt.Error ici est safe.
+func cleanCCXTError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if ccxtErr, ok := err.(*ccxt.Error); ok {
+		return fmt.Errorf("[%s] %s", ccxtErr.Type, ccxtErr.Message)
+	}
+	// Erreur non-CCXT : tronquer à la première ligne pour supprimer d'éventuelles stack traces
+	msg := err.Error()
+	if idx := strings.IndexByte(msg, '\n'); idx != -1 {
+		return fmt.Errorf("%s", msg[:idx])
+	}
+	return err
+}
+
 // retryWithBackoff exécute une fonction avec retry et backoff exponentiel
 func retryWithBackoff(operation func() error) error {
 	var lastError error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		err := operation()
+		err := callSafe(operation)
 		if err == nil {
 			return nil // Succès
 		}
@@ -65,12 +100,12 @@ func retryWithBackoff(operation func() error) error {
 
 		// Si ce n'est pas une erreur de timestamp, ne pas réessayer
 		if !isTimestampError(err) {
-			return err
+			return cleanCCXTError(err)
 		}
 
 		// Si c'est le dernier essai, retourner l'erreur
 		if attempt == maxRetries-1 {
-			return err
+			return cleanCCXTError(err)
 		}
 
 		// Calculer le délai avec backoff exponentiel + jitter
@@ -81,7 +116,7 @@ func retryWithBackoff(operation func() error) error {
 		time.Sleep(totalDelay)
 	}
 
-	return lastError
+	return cleanCCXTError(lastError)
 }
 
 type Exchange struct {
@@ -95,14 +130,14 @@ func NewExchange(exchangeName string) *Exchange {
 	switch exchangeName {
 	case "mexc":
 		exchange = ccxt.CreateExchange("mexc", map[string]interface{}{
-			"apiKey":          os.Getenv("API_KEY"),
-			"secret":          os.Getenv("SECRET"),
+			"apiKey":          os.Getenv("MEXC_API_KEY"),
+			"secret":          os.Getenv("MEXC_SECRET"),
 			"enableRateLimit": true,
 		})
 	case "hyperliquid":
 		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
-			"walletAddress": os.Getenv("WALLET_ADDRESS"),
-			"privateKey":    os.Getenv("PRIVATE_KEY"),
+			"walletAddress": os.Getenv("HL_WALLET_ADDRESS"),
+			"privateKey":    os.Getenv("HL_PRIVATE_KEY"),
 			"options": map[string]interface{}{
 				"defaultType":   "spot",
 				"defaultMarket": "spot",
@@ -111,7 +146,7 @@ func NewExchange(exchangeName string) *Exchange {
 				},
 			},
 		})
-		exchange.SetSandboxMode(os.Getenv("NETWORK") == "testnet")
+		exchange.SetSandboxMode(os.Getenv("HL_NETWORK") == "testnet")
 	}
 
 	if exchange != nil {

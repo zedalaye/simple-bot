@@ -1,6 +1,9 @@
 DOCKER_IMAGE ?= zedalaye/simple-bot
 PLATFORMS ?= linux/amd64 #,linux/arm64
 
+GIT_TAG := $(shell git describe --tags --always --dirty)
+VERSION  ?= $(GIT_TAG)
+
 .PHONY: build-all \
         build-bot build-admin build-web build-test build-volatility build-rsi build-order \
         build-image \
@@ -12,11 +15,11 @@ PLATFORMS ?= linux/amd64 #,linux/arm64
 all: build-all
 
 # Use Target Specifioed Variables to "build-all" in release mode (extra -ldflags added to children go build commands)
-release: FLAGS = -ldflags "-s -w"
+release: FLAGS = -ldflags "-s -w -X bot/internal/version.Version=$(VERSION)"
 release: build-all
 
 # Construire tous les binaires
-build-all: build-bot build-web build-admin build-test
+build-all: build-bot build-web build-admin build-test build-volatility build-rsi build-order
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -42,10 +45,15 @@ build-order:
 
 # Construction de l'image docker
 build-image:
-	docker build --pull --platform ${PLATFORMS} -t ${DOCKER_IMAGE} .
+	docker build --pull --platform ${PLATFORMS} \
+		--build-arg VERSION=$(VERSION) \
+		-t ${DOCKER_IMAGE}:$(VERSION) \
+		-t ${DOCKER_IMAGE}:latest \
+		.
 
 push-image:
-	docker push ${DOCKER_IMAGE}
+	docker push ${DOCKER_IMAGE}:$(VERSION)
+	docker push ${DOCKER_IMAGE}:latest
 
 # Nettoyer les binaires
 clean:

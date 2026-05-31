@@ -76,12 +76,12 @@ var templateFuncs = template.FuncMap{
 	},
 }
 
-func createRenderer() multitemplate.Renderer {
+func createRenderer(rootDir string) multitemplate.Renderer {
 	r := multitemplate.NewRenderer()
-	layoutPath := "templates/_shared/layout.html"
+	layoutPath := filepath.Join(rootDir, "templates/_shared/layout.html")
 
 	// Find all .html files under templates/, excluding layout.html
-	viewFiles, err := filepath.Glob("templates/**/*.html")
+	viewFiles, err := filepath.Glob(filepath.Join(rootDir, "templates/**/*.html"))
 	if err != nil {
 		log.Fatalf("Failed to glob template files: %v", err)
 	}
@@ -92,7 +92,7 @@ func createRenderer() multitemplate.Renderer {
 		}
 
 		// Generate template name from file path (e.g., templates/orders/index.html -> orders_index)
-		relPath, err := filepath.Rel("templates/", viewFile)
+		relPath, err := filepath.Rel(filepath.Join(rootDir, "templates"), viewFile)
 		if err != nil {
 			log.Printf("Failed to get relative path for %s: %v", viewFile, err)
 			continue
@@ -747,7 +747,7 @@ func securityHeaders() gin.HandlerFunc {
 }
 
 // Fonction d'initialisation du serveur web
-func SetupServer(exchangeName string, db *database.DB) *gin.Engine {
+func SetupServer(exchangeName string, db *database.DB, rootDir string) *gin.Engine {
 	// Mode release pour la production
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -758,10 +758,10 @@ func SetupServer(exchangeName string, db *database.DB) *gin.Engine {
 	router.Use(gin.Recovery())
 	router.Use(securityHeaders())
 
-	router.HTMLRender = createRenderer()
+	router.HTMLRender = createRenderer(rootDir)
 
 	// Servir les fichiers statiques si nécessaire
-	router.Static("/static", "./static")
+	router.Static("/static", filepath.Join(rootDir, "static"))
 
 	// Initialiser le client bot
 	client := NewBotClient()

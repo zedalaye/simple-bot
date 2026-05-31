@@ -9,21 +9,19 @@ import (
 )
 
 func main() {
-	projectRoot, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
 	log.SetOutput(os.Stdout)
 	log.Printf("=== Bot RSI ===")
 
-	// Paramètres de ligne de commande
-	var (
-		botDir = flag.String("root", ".", "Path to the bot directory")
-	)
+	botDir := flag.String("root", ".", "Répertoire racine de l'instance du bot")
 	flag.Parse()
 
-	bot, err := loader.LoadBot(projectRoot, *botDir)
+	if *botDir != "." {
+		if err := os.Chdir(*botDir); err != nil {
+			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
+		}
+	}
+
+	bot, err := loader.LoadBot()
 	if err != nil {
 		log.Fatalf("Failed to load bot: %v", err)
 	}

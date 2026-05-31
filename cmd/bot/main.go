@@ -5,6 +5,7 @@ import (
 	"bot/internal/bot"
 	"bot/internal/loader"
 	"bot/internal/logger"
+	"bot/internal/version"
 	"flag"
 	"log"
 	"os"
@@ -14,38 +15,35 @@ import (
 )
 
 func main() {
-	projectRoot, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
 	log.SetOutput(os.Stdout)
-	log.Println("Starting Simple Bot")
+	log.Printf("Starting Simple Bot %s", version.Version)
 
-	// Paramètres de ligne de commande
 	var (
-		botDir      = flag.String("root", ".", "Path to the bot directory")
-		buyAtLaunch = flag.Bool("buy-at-launch", false, "Immediately place a buy order after startup")
+		botDir      = flag.String("root", ".", "Répertoire racine de l'instance du bot")
+		buyAtLaunch = flag.Bool("buy-at-launch", false, "Immédiatement placer un ordre d'achat au démarrage")
 	)
 	flag.Parse()
 
-	tradingBot, err := loader.LoadBot(projectRoot, *botDir)
+	if *botDir != "." {
+		if err := os.Chdir(*botDir); err != nil {
+			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
+		}
+	}
+
+	tradingBot, err := loader.LoadBot()
 	if err != nil {
-		log.Fatalf("Failed to load bot: %v", err)
+		log.Fatalf("Échec du chargement du bot : %v", err)
 	}
 	defer tradingBot.Cleanup()
 
-	// Démarrer l'API du bot
 	botAPI := api.NewBotAPI(tradingBot)
 	botAPI.Start()
 
-	// Démarrer le bot
 	err = tradingBot.Start(*buyAtLaunch)
 	if err != nil {
-		logger.Fatalf("Failed to start bot: %v", err)
+		logger.Fatalf("Échec du démarrage du bot : %v", err)
 	}
 
-	// Gestion des signaux d'arrêt
 	waitForShutdown(tradingBot)
 }
 
@@ -54,11 +52,11 @@ func waitForShutdown(tradingBot *bot.Bot) {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigs
-	logger.Infof("[%s] Got a stop signal. Stopping bot...", tradingBot.Config.ExchangeName)
+	logger.Infof("[%s] Signal d'arrêt reçu. Arrêt du bot...", tradingBot.Config.ExchangeName)
 
 	tradingBot.Stop()
 	time.Sleep(1 * time.Second)
 
 	tradingBot.ShowStatistics()
-	logger.Infof("[%s] Simple Bot Stopped. See Ya!", tradingBot.Config.ExchangeName)
+	logger.Infof("[%s] Simple Bot arrêté. À bientôt !", tradingBot.Config.ExchangeName)
 }

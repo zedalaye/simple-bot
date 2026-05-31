@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bot/internal/core/config"
 	"bot/internal/core/database"
+	"bot/internal/loader"
 	"bot/internal/logger"
 	"encoding/json"
 	"flag"
@@ -14,55 +14,30 @@ import (
 )
 
 func main() {
-	projectRoot, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
 	log.SetOutput(os.Stdout)
 
 	var (
-		botDir  = flag.String("root", ".", "Path to the bot root directory")
-		command = flag.String("cmd", "stats", "Command to execute: stats, cycles, orders, export")
-		format  = flag.String("format", "table", "Output format: table, json")
+		botDir  = flag.String("root", ".", "Répertoire racine de l'instance du bot")
+		command = flag.String("cmd", "stats", "Commande : stats, cycles, orders, export")
+		format  = flag.String("format", "table", "Format de sortie : table, json")
 	)
 	flag.Parse()
 
-	// Changer le répertoire de travail si nécessaire
 	if *botDir != "." {
-		err := os.Chdir(*botDir)
-		if err != nil {
-			log.Fatalf("Failed to change directory to %s: %v", *botDir, err)
+		if err := os.Chdir(*botDir); err != nil {
+			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
 		}
 	}
 
-	// Chargement de la configuration
-	fileConfig, err := config.LoadConfig()
+	_, db, err := loader.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("Échec du chargement de la configuration : %v", err)
 	}
-
-	err = logger.InitLogger(fileConfig.GetLogLevel(), fileConfig.GetLogFile())
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-
-	db, err := database.NewDB(fileConfig.Database.Path)
-	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer func(db *database.DB) {
-		err := db.Close()
-		if err != nil {
-			logger.Fatalf("Failed to close database: %v", err)
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Fatalf("Échec de la fermeture de la DB : %v", err)
 		}
-	}(db)
-
-	// Retourne au dossier racine par défaut
-	err = os.Chdir(projectRoot)
-	if err != nil {
-		log.Fatalf("Failed to change directory back to %s: %v", projectRoot, err)
-	}
+	}()
 
 	switch *command {
 	case "stats":
@@ -74,8 +49,8 @@ func main() {
 	case "export":
 		exportData(db)
 	default:
-		fmt.Printf("Unknown command: %s\n", *command)
-		fmt.Println("Available commands: stats, positions, orders, export")
+		fmt.Printf("Commande inconnue : %s\n", *command)
+		fmt.Println("Commandes disponibles : stats, cycles, orders, export")
 		os.Exit(1)
 	}
 }
