@@ -4,13 +4,10 @@ services:
     container_name: bot-${EXCHANGE}
     command: /app/bot
     volumes:
-      - ./storage/${EXCHANGE}/config.yml:/app/config.yml
       - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
       - ./storage/${EXCHANGE}/.env
-      - ./storage/.env.tg
     environment:
-      - CUSTOMER_ID=${CUSTOMER_ID}
       - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     restart: unless-stopped
     networks:
@@ -21,12 +18,10 @@ services:
     container_name: webui-${EXCHANGE}
     command: /app/web
     volumes:
-      - ./storage/${EXCHANGE}/config.yml:/app/config.yml
       - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
       - ./storage/${EXCHANGE}/.env
     environment:
-      - CUSTOMER_ID=${CUSTOMER_ID}
       - BOT_RELOAD_TOKEN=${RELOAD_TOKEN}
     ports:
       - "${WEB_PORT:-8080:8080}"

@@ -20,8 +20,8 @@ cd simple-trading-bot
 make
 
 # Update configuration 
-# -> storage/mexc/.env (and check default config.yml)
-# -> storage/hl/.env (and check default config.yml)
+# -> storage/mexc/.env (copy from .env.example)
+# -> storage/hl/.env (copy from .env.example)
 # -> storage/.env
 # -> storage/.env.tg
 
@@ -31,13 +31,11 @@ make
 ```
 
 ### Configuration
-Create exchange-specific directories under `storage/`:
+Create exchange-specific directories under `storage/` (copy `.env.example` as a starting point):
 ```
-storage/mexc/config.yml    # MEXC configuration (provided with defaults)
-storage/mexc/.env          # API keys
-storage/hl/config.yml      # Hyperliquid configuration (provided with defaults)
-storage/hl/.env            # Wallet credentials
-storage/.env               # Common secrets
+storage/mexc/.env          # MEXC config + API keys
+storage/hl/.env            # Hyperliquid config + wallet credentials
+storage/.env               # Common secrets (BOT_RELOAD_TOKEN, CUSTOMER_ID)
 storage/.env.tg            # Common Telegram notifications using BotFather instance
 ```
 

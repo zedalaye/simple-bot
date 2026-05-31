@@ -189,13 +189,11 @@ candles       # Market data cache (OHLCV)
 ```
 storage/
 ├── mexc/           # MEXC exchange instance
-│   ├── config.yml  # Trading parameters
-│   ├── .env        # API credentials
+│   ├── .env        # All config + API credentials (see .env.example)
 │   └── db/bot.db   # SQLite database
 │
 ├── hl/             # Hyperliquid exchange instance
-│   ├── config.yml  # Trading parameters
-│   ├── .env        # Wallet credentials
+│   ├── .env        # All config + wallet credentials (see .env.example)
 │   └── db/bot.db   # SQLite database
 │
 ├── .env            # Common secrets and credentials

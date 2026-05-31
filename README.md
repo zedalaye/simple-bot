@@ -87,22 +87,18 @@ For each exchange you want to use, create a directory structure within the `stor
 ```
 /storage/mexc   # For the MEXC Exchange
   /db/bot.db    # Will be created if it does not exist
-  config.yml
-  .env          # Define API_KEY and SECRET
+  .env          # All config + credentials (copy from .env.example)
 
 /storage/hl     # For the Hyperliquid Exchange
   /db/bot.db    # Will be created if it does not exist
-  config.yml
-  .env          # Define WALLET_ADDRESS and PRIVATE_KEY
+  .env          # All config + credentials (copy from .env.example)
 
 /storage/
-  .env          # Define CUSTOMER_ID and secrets common to all instances
-  .env.tg       # To send notifications through a Telgram Bot Instance  
+  .env          # Shared config (CUSTOMER_ID, BOT_RELOAD_TOKEN, ...)
+  .env.tg       # Telegram notifications (shared across instances)
 ```
 
-Create or adapt the [`config.yml`](storage/mexc/config.yml) and `.env` files (for exchange secrets), see below.
-
-Make sure `config.yml` specifies a database name like `db/bot.db`
+Copy [`.env.example`](.env.example) to `storage/<exchange>/.env` and fill in the values.
 
 ```bash
 $ ./simple-bot [*mexc*|hl|all] up
@@ -148,27 +144,27 @@ The main executable is `/bin/bot`
 
 ### Common Configuration
 
-You will need a Reload Token to enabled bot configuration updates from Web UI.
-Create a `storage/.env` file and fill the `BOT_RELOAD_TOKEN` with random values :
+All configuration is done through environment variables. Copy [`.env.example`](.env.example) to
+`storage/<exchange>/.env` and fill in the values.
 
-```env
+You will need a reload token to enable bot configuration updates from the Web UI:
+
+```bash
+$ ruby -r securerandom -e 'puts "BOT_RELOAD_TOKEN=#{SecureRandom.hex(20)}"'
 BOT_RELOAD_TOKEN=888067c25c6d1f97a48f5e8e4820546e9a449a1a
 ```
 
-Example using Ruby :
-
-```irb
-❯ ruby -r securerandom -e 'puts "BOT_RELOAD_TOKEN=#{SecureRandom.hex(20)}"'
-BOT_RELOAD_TOKEN=888067c25c6d1f97a48f5e8e4820546e9a449a1a
-```
+Put it in `storage/.env` to share it across instances, or in each instance's `.env`.
 
 ### For MEXC
 
-Adjust bot parameters in [`storage/mexc/config.yml`](storage/mexc/config.yml) and create a `storage/mexc/.env` file containing :
+Create `storage/mexc/.env` (from `.env.example`) with at minimum:
 
 ```env
-API_KEY=<MEXC API Key for this bot>
-SECRET=<MEXC API Key "Secret">
+EXCHANGE=mexc
+TRADING_PAIR=BTC/USDC
+MEXC_API_KEY=<MEXC API Key for this bot>
+MEXC_SECRET=<MEXC API Key "Secret">
 ```
 
 ```bash
@@ -177,11 +173,14 @@ $ ./bin/bot --root storage/mexc
 
 ### For Hyperliquid
 
-Adjust bot parameters in [`storage/hl/config.yml`](storage/hl/config.yml) and create a `storage/hl/.env` file containing secrets :
+Create `storage/hl/.env` (from `.env.example`) with at minimum:
 
 ```env
-WALLET_ADDRESS=<YOUR Wallet Address on Arbitrum Blockchain>
-PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bot>
+EXCHANGE=hyperliquid
+TRADING_PAIR=BTC/USDC
+HL_WALLET_ADDRESS=<Your Wallet Address on Arbitrum Blockchain>
+HL_PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bot>
+# HL_NETWORK=testnet  # Uncomment for testnet
 ```
 
 ```bash

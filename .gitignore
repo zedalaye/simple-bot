@@ -9,4 +9,5 @@ storage/**/db/bot.db.*
 storage/**/backup/*
 .env
 .env.*
+!.env.example
 *.log

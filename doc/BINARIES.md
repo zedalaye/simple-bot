@@ -42,8 +42,7 @@ make build-image
 ```
 
 **Configuration:**
-- Requires `config.yml` with exchange and trading parameters
-- Requires `.env` with exchange API credentials
+- Requires `.env` with exchange config and API credentials (see `.env.example`)
 - Requires `../.env` with CUSTOMER_ID and BOT_RELOAD_TOKEN
 - Optional: `../.env.tg` for Telegram notifications
 
@@ -215,8 +214,7 @@ Each binary expects specific configuration in the `--root` directory:
 
 ```
 storage/{exchange}/
-├── config.yml         # Main configuration (trading parameters)
-├── .env               # Exchange credentials
+├── .env               # All config + exchange credentials (see .env.example)
 ├── db/bot.db          # SQLite database
 ├── ../.env            # CUSTOMER_ID and BOT_RELOAD_TOKEN
 └── ../.env.tg         # Telegram notifications (optional)
