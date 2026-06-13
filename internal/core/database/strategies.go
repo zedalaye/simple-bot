@@ -373,4 +373,3 @@ func (db *DB) DeleteStrategy(id int) error {
 
 	return nil
 }
-
