@@ -130,6 +130,12 @@ let currentPair = '';
 let currentTimeframe = '4h';
 let availableTimeframes = ALL_TIMEFRAMES; // Tous les timeframes sont disponibles par défaut
 
+// Timeframe intraday (minutes/heures) : on affiche l'heure sur l'axe.
+// '1m' = minute, '1M' = mois (sensible à la casse), 'd'/'w' = jour/semaine.
+function isIntradayTimeframe(tf) {
+    return tf.endsWith('m') || tf.endsWith('h');
+}
+
 function initChart() {
     chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
         width: document.getElementById('chart-container').offsetWidth,
@@ -144,7 +150,11 @@ function initChart() {
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         rightPriceScale: { borderColor: '#cccccc' },
-        timeScale: { borderColor: '#cccccc' },
+        timeScale: {
+            borderColor: '#cccccc',
+            timeVisible: isIntradayTimeframe(currentTimeframe),
+            secondsVisible: false,
+        },
     });
 
     candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, { 
@@ -221,7 +231,12 @@ async function changeTimeframe(timeframe) {
     if (timeframe === currentTimeframe) return;
     
     currentTimeframe = timeframe;
-    
+
+    // Afficher l'heure sur l'axe pour les timeframes intraday, la date sinon
+    chart.applyOptions({
+        timeScale: { timeVisible: isIntradayTimeframe(timeframe) },
+    });
+
     // Mettre à jour les boutons
     document.querySelectorAll('[data-timeframe]').forEach(btn => {
         btn.classList.remove('active');
