@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # https://stackoverflow.com/a/76440207
 # https://github.com/tonistiigi/xx
 
@@ -21,7 +22,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 ENV CGO_ENABLED=1
-RUN xx-go mod download
+# Cache mount du module cache : évite de re-télécharger les dépendances à chaque build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    xx-go mod download
 
 COPY . ./
 
@@ -29,7 +32,11 @@ ARG VERSION=dev
 
 # Wrap xx-go into go so that we can use our Makefile with no changes
 RUN xx-go --wrap
-RUN make release VERSION=${VERSION}
+# Cache mounts du module cache ET du cache de compilation Go : ccxt (énorme) n'est
+# compilé en entier qu'une fois, les builds suivants ne recompilent que le code modifié.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    make release VERSION=${VERSION}
 
 ## Run environment
 FROM alpine:latest
