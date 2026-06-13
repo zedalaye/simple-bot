@@ -6,11 +6,11 @@ VERSION  ?= $(GIT_TAG)
 
 .PHONY: build-all \
         build-bot build-admin build-web build-test build-volatility build-rsi build-order \
-        build-image \
-				push-image \
+        build-image push-image \
         clean \
         run-bot run-admin run-web run-test \
-        fmt vet check
+        fmt vet check \
+        deps deps-check deps-update
 
 all: build-all
 
@@ -61,16 +61,16 @@ clean:
 
 # Lancer les services
 run-bot:
-	go run ./cmd/bot
+	go run ./cmd/bot $(ARGS)
 
 run-admin:
-	go run ./cmd/admin
+	go run ./cmd/admin $(ARGS)
 
 run-web:
-	go run ./cmd/web
+	go run ./cmd/web $(ARGS)
 
 run-test:
-	DEBUG=true go run ./cmd/test
+	DEBUG=true go run ./cmd/test $(ARGS)
 
 # Vérifications avant commit
 fmt:
@@ -84,4 +84,13 @@ check: fmt vet build-all
 # Installation des dépendances
 deps:
 	go mod download
+	go mod tidy
+
+# Vérifier les mises à jour disponibles des dépendances directes (sans modifier go.mod)
+deps-check:
+	@grep -E '^\s+\S+ v' go.mod | grep -v '// indirect' | awk '{print $$1}' | xargs go list -u -m -f '{{if .Update}}{{.Path}}: {{.Version}} → {{.Update.Version}}{{end}}'
+
+# Mettre à jour toutes les dépendances vers leur dernière version + tidy
+deps-update:
+	go get -u ./...
 	go mod tidy
