@@ -4,6 +4,8 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"fmt"
+	"strconv"
+	"time"
 )
 
 // BotCandle represents a market data candle (same structure as bot.Candle)
@@ -40,29 +42,18 @@ func NewMarketDataCollector(exchangeName, pair string, db *database.DB, exchange
 	}
 }
 
-// CollectCandles fetches missing candles for a specific pair/timeframe and stores them in DB
+// CollectCandles fetches the most recent candles for a specific pair/timeframe and stores them in DB.
+//
+// On récupère toujours les `limit` dernières bougies (sans `since`) : c'est ce que les exchanges
+// renvoient nativement et cela garantit des données à jour pour le graphe et les indicateurs.
+// Fetcher « depuis la dernière bougie connue » menait à un crawl avant inrattrapable dès qu'une
+// timeframe prenait du retard (le graphe restait bloqué dans le passé). `INSERT OR IGNORE` rend
+// l'opération idempotente ; l'historique s'étend naturellement vers l'avant au fil du temps.
 func (mdc *MarketDataCollector) CollectCandles(pair, timeframe string, limit int) error {
 	logger.Debugf("Collecting candles for %s/%s (limit: %d)", pair, timeframe, limit)
 
-	// 1. Get the last candle from DB to know where to start fetching
-	lastCandle, err := mdc.db.GetLastCandle(pair, timeframe)
-	if err != nil {
-		return fmt.Errorf("failed to get last candle from DB: %w", err)
-	}
-
-	// 2. Calculate since timestamp for fetching
-	var since *int64
-	if lastCandle != nil {
-		// Start from the next candle after the last one we have
-		sinceTime := lastCandle.Timestamp + 1
-		since = &sinceTime
-		logger.Debugf("Last candle found at timestamp %d, fetching since %d", lastCandle.Timestamp, sinceTime)
-	} else {
-		logger.Debugf("No existing candles found, fetching complete history")
-	}
-
-	// 3. Fetch candles from exchange
-	candles, err := mdc.exchange.FetchCandles(pair, timeframe, since, int64(limit))
+	// Récupérer les dernières bougies (pas de `since` : l'exchange renvoie les plus récentes)
+	candles, err := mdc.exchange.FetchCandles(pair, timeframe, nil, int64(limit))
 	if err != nil {
 		return fmt.Errorf("failed to fetch candles from exchange: %w", err)
 	}
@@ -132,7 +123,10 @@ func (mdc *MarketDataCollector) GetCandlesFromDB(pair, timeframe string, limit i
 	return mdc.db.GetCandles(pair, timeframe, limit)
 }
 
-// EnsureCandlesAvailable makes sure we have enough candles in DB for calculations
+// EnsureCandlesAvailable makes sure we have enough AND fresh candles in DB for calculations.
+//
+// On vérifie le nombre de bougies ET leur fraîcheur : sans le contrôle de fraîcheur, une timeframe
+// en retard était jugée « suffisante » et les indicateurs étaient calculés sur des bougies périmées.
 func (mdc *MarketDataCollector) EnsureCandlesAvailable(pair, timeframe string, requiredCount int) error {
 	// Check if we have enough candles
 	candles, err := mdc.db.GetCandles(pair, timeframe, requiredCount)
@@ -140,15 +134,50 @@ func (mdc *MarketDataCollector) EnsureCandlesAvailable(pair, timeframe string, r
 		return fmt.Errorf("failed to get candles from DB: %w", err)
 	}
 
-	if len(candles) >= requiredCount {
-		logger.Debugf("Sufficient candles available for %s/%s: %d >= %d", pair, timeframe, len(candles), requiredCount)
+	// Les bougies sont-elles à jour ? (GetCandles renvoie l'ordre chronologique, plus récent en dernier)
+	fresh := false
+	if len(candles) > 0 {
+		lastTs := candles[len(candles)-1].Timestamp
+		age := time.Since(time.UnixMilli(lastTs))
+		fresh = age < 2*timeframeDuration(timeframe)
+	}
+
+	if len(candles) >= requiredCount && fresh {
+		logger.Debugf("Sufficient & fresh candles available for %s/%s: %d >= %d", pair, timeframe, len(candles), requiredCount)
 		return nil
 	}
 
-	logger.Infof("[%s] Insufficient candles for %s/%s: %d < %d, collecting more...", mdc.exchangeName, pair, timeframe, len(candles), requiredCount)
+	logger.Infof("[%s] Candles for %s/%s insufficient or stale (have %d, need %d, fresh=%t), collecting...", mdc.exchangeName, pair, timeframe, len(candles), requiredCount, fresh)
 
-	// We need more candles, fetch them
+	// We need more (or fresher) candles, fetch them
 	return mdc.CollectCandles(pair, timeframe, requiredCount*2) // Fetch double to have some buffer
+}
+
+// timeframeDuration convertit une timeframe ("1m", "5m", "1h", "1d", "1w", "1M") en durée.
+// Note : "m" = minute, "M" = mois (sensible à la casse).
+func timeframeDuration(timeframe string) time.Duration {
+	if len(timeframe) < 2 {
+		return time.Minute
+	}
+	unit := timeframe[len(timeframe)-1]
+	n, err := strconv.Atoi(timeframe[:len(timeframe)-1])
+	if err != nil || n <= 0 {
+		return time.Minute
+	}
+	switch unit {
+	case 'm':
+		return time.Duration(n) * time.Minute
+	case 'h':
+		return time.Duration(n) * time.Hour
+	case 'd':
+		return time.Duration(n) * 24 * time.Hour
+	case 'w':
+		return time.Duration(n) * 7 * 24 * time.Hour
+	case 'M':
+		return time.Duration(n) * 30 * 24 * time.Hour
+	default:
+		return time.Minute
+	}
 }
 
 // CleanupOldCandles removes old candles to save storage space

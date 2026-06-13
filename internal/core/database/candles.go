@@ -142,7 +142,8 @@ func (db *DB) GetActiveTimeframes(pair string) ([]ActiveTimeframe, error) {
 
 // CleanupOldCandles removes old candles older than specified days
 func (db *DB) CleanupOldCandles(olderThanDays int) error {
-	cutoffTimestamp := time.Now().AddDate(0, 0, -olderThanDays).Unix()
+	// Les timestamps des bougies sont en millisecondes (cohérent avec ccxt)
+	cutoffTimestamp := time.Now().AddDate(0, 0, -olderThanDays).UnixMilli()
 	query := `DELETE FROM candles WHERE timestamp < ?`
 	result, err := db.conn.Exec(query, cutoffTimestamp)
 	if err != nil {

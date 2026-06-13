@@ -640,25 +640,9 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 				return
 			}
 
-			// Check if we need to update data based on last candle timestamp
-			lastCandle, err := db.GetLastCandle(pair, timeframe)
-			if err != nil {
-				// If error getting last candle, continue with what we have
-				logger.Warnf("Failed to get last candle for update check: %v", err)
-			}
-
-			var since *int64
-			if lastCandle == nil {
-				// No candles at all - definitely need to collect
-				logger.Infof("No candles found for %s %s - will collect initial data", pair, timeframe)
-			} else {
-				sinceTime := lastCandle.Timestamp + 1
-				since = &sinceTime
-			}
-
 			if botClient != nil {
-				// Request collection from bot (MarketCollector will only fetch what's missing)
-				_, err := botClient.RequestCandleCollection(pair, timeframe, since, limit)
+				// Demander au bot de collecter les dernières bougies (toujours les plus récentes)
+				_, err := botClient.RequestCandleCollection(pair, timeframe, nil, limit)
 				if err != nil {
 					logger.Warnf("Failed to collect candles from bot: %v", err)
 					// Continue with existing data even if collection failed
