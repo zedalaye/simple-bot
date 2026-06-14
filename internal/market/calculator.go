@@ -398,6 +398,41 @@ func (c *Calculator) CalculateEMA(pair, timeframe string, period int) (float64, 
 	return latestEMA, nil
 }
 
+// CalculateRecentHigh retourne le plus-haut (high) sur les `periods` dernières bougies.
+// Utilisé par la taille dynamique pour mesurer la profondeur de baisse depuis le sommet récent.
+func (c *Calculator) CalculateRecentHigh(pair, timeframe string, periods int) (float64, error) {
+	logger.Debugf("Calculating recent high for %s/%s over %d candles", pair, timeframe, periods)
+
+	if periods <= 0 {
+		return 0, fmt.Errorf("periods must be positive, got %d", periods)
+	}
+
+	// S'assurer d'avoir assez de bougies en cache
+	err := c.collector.EnsureCandlesAvailable(pair, timeframe, periods)
+	if err != nil {
+		return 0, fmt.Errorf("failed to ensure candles availability: %w", err)
+	}
+
+	candles, err := c.db.GetCandles(pair, timeframe, periods)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get candles for recent high: %w", err)
+	}
+
+	if len(candles) == 0 {
+		return 0, fmt.Errorf("no candles available for %s/%s", pair, timeframe)
+	}
+
+	high := candles[0].HighPrice
+	for _, candle := range candles {
+		if candle.HighPrice > high {
+			high = candle.HighPrice
+		}
+	}
+
+	logger.Debugf("Calculated recent high: %.4f over %d candles", high, len(candles))
+	return high, nil
+}
+
 // GetCurrentPrice returns the latest close price from cached data
 func (c *Calculator) GetCurrentPrice(pair, timeframe string) (float64, error) {
 	// Get the most recent candle

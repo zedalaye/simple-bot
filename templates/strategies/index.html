@@ -38,48 +38,89 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            <p class="text-muted mb-2">{{.Description}}</p>
-                            
-                            <div class="row text-center mb-3">
-                                <div class="col-6">
-                                    <div class="border-end">
-                                        <div class="h5 mb-1">{{.AlgorithmName}}</div>
-                                        <small class="text-muted">Algorithme</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="h5 mb-1">{{printf "%.2f" .QuoteAmount}} USDC</div>
-                                    <small class="text-muted">Montant par ordre</small>
-                                </div>
-                            </div>
+                            {{if .Description}}<p class="text-muted small mb-3">{{.Description}}</p>{{end}}
 
-                            <div class="row text-center mb-3">
-                                <div class="col-6">
-                                    <div class="border-end">
-                                        {{if .RSIThreshold}}
-                                        <div class="h6 mb-1">RSI < {{printf "%.1f" (derefFloat .RSIThreshold)}}</div>
-                                        {{else}}
-                                        <div class="h6 mb-1">-</div>
-                                        {{end}}
-                                        <small class="text-muted">Seuil RSI</small>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="h6 mb-1">+{{printf "%.1f" .ProfitTarget}}%</div>
-                                    <small class="text-muted">Objectif profit</small>
-                                </div>
-                            </div>
-
+                            <!-- Signal d'entrée (spécifique à l'algorithme) -->
                             <div class="mb-3">
-                                <strong>Planning :</strong>
-                                <code class="ms-2">{{.CronExpression}}</code>
+                                {{if eq .AlgorithmName "rsi_dca"}}
+                                    <span class="badge bg-primary">RSI DCA</span>
+                                    {{if .RSIThreshold}}
+                                    <span class="ms-1">Achat si RSI &lt; <strong>{{printf "%.0f" (derefFloat .RSIThreshold)}}</strong></span>
+                                    {{end}}
+                                    <span class="text-muted small ms-1">({{if .RSIPeriod}}{{derefInt .RSIPeriod}} bougies · {{end}}{{.RSITimeframe}})</span>
+                                {{else if eq .AlgorithmName "macd_cross"}}
+                                    <span class="badge bg-success">MACD Cross</span>
+                                    <span class="text-muted small ms-1">EMA {{.MACDFastPeriod}}/{{.MACDSlowPeriod}}, signal {{.MACDSignalPeriod}} · {{.MACDTimeframe}}</span>
+                                {{else}}
+                                    <span class="badge bg-secondary">{{.AlgorithmName}}</span>
+                                {{end}}
                             </div>
 
-                            {{if .LastExecutedAt}}
-                            <div class="text-muted">
-                                <small>Dernière exécution : {{timeAgo .LastExecutedAt}}</small>
+                            <!-- Paramètres clés -->
+                            <div class="row text-center g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="border rounded py-2 h-100">
+                                        {{if .DynamicSizingEnabled}}
+                                        <div class="fw-bold">{{printf "%.0f" (derefFloat .DynamicSizingMin)}}→{{printf "%.0f" (derefFloat .DynamicSizingMax)}} USDC</div>
+                                        <small class="text-muted">Montant (dynamique)</small>
+                                        {{else}}
+                                        <div class="fw-bold">{{printf "%.2f" .QuoteAmount}} USDC</div>
+                                        <small class="text-muted">Montant par ordre</small>
+                                        {{end}}
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded py-2 h-100">
+                                        <div class="fw-bold text-success">+{{printf "%.1f" .ProfitTarget}}%</div>
+                                        <small class="text-muted">Objectif profit</small>
+                                    </div>
+                                </div>
+                                {{if .TrailingStopDelta}}
+                                <div class="col-6">
+                                    <div class="border rounded py-2 h-100">
+                                        <div class="fw-bold">{{printf "%.2f" .TrailingStopDelta}}%</div>
+                                        <small class="text-muted">Trailing stop</small>
+                                    </div>
+                                </div>
+                                {{end}}
+                                <div class="col-6">
+                                    <div class="border rounded py-2 h-100">
+                                        <div class="fw-bold">{{.MaxConcurrentCycles}}</div>
+                                        <small class="text-muted">Cycles simultanés</small>
+                                    </div>
+                                </div>
                             </div>
-                            {{end}}
+
+                            <!-- Badges de fonctionnalités actives -->
+                            <div class="d-flex flex-wrap gap-1 mb-3">
+                                {{if .TrendFilterEnabled}}
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" title="Filtre de tendance EMA">
+                                    📉 Tendance EMA {{derefInt .TrendFilterFastPeriod}}/{{derefInt .TrendFilterSlowPeriod}} ({{.TrendFilterTimeframe}})
+                                </span>
+                                {{end}}
+                                {{if .DynamicSizingEnabled}}
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" title="Taille d'ordre dynamique">
+                                    📐 Taille dynamique ({{derefInt .DynamicSizingWindowDays}}j)
+                                </span>
+                                {{end}}
+                                {{if .VolatilityPeriod}}
+                                <span class="badge bg-light text-dark border" title="Ajustement de volatilité">
+                                    📊 Volatilité {{derefInt .VolatilityPeriod}}× {{.VolatilityTimeframe}}{{if .VolatilityAdjustment}} ({{printf "%.0f" (derefFloat .VolatilityAdjustment)}}%){{end}}
+                                </span>
+                                {{end}}
+                                {{if .SellOffset}}
+                                <span class="badge bg-light text-dark border" title="Offset de vente">
+                                    Offset vente {{printf "%.2f" .SellOffset}}%
+                                </span>
+                                {{end}}
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center text-muted small">
+                                <span><i class="fas fa-clock"></i> <code>{{.CronExpression}}</code></span>
+                                {{if .LastExecutedAt}}
+                                <span>{{timeAgo .LastExecutedAt}}</span>
+                                {{end}}
+                            </div>
                         </div>
                     </div>
                 </div>

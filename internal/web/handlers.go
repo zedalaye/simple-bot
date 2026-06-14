@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bot/internal/algorithms"
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"fmt"
@@ -18,6 +19,63 @@ import (
 
 // Variable globale pour le client bot
 var botClient *BotClient
+
+// Registre d'algorithmes pour valider les configurations de stratégie côté serveur,
+// avec exactement les mêmes règles que celles appliquées au runtime par le scheduler.
+var strategyRegistry = algorithms.NewAlgorithmRegistry()
+
+// validateStrategyForm valide une stratégie soumise via le formulaire web. Couvre
+// d'abord les champs communs, le filtre de tendance EMA (non couvert par les algos),
+// puis délègue la validation spécifique à l'algorithme (RSI/MACD + taille dynamique)
+// à son ValidateConfig pour garantir la parité avec le runtime.
+func validateStrategyForm(s database.Strategy) error {
+	// Champs de base communs à toutes les stratégies
+	if strings.TrimSpace(s.Name) == "" {
+		return fmt.Errorf("le nom de la stratégie est requis")
+	}
+	if strings.TrimSpace(s.CronExpression) == "" {
+		return fmt.Errorf("l'expression cron est requise")
+	}
+	if s.QuoteAmount <= 0 {
+		return fmt.Errorf("le montant par ordre doit être positif (reçu %.2f)", s.QuoteAmount)
+	}
+	if s.MaxConcurrentCycles < 1 {
+		return fmt.Errorf("le nombre de cycles simultanés doit être au moins 1 (reçu %d)", s.MaxConcurrentCycles)
+	}
+	if s.ProfitTarget <= 0 {
+		return fmt.Errorf("l'objectif de profit doit être positif (reçu %.2f)", s.ProfitTarget)
+	}
+	if s.TrailingStopDelta < 0 {
+		return fmt.Errorf("le trailing stop ne peut pas être négatif (reçu %.2f)", s.TrailingStopDelta)
+	}
+	if s.SellOffset < 0 {
+		return fmt.Errorf("l'offset de vente ne peut pas être négatif (reçu %.2f)", s.SellOffset)
+	}
+	if s.VolatilityPeriod != nil && *s.VolatilityPeriod <= 0 {
+		return fmt.Errorf("la période de volatilité doit être positive (reçu %d)", *s.VolatilityPeriod)
+	}
+
+	// Filtre de tendance EMA (si activé) — non couvert par les ValidateConfig des algos
+	if s.TrendFilterEnabled {
+		if s.TrendFilterFastPeriod == nil || s.TrendFilterSlowPeriod == nil {
+			return fmt.Errorf("les périodes EMA rapide et lente sont requises quand le filtre de tendance est activé")
+		}
+		if *s.TrendFilterFastPeriod <= 0 || *s.TrendFilterSlowPeriod <= 0 {
+			return fmt.Errorf("les périodes EMA du filtre de tendance doivent être positives")
+		}
+		if *s.TrendFilterFastPeriod >= *s.TrendFilterSlowPeriod {
+			return fmt.Errorf("l'EMA rapide (%d) doit être inférieure à l'EMA lente (%d)",
+				*s.TrendFilterFastPeriod, *s.TrendFilterSlowPeriod)
+		}
+	}
+
+	// Validation spécifique à l'algorithme (réutilise les règles du runtime)
+	algo, ok := strategyRegistry.Get(s.AlgorithmName)
+	if !ok {
+		return fmt.Errorf("algorithme inconnu : %q", s.AlgorithmName)
+	}
+	return algo.ValidateConfig(s)
+}
 
 // Fonctions helper pour les templates
 var templateFuncs = template.FuncMap{
@@ -74,6 +132,12 @@ var templateFuncs = template.FuncMap{
 		}
 		return 0
 	},
+	"derefInt": func(i *int) int {
+		if i != nil {
+			return *i
+		}
+		return 0
+	},
 }
 
 func createRenderer(rootDir string) multitemplate.Renderer {
@@ -86,9 +150,22 @@ func createRenderer(rootDir string) multitemplate.Renderer {
 		log.Fatalf("Failed to glob template files: %v", err)
 	}
 
+	// Séparer les partials (fichiers _*.html) des vues. Les partials ne sont pas
+	// des pages autonomes : ils sont ajoutés au parse-set de chaque vue pour être
+	// réutilisables via {{template "..."}}.
+	var partials []string
+	for _, viewFile := range viewFiles {
+		if strings.HasPrefix(filepath.Base(viewFile), "_") {
+			partials = append(partials, viewFile)
+		}
+	}
+
 	for _, viewFile := range viewFiles {
 		if viewFile == layoutPath {
 			continue // Skip the layout file itself
+		}
+		if strings.HasPrefix(filepath.Base(viewFile), "_") {
+			continue // Skip partials, registered alongside each view below
 		}
 
 		// Generate template name from file path (e.g., templates/orders/index.html -> orders_index)
@@ -101,8 +178,9 @@ func createRenderer(rootDir string) multitemplate.Renderer {
 		templateName := strings.ReplaceAll(strings.TrimSuffix(relPath, ".html"), "/", "_")
 		log.Printf("Registering template: %s for file %s", templateName, viewFile)
 
-		// Pair the view with the layout
-		r.AddFromFilesFuncs(templateName, templateFuncs, layoutPath, viewFile)
+		// Pair the view with the layout and all shared partials
+		files := append([]string{layoutPath, viewFile}, partials...)
+		r.AddFromFilesFuncs(templateName, templateFuncs, files...)
 	}
 
 	return r
@@ -236,10 +314,16 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 	// Create new strategy form
 	router.GET("/strategies/new", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "strategies_new", gin.H{
-			"title":      makeTitle(exchangeName, "Nouvelle Stratégie"),
-			"exchange":   exchangeName,
-			"active":     "strategies",
-			"algorithms": []string{"rsi_dca", "macd_cross"}, // Available algorithms
+			"title":       makeTitle(exchangeName, "Nouvelle Stratégie"),
+			"exchange":    exchangeName,
+			"active":      "strategies",
+			"algorithms":  []string{"rsi_dca", "macd_cross"}, // Available algorithms
+			"strategy":    &database.Strategy{},              // Stratégie vide : les placeholders et defaults du handler s'appliquent
+			"pageTitle":   "Nouvelle Stratégie",
+			"cardHeader":  "Configuration de la stratégie",
+			"formAction":  "/strategies",
+			"submitLabel": "Créer la stratégie",
+			"submitClass": "btn-success",
 		})
 	})
 
@@ -332,6 +416,41 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			trendFilterSlowPeriod = &val
 		}
 
+		// Taille dynamique (montant par ordre proportionnel à la profondeur de baisse)
+		dynamicSizingEnabled := c.PostForm("dynamic_sizing_enabled") == "on"
+		var dynamicSizingMin, dynamicSizingMax, dynamicSizingFullDrawdown *float64
+		var dynamicSizingWindowDays *int
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_min"), 64); err == nil && val > 0 {
+			dynamicSizingMin = &val
+		}
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_max"), 64); err == nil && val > 0 {
+			dynamicSizingMax = &val
+		}
+		if val, err := strconv.Atoi(c.PostForm("dynamic_sizing_window_days")); err == nil && val > 0 {
+			dynamicSizingWindowDays = &val
+		}
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_full_drawdown"), 64); err == nil && val > 0 {
+			dynamicSizingFullDrawdown = &val
+		}
+
+		// Valider la configuration avant insertion (parité avec le runtime)
+		if err := validateStrategyForm(database.Strategy{
+			Name: name, Description: description, Enabled: enabled,
+			AlgorithmName: algorithm, CronExpression: cron, QuoteAmount: quoteAmount,
+			MaxConcurrentCycles: int(concurrentCycles),
+			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
+			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
+			MACDFastPeriod: macdFastPeriod, MACDSlowPeriod: macdSlowPeriod, MACDSignalPeriod: macdSignalPeriod, MACDTimeframe: macdTimeframe,
+			BBPeriod: bbPeriod, BBMultiplier: bbMultiplier, BBTimeframe: bbTimeframe,
+			VolatilityPeriod: volatilityPeriod, VolatilityAdjustment: volatilityAdjustment, VolatilityTimeframe: volatilityTimeframe,
+			TrendFilterEnabled: trendFilterEnabled, TrendFilterFastPeriod: trendFilterFastPeriod, TrendFilterSlowPeriod: trendFilterSlowPeriod, TrendFilterTimeframe: trendFilterTimeframe,
+			DynamicSizingEnabled: dynamicSizingEnabled, DynamicSizingMin: dynamicSizingMin, DynamicSizingMax: dynamicSizingMax,
+			DynamicSizingWindowDays: dynamicSizingWindowDays, DynamicSizingFullDrawdown: dynamicSizingFullDrawdown,
+		}); err != nil {
+			handleError(c, "Erreur - Création Stratégie", "strategies", "Configuration invalide : "+err.Error())
+			return
+		}
+
 		// Use the new comprehensive method
 		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
@@ -340,6 +459,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
+			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
 			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
@@ -370,11 +490,16 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		}
 
 		c.HTML(http.StatusOK, "strategies_edit", gin.H{
-			"title":      makeTitle(exchangeName, "Modifier Stratégie"),
-			"exchange":   exchangeName,
-			"active":     "strategies",
-			"strategy":   strategy,
-			"algorithms": []string{"rsi_dca", "macd_cross"},
+			"title":       makeTitle(exchangeName, "Modifier Stratégie"),
+			"exchange":    exchangeName,
+			"active":      "strategies",
+			"strategy":    strategy,
+			"algorithms":  []string{"rsi_dca", "macd_cross"},
+			"pageTitle":   "Modification de la Stratégie",
+			"cardHeader":  "Édition de la stratégie",
+			"formAction":  fmt.Sprintf("/strategies/%d/update", strategy.ID),
+			"submitLabel": "Modifier la stratégie",
+			"submitClass": "btn-primary",
 		})
 	})
 
@@ -475,6 +600,41 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			trendFilterSlowPeriod = &val
 		}
 
+		// Taille dynamique (montant par ordre proportionnel à la profondeur de baisse)
+		dynamicSizingEnabled := c.PostForm("dynamic_sizing_enabled") == "on"
+		var dynamicSizingMin, dynamicSizingMax, dynamicSizingFullDrawdown *float64
+		var dynamicSizingWindowDays *int
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_min"), 64); err == nil && val > 0 {
+			dynamicSizingMin = &val
+		}
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_max"), 64); err == nil && val > 0 {
+			dynamicSizingMax = &val
+		}
+		if val, err := strconv.Atoi(c.PostForm("dynamic_sizing_window_days")); err == nil && val > 0 {
+			dynamicSizingWindowDays = &val
+		}
+		if val, err := strconv.ParseFloat(c.PostForm("dynamic_sizing_full_drawdown"), 64); err == nil && val > 0 {
+			dynamicSizingFullDrawdown = &val
+		}
+
+		// Valider la configuration avant mise à jour (parité avec le runtime)
+		if err := validateStrategyForm(database.Strategy{
+			Name: name, Description: description, Enabled: enabled,
+			AlgorithmName: algorithm, CronExpression: cron, QuoteAmount: quoteAmount,
+			MaxConcurrentCycles: int(concurrentCycles),
+			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
+			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
+			MACDFastPeriod: macdFastPeriod, MACDSlowPeriod: macdSlowPeriod, MACDSignalPeriod: macdSignalPeriod, MACDTimeframe: macdTimeframe,
+			BBPeriod: bbPeriod, BBMultiplier: bbMultiplier, BBTimeframe: bbTimeframe,
+			VolatilityPeriod: volatilityPeriod, VolatilityAdjustment: volatilityAdjustment, VolatilityTimeframe: volatilityTimeframe,
+			TrendFilterEnabled: trendFilterEnabled, TrendFilterFastPeriod: trendFilterFastPeriod, TrendFilterSlowPeriod: trendFilterSlowPeriod, TrendFilterTimeframe: trendFilterTimeframe,
+			DynamicSizingEnabled: dynamicSizingEnabled, DynamicSizingMin: dynamicSizingMin, DynamicSizingMax: dynamicSizingMax,
+			DynamicSizingWindowDays: dynamicSizingWindowDays, DynamicSizingFullDrawdown: dynamicSizingFullDrawdown,
+		}); err != nil {
+			handleError(c, "Erreur - Modification Stratégie", "strategies", "Configuration invalide : "+err.Error())
+			return
+		}
+
 		err = db.UpdateStrategy(strategyID, name, description, algorithm, cron, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
 			rsiThreshold, rsiPeriod, rsiTimeframe,
@@ -482,6 +642,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			bbPeriod, bbMultiplier, bbTimeframe,
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
+			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
 			int(concurrentCycles))
 		if err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())

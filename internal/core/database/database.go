@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -38,38 +39,45 @@ const (
 
 // Core data structures
 type Strategy struct {
-	ID                    int        `json:"id"`
-	Name                  string     `json:"name"`
-	Description           string     `json:"description"`
-	Enabled               bool       `json:"enabled"`
-	AlgorithmName         string     `json:"algorithm_name"`
-	CronExpression        string     `json:"cron_expression"`
-	QuoteAmount           float64    `json:"quote_amount"`
-	MaxConcurrentCycles   int        `json:"max_concurrent_cycles"`
-	RSIThreshold          *float64   `json:"rsi_threshold,omitempty"`
-	RSIPeriod             *int       `json:"rsi_period,omitempty"`
-	RSITimeframe          string     `json:"rsi_timeframe"`
-	MACDFastPeriod        int        `json:"macd_fast_period"`
-	MACDSlowPeriod        int        `json:"macd_slow_period"`
-	MACDSignalPeriod      int        `json:"macd_signal_period"`
-	MACDTimeframe         string     `json:"macd_timeframe"`
-	BBPeriod              int        `json:"bb_period"`
-	BBMultiplier          float64    `json:"bb_multiplier"`
-	BBTimeframe           string     `json:"bb_timeframe"`
-	ProfitTarget          float64    `json:"profit_target"`
-	TrailingStopDelta     float64    `json:"trailing_stop_delta"`
-	SellOffset            float64    `json:"sell_offset"`
-	VolatilityPeriod      *int       `json:"volatility_period,omitempty"`
-	VolatilityAdjustment  *float64   `json:"volatility_adjustment,omitempty"`
-	VolatilityTimeframe   string     `json:"volatility_timeframe"`
-	TrendFilterEnabled    bool       `json:"trend_filter_enabled"`
-	TrendFilterFastPeriod *int       `json:"trend_filter_fast_period,omitempty"`
-	TrendFilterSlowPeriod *int       `json:"trend_filter_slow_period,omitempty"`
-	TrendFilterTimeframe  string     `json:"trend_filter_timeframe"`
-	LastExecutedAt        *time.Time `json:"last_executed_at,omitempty"`
-	NextExecutionAt       *time.Time `json:"next_execution_at,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
+	ID                    int      `json:"id"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description"`
+	Enabled               bool     `json:"enabled"`
+	AlgorithmName         string   `json:"algorithm_name"`
+	CronExpression        string   `json:"cron_expression"`
+	QuoteAmount           float64  `json:"quote_amount"`
+	MaxConcurrentCycles   int      `json:"max_concurrent_cycles"`
+	RSIThreshold          *float64 `json:"rsi_threshold,omitempty"`
+	RSIPeriod             *int     `json:"rsi_period,omitempty"`
+	RSITimeframe          string   `json:"rsi_timeframe"`
+	MACDFastPeriod        int      `json:"macd_fast_period"`
+	MACDSlowPeriod        int      `json:"macd_slow_period"`
+	MACDSignalPeriod      int      `json:"macd_signal_period"`
+	MACDTimeframe         string   `json:"macd_timeframe"`
+	BBPeriod              int      `json:"bb_period"`
+	BBMultiplier          float64  `json:"bb_multiplier"`
+	BBTimeframe           string   `json:"bb_timeframe"`
+	ProfitTarget          float64  `json:"profit_target"`
+	TrailingStopDelta     float64  `json:"trailing_stop_delta"`
+	SellOffset            float64  `json:"sell_offset"`
+	VolatilityPeriod      *int     `json:"volatility_period,omitempty"`
+	VolatilityAdjustment  *float64 `json:"volatility_adjustment,omitempty"`
+	VolatilityTimeframe   string   `json:"volatility_timeframe"`
+	TrendFilterEnabled    bool     `json:"trend_filter_enabled"`
+	TrendFilterFastPeriod *int     `json:"trend_filter_fast_period,omitempty"`
+	TrendFilterSlowPeriod *int     `json:"trend_filter_slow_period,omitempty"`
+	TrendFilterTimeframe  string   `json:"trend_filter_timeframe"`
+	// Taille dynamique : montant par ordre proportionnel à la profondeur de baisse
+	// (petit ordre près des sommets, gros ordre au creux). Fallback sur QuoteAmount si désactivé.
+	DynamicSizingEnabled      bool       `json:"dynamic_sizing_enabled"`
+	DynamicSizingMin          *float64   `json:"dynamic_sizing_min,omitempty"`           // taille mini (USDT), près du sommet
+	DynamicSizingMax          *float64   `json:"dynamic_sizing_max,omitempty"`           // taille maxi (USDT), au plus profond
+	DynamicSizingWindowDays   *int       `json:"dynamic_sizing_window_days,omitempty"`   // fenêtre du plus-haut de référence (jours)
+	DynamicSizingFullDrawdown *float64   `json:"dynamic_sizing_full_drawdown,omitempty"` // profondeur (%) où la taille max est atteinte
+	LastExecutedAt            *time.Time `json:"last_executed_at,omitempty"`
+	NextExecutionAt           *time.Time `json:"next_execution_at,omitempty"`
+	CreatedAt                 time.Time  `json:"created_at"`
+	UpdatedAt                 time.Time  `json:"updated_at"`
 }
 
 type Order struct {
@@ -440,6 +448,30 @@ var migrations = []Migration{
 			ALTER TABLE strategies ADD COLUMN trend_filter_timeframe TEXT DEFAULT '1d';
 		`,
 	},
+	{
+		ID:   16,
+		Name: "add_dynamic_sizing_to_strategies",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN dynamic_sizing_enabled BOOLEAN DEFAULT 0;
+			ALTER TABLE strategies ADD COLUMN dynamic_sizing_min REAL DEFAULT 6;
+			ALTER TABLE strategies ADD COLUMN dynamic_sizing_max REAL DEFAULT 40;
+			ALTER TABLE strategies ADD COLUMN dynamic_sizing_window_days INTEGER DEFAULT 14;
+			ALTER TABLE strategies ADD COLUMN dynamic_sizing_full_drawdown REAL DEFAULT 25;
+		`,
+	},
+	{
+		// Rattrapage : sur les DB où l'ID 15 avait servi à une autre migration
+		// (create_trades_table), les colonnes trend_filter_* n'ont jamais été ajoutées.
+		// Migration idempotente (les erreurs "duplicate column" sont ignorées par le runner).
+		ID:   17,
+		Name: "ensure_trend_filter_columns",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN trend_filter_enabled BOOLEAN DEFAULT 0;
+			ALTER TABLE strategies ADD COLUMN trend_filter_fast_period INTEGER DEFAULT 20;
+			ALTER TABLE strategies ADD COLUMN trend_filter_slow_period INTEGER DEFAULT 50;
+			ALTER TABLE strategies ADD COLUMN trend_filter_timeframe TEXT DEFAULT '1d';
+		`,
+	},
 }
 
 // NewDB creates a new database connection and applies migrations
@@ -505,7 +537,14 @@ func (db *DB) applyMigrations() error {
 			logger.Infof("Applying migration %d: %s", migration.ID, migration.Name)
 			_, err := db.conn.Exec(migration.SQL)
 			if err != nil {
-				return fmt.Errorf("failed to apply migration %d (%s): %v", migration.ID, migration.Name, err)
+				// Les migrations additives (ADD COLUMN) doivent être idempotentes : si la
+				// colonne existe déjà (DB neuve passée par une migration équivalente, ou
+				// historique d'IDs divergent), on considère la migration comme appliquée.
+				if strings.Contains(err.Error(), "duplicate column name") {
+					logger.Warnf("Migration %d (%s) : colonne déjà présente, ignorée (%v)", migration.ID, migration.Name, err)
+				} else {
+					return fmt.Errorf("failed to apply migration %d (%s): %v", migration.ID, migration.Name, err)
+				}
 			}
 			_, err = db.conn.Exec(`INSERT INTO migrations (id, name) VALUES (?, ?);`, migration.ID, migration.Name)
 			if err != nil {

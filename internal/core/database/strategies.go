@@ -13,6 +13,7 @@ const strategyColumns = `
 	bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 	volatility_period, volatility_adjustment, volatility_timeframe,
 	trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
+	dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
 	last_executed_at, next_execution_at, created_at, updated_at`
 
 // rowScanner est implémenté par *sql.Row et *sql.Rows
@@ -29,6 +30,8 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 	var volatilityPeriod sql.NullInt64
 	var volatilityAdjustment sql.NullFloat64
 	var trendFilterFastPeriod, trendFilterSlowPeriod sql.NullInt64
+	var dynamicSizingMin, dynamicSizingMax, dynamicSizingFullDrawdown sql.NullFloat64
+	var dynamicSizingWindowDays sql.NullInt64
 
 	err := row.Scan(
 		&s.ID, &s.Name, &s.Description, &s.Enabled,
@@ -38,6 +41,7 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 		&s.ProfitTarget, &s.TrailingStopDelta, &s.SellOffset,
 		&volatilityPeriod, &volatilityAdjustment, &s.VolatilityTimeframe,
 		&s.TrendFilterEnabled, &trendFilterFastPeriod, &trendFilterSlowPeriod, &s.TrendFilterTimeframe,
+		&s.DynamicSizingEnabled, &dynamicSizingMin, &dynamicSizingMax, &dynamicSizingWindowDays, &dynamicSizingFullDrawdown,
 		&lastExecutedAt, &nextExecutionAt, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
@@ -65,6 +69,19 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 	if trendFilterSlowPeriod.Valid {
 		period := int(trendFilterSlowPeriod.Int64)
 		s.TrendFilterSlowPeriod = &period
+	}
+	if dynamicSizingMin.Valid {
+		s.DynamicSizingMin = &dynamicSizingMin.Float64
+	}
+	if dynamicSizingMax.Valid {
+		s.DynamicSizingMax = &dynamicSizingMax.Float64
+	}
+	if dynamicSizingWindowDays.Valid {
+		days := int(dynamicSizingWindowDays.Int64)
+		s.DynamicSizingWindowDays = &days
+	}
+	if dynamicSizingFullDrawdown.Valid {
+		s.DynamicSizingFullDrawdown = &dynamicSizingFullDrawdown.Float64
 	}
 	if lastExecutedAt.Valid {
 		s.LastExecutedAt = &lastExecutedAt.Time
@@ -209,6 +226,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
+	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
 	concurrentCycles int) error {
 
 	// Check if strategy exists
@@ -248,8 +266,9 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 			profit_target, trailing_stop_delta, sell_offset,
 			volatility_period, volatility_adjustment, volatility_timeframe,
 			trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
+			dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
 			max_concurrent_cycles
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, quoteAmount,
@@ -259,6 +278,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 		profitTarget, trailingStopDelta, sellOffset,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
+		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
 		concurrentCycles)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
@@ -275,6 +295,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	bbPeriod int, bbMultiplier float64, bbTimeframe string,
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
+	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
 	maxConcurrentCycles int) error {
 
 	// Set defaults for timeframes if empty
@@ -322,6 +343,11 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			trend_filter_fast_period = ?,
 			trend_filter_slow_period = ?,
 			trend_filter_timeframe = ?,
+			dynamic_sizing_enabled = ?,
+			dynamic_sizing_min = ?,
+			dynamic_sizing_max = ?,
+			dynamic_sizing_window_days = ?,
+			dynamic_sizing_full_drawdown = ?,
 			max_concurrent_cycles = ?,
 			updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
@@ -334,6 +360,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		bbPeriod, bbMultiplier, bbTimeframe,
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
+		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
 		maxConcurrentCycles, id)
 
 	return err

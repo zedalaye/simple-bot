@@ -1,0 +1,511 @@
+{{define "strategy_form"}}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>{{.pageTitle}}</h1>
+                <a href="/strategies" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Retour
+                </a>
+            </div>
+
+            <div class="row justify-content-center">
+                <div class="col-lg-10">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">{{.cardHeader}}</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="POST" action="{{.formAction}}" id="strategy-form" novalidate>
+                                <div id="form-errors" class="alert alert-danger d-none" role="alert"></div>
+                                <!-- Basic Strategy Info -->
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="name" class="form-label">Nom de la stratégie *</label>
+                                        <input type="text" class="form-control" id="name" name="name" value="{{.strategy.Name}}" required
+                                               placeholder="ex: Scalping Agressif">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="algorithm" class="form-label">Algorithme *</label>
+                                        <select class="form-select" id="algorithm" name="algorithm" required onchange="updateAlgorithmFields()">
+                                            <option value="">Sélectionner un algorithme</option>
+                                            <option value="rsi_dca" {{if eq .strategy.AlgorithmName "rsi_dca"}}selected{{end}}>RSI DCA (Dollar Cost Averaging)</option>
+                                            <option value="macd_cross" {{if eq .strategy.AlgorithmName "macd_cross"}}selected{{end}}>MACD Crossover</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Statut</label>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {{if .strategy.Enabled}}checked{{end}}>
+                                            <label class="form-check-label" for="enabled">
+                                                Stratégie activée
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="2"
+                                              placeholder="Description de la stratégie...">{{.strategy.Description}}</textarea>
+                                </div>
+
+                                <!-- Scheduling & Basic Config -->
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="cron" class="form-label">Expression Cron *</label>
+                                        <input type="text" class="form-control" id="cron" name="cron" value="{{.strategy.CronExpression}}" required
+                                               placeholder="0 */4 * * *" onchange="updateCronDescription()">
+                                        <div class="form-text" id="cron-description">Format: minute heure jour mois jour-semaine</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="quote_amount" class="form-label">Montant par ordre (USDC) *</label>
+                                        <input type="number" step="0.01" class="form-control" id="quote_amount" name="quote_amount"
+                                               {{if .strategy.QuoteAmount}}value="{{.strategy.QuoteAmount}}"{{end}} required placeholder="25.00">
+                                        <div class="form-text">Montant investi par ordre</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="concurrent_cycles" class="form-label">Cycles simultanés max *</label>
+                                        <input type="number" step="1" class="form-control" id="concurrent_cycles" name="concurrent_cycles"
+                                               value="{{if .strategy.MaxConcurrentCycles}}{{.strategy.MaxConcurrentCycles}}{{else}}1{{end}}" required placeholder="1">
+                                        <div class="form-text">Limite de cycles ouverts en même temps</div>
+                                    </div>
+                                </div>
+
+                                <!-- Profit & Risk Settings -->
+                                <h6 class="text-secondary mb-3">📈 Paramètres de Profit et Risque</h6>
+                                <div class="row mb-4">
+                                    <div class="col-md-4">
+                                        <label for="profit_target" class="form-label">Objectif profit (%) *</label>
+                                        <input type="number" step="0.1" class="form-control" id="profit_target" name="profit_target"
+                                               {{if .strategy.ProfitTarget}}value="{{.strategy.ProfitTarget}}"{{end}} required placeholder="2.0">
+                                        <div class="form-text">Profit visé par cycle</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trailing_stop_delta" class="form-label">Trailing Stop (%)</label>
+                                        <input type="number" step="0.01" class="form-control" id="trailing_stop_delta" name="trailing_stop_delta"
+                                               {{if .strategy.TrailingStopDelta}}value="{{.strategy.TrailingStopDelta}}"{{end}} placeholder="0.1">
+                                        <div class="form-text">Protection contre les chutes</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="sell_offset" class="form-label">Offset vente (%)</label>
+                                        <input type="number" step="0.01" class="form-control" id="sell_offset" name="sell_offset"
+                                               {{if .strategy.SellOffset}}value="{{.strategy.SellOffset}}"{{end}} placeholder="0.1">
+                                        <div class="form-text">Marge de sécurité pour la vente</div>
+                                    </div>
+                                </div>
+
+                                <!-- Volatility Settings (Common to all algorithms) -->
+                                <h6 class="text-secondary mb-3">📊 Paramètres de Volatilité</h6>
+                                <div class="row mb-4">
+                                    <div class="col-md-4">
+                                        <label for="volatility_period" class="form-label">Période volatilité</label>
+                                        <input type="number" class="form-control" id="volatility_period" name="volatility_period"
+                                               {{if .strategy.VolatilityPeriod}}value="{{.strategy.VolatilityPeriod}}"{{end}} placeholder="7">
+                                        <div class="form-text">Nombre de bougies pour le calcul</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="volatility_adjustment" class="form-label">Ajustement volatilité (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="volatility_adjustment" name="volatility_adjustment"
+                                               {{if .strategy.VolatilityAdjustment}}value="{{.strategy.VolatilityAdjustment}}"{{end}} placeholder="50.0">
+                                        <div class="form-text">Facteur d'ajustement basé sur la volatilité</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="volatility_timeframe" class="form-label">Timeframe volatilité</label>
+                                        <select class="form-select" id="volatility_timeframe" name="volatility_timeframe">
+                                            <option value="1m" {{if eq .strategy.VolatilityTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                            <option value="5m" {{if eq .strategy.VolatilityTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                            <option value="15m" {{if eq .strategy.VolatilityTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                            <option value="1h" {{if eq .strategy.VolatilityTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                            <option value="4h" {{if or (eq .strategy.VolatilityTimeframe "4h") (eq .strategy.VolatilityTimeframe "")}}selected{{end}}>4 heures</option>
+                                            <option value="1d" {{if eq .strategy.VolatilityTimeframe "1d"}}selected{{end}}>1 jour</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Trend Filter Settings -->
+                                <h6 class="text-info mb-3">📉 Filtre de Tendance EMA</h6>
+                                <div class="row mb-2">
+                                    <div class="col-12">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="trend_filter_enabled" name="trend_filter_enabled"
+                                                   {{if .strategy.TrendFilterEnabled}}checked{{end}} onchange="toggleTrendFilter()">
+                                            <label class="form-check-label" for="trend_filter_enabled">
+                                                Activer le filtre de tendance (bloque les achats si EMA rapide &lt; EMA lente)
+                                            </label>
+                                        </div>
+                                        <div class="form-text">N'achète que si la tendance est haussière ou neutre. Évite d'attraper un couteau qui tombe.</div>
+                                    </div>
+                                </div>
+                                <div id="trend-filter-fields" class="row mb-4" style="display: none;">
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_fast_period" class="form-label">Période EMA rapide</label>
+                                        <input type="number" class="form-control" id="trend_filter_fast_period" name="trend_filter_fast_period"
+                                               {{if .strategy.TrendFilterFastPeriod}}value="{{.strategy.TrendFilterFastPeriod}}"{{end}} placeholder="20">
+                                        <div class="form-text">EMA court terme (20 = standard)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_slow_period" class="form-label">Période EMA lente</label>
+                                        <input type="number" class="form-control" id="trend_filter_slow_period" name="trend_filter_slow_period"
+                                               {{if .strategy.TrendFilterSlowPeriod}}value="{{.strategy.TrendFilterSlowPeriod}}"{{end}} placeholder="50">
+                                        <div class="form-text">EMA long terme (50 = standard)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trend_filter_timeframe" class="form-label">Timeframe</label>
+                                        <select class="form-select" id="trend_filter_timeframe" name="trend_filter_timeframe">
+                                            <option value="1h" {{if eq .strategy.TrendFilterTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                            <option value="4h" {{if eq .strategy.TrendFilterTimeframe "4h"}}selected{{end}}>4 heures</option>
+                                            <option value="1d" {{if or (eq .strategy.TrendFilterTimeframe "1d") (eq .strategy.TrendFilterTimeframe "")}}selected{{end}}>1 jour (recommandé)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Dynamic Sizing Settings -->
+                                <h6 class="text-info mb-3">📐 Taille dynamique</h6>
+                                <div class="row mb-2">
+                                    <div class="col-12">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="dynamic_sizing_enabled" name="dynamic_sizing_enabled"
+                                                   {{if .strategy.DynamicSizingEnabled}}checked{{end}} onchange="toggleDynamicSizing()">
+                                            <label class="form-check-label" for="dynamic_sizing_enabled">
+                                                Activer la taille d'ordre dynamique (petit ordre au sommet, gros ordre au creux)
+                                            </label>
+                                        </div>
+                                        <div class="form-text">Le montant par ordre suit la profondeur de la baisse depuis le plus-haut récent. Réserve les munitions pour les creux. Si désactivé, le « Montant par ordre » fixe est utilisé.</div>
+                                    </div>
+                                </div>
+                                <div id="dynamic-sizing-fields" class="row mb-4" style="display: none;">
+                                    <div class="col-md-3">
+                                        <label for="dynamic_sizing_min" class="form-label">Taille mini (USDC)</label>
+                                        <input type="number" step="0.1" class="form-control" id="dynamic_sizing_min" name="dynamic_sizing_min"
+                                               {{if .strategy.DynamicSizingMin}}value="{{.strategy.DynamicSizingMin}}"{{end}} placeholder="6">
+                                        <div class="form-text">Près des sommets récents</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="dynamic_sizing_max" class="form-label">Taille maxi (USDC)</label>
+                                        <input type="number" step="0.1" class="form-control" id="dynamic_sizing_max" name="dynamic_sizing_max"
+                                               {{if .strategy.DynamicSizingMax}}value="{{.strategy.DynamicSizingMax}}"{{end}} placeholder="40">
+                                        <div class="form-text">Au plus profond de la baisse</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="dynamic_sizing_window_days" class="form-label">Fenêtre (jours)</label>
+                                        <input type="number" class="form-control" id="dynamic_sizing_window_days" name="dynamic_sizing_window_days"
+                                               {{if .strategy.DynamicSizingWindowDays}}value="{{.strategy.DynamicSizingWindowDays}}"{{end}} placeholder="14">
+                                        <div class="form-text">Plus-haut de référence (14 recommandé)</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="dynamic_sizing_full_drawdown" class="form-label">Profondeur pleine (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="dynamic_sizing_full_drawdown" name="dynamic_sizing_full_drawdown"
+                                               {{if .strategy.DynamicSizingFullDrawdown}}value="{{.strategy.DynamicSizingFullDrawdown}}"{{end}} placeholder="25">
+                                        <div class="form-text">Baisse où la taille max est atteinte</div>
+                                    </div>
+                                </div>
+
+                                <!-- RSI Specific Fields -->
+                                <div id="rsi-fields" style="display: none;">
+                                    <h6 class="text-primary mb-3">📈 Paramètres RSI</h6>
+                                    <div class="row mb-4">
+                                        <div class="col-md-4">
+                                            <label for="rsi_threshold" class="form-label">Seuil RSI</label>
+                                            <input type="number" step="0.1" class="form-control" id="rsi_threshold" name="rsi_threshold"
+                                                   {{if .strategy.RSIThreshold}}value="{{.strategy.RSIThreshold}}"{{end}} placeholder="30.0">
+                                            <div class="form-text">RSI < seuil = signal d'achat</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="rsi_period" class="form-label">Période RSI</label>
+                                            <input type="number" class="form-control" id="rsi_period" name="rsi_period"
+                                                   {{if .strategy.RSIPeriod}}value="{{.strategy.RSIPeriod}}"{{end}} placeholder="14">
+                                            <div class="form-text">Nombre de bougies (14 = standard)</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="rsi_timeframe" class="form-label">Timeframe RSI</label>
+                                            <select class="form-select" id="rsi_timeframe" name="rsi_timeframe">
+                                                <option value="1m" {{if eq .strategy.RSITimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.RSITimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.RSITimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if eq .strategy.RSITimeframe "1h"}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if or (eq .strategy.RSITimeframe "4h") (eq .strategy.RSITimeframe "")}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.RSITimeframe "1d"}}selected{{end}}>1 jour</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- MACD Specific Fields -->
+                                <div id="macd-fields" style="display: none;">
+                                    <h6 class="text-success mb-3">📊 Paramètres MACD</h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-3">
+                                            <label for="macd_fast_period" class="form-label">EMA Rapide</label>
+                                            <input type="number" class="form-control" id="macd_fast_period" name="macd_fast_period"
+                                                   {{if .strategy.MACDFastPeriod}}value="{{.strategy.MACDFastPeriod}}"{{end}} placeholder="12">
+                                            <div class="form-text">Période EMA rapide</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="macd_slow_period" class="form-label">EMA Lente</label>
+                                            <input type="number" class="form-control" id="macd_slow_period" name="macd_slow_period"
+                                                   {{if .strategy.MACDSlowPeriod}}value="{{.strategy.MACDSlowPeriod}}"{{end}} placeholder="26">
+                                            <div class="form-text">Période EMA lente</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="macd_signal_period" class="form-label">Ligne de signal</label>
+                                            <input type="number" class="form-control" id="macd_signal_period" name="macd_signal_period"
+                                                   {{if .strategy.MACDSignalPeriod}}value="{{.strategy.MACDSignalPeriod}}"{{end}} placeholder="9">
+                                            <div class="form-text">Période ligne de signal</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label for="macd_timeframe" class="form-label">Timeframe MACD</label>
+                                            <select class="form-select" id="macd_timeframe" name="macd_timeframe">
+                                                <option value="1m" {{if eq .strategy.MACDTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.MACDTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.MACDTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if eq .strategy.MACDTimeframe "1h"}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if or (eq .strategy.MACDTimeframe "4h") (eq .strategy.MACDTimeframe "")}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.MACDTimeframe "1d"}}selected{{end}}>1 jour</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Bollinger Bands Fields (hidden by default, could be used by future algorithms) -->
+                                <div id="bb-fields" style="display: none;">
+                                    <h6 class="text-warning mb-3">📊 Paramètres Bollinger Bands</h6>
+                                    <div class="row mb-4">
+                                        <div class="col-md-4">
+                                            <label for="bb_period" class="form-label">Période BB</label>
+                                            <input type="number" class="form-control" id="bb_period" name="bb_period"
+                                                   {{if .strategy.BBPeriod}}value="{{.strategy.BBPeriod}}"{{end}} placeholder="20">
+                                            <div class="form-text">Nombre de périodes pour la moyenne mobile</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="bb_multiplier" class="form-label">Multiplicateur BB</label>
+                                            <input type="number" step="0.1" class="form-control" id="bb_multiplier" name="bb_multiplier"
+                                                   {{if .strategy.BBMultiplier}}value="{{.strategy.BBMultiplier}}"{{end}} placeholder="2.0">
+                                            <div class="form-text">Écart-type multiplié par ce facteur</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="bb_timeframe" class="form-label">Timeframe BB</label>
+                                            <select class="form-select" id="bb_timeframe" name="bb_timeframe">
+                                                <option value="1m" {{if eq .strategy.BBTimeframe "1m"}}selected{{end}}>1 minute</option>
+                                                <option value="5m" {{if eq .strategy.BBTimeframe "5m"}}selected{{end}}>5 minutes</option>
+                                                <option value="15m" {{if eq .strategy.BBTimeframe "15m"}}selected{{end}}>15 minutes</option>
+                                                <option value="1h" {{if or (eq .strategy.BBTimeframe "1h") (eq .strategy.BBTimeframe "")}}selected{{end}}>1 heure</option>
+                                                <option value="4h" {{if eq .strategy.BBTimeframe "4h"}}selected{{end}}>4 heures</option>
+                                                <option value="1d" {{if eq .strategy.BBTimeframe "1d"}}selected{{end}}>1 jour</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Submit -->
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                                    <button type="button" class="btn btn-outline-secondary me-md-2" onclick="window.history.back()">Annuler</button>
+                                    <button type="submit" class="btn {{.submitClass}}">
+                                        <i class="fas fa-save"></i> {{.submitLabel}}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateAlgorithmFields() {
+    const algorithm = document.getElementById('algorithm').value;
+    const rsiFields = document.getElementById('rsi-fields');
+    const macdFields = document.getElementById('macd-fields');
+    const bbFields = document.getElementById('bb-fields');
+
+    // Hide all algorithm-specific fields
+    rsiFields.style.display = 'none';
+    macdFields.style.display = 'none';
+    bbFields.style.display = 'none';
+
+    // Show relevant fields based on selected algorithm
+    if (algorithm === 'rsi_dca') {
+        rsiFields.style.display = 'block';
+    } else if (algorithm === 'macd_cross') {
+        macdFields.style.display = 'block';
+    }
+    // BB fields could be shown for a future bollinger bands algorithm
+}
+
+function updateCronDescription() {
+    const cron = document.getElementById('cron').value;
+    const description = document.getElementById('cron-description');
+
+    if (!cron.trim()) {
+        description.textContent = 'Format: minute heure jour mois jour-semaine';
+        description.className = 'form-text text-muted';
+        return;
+    }
+
+    try {
+        // Utiliser cronstrue pour traduire l'expression cron
+        if (typeof cronstrue !== 'undefined') {
+            const translatedCron = cronstrue.toString(cron, {
+                locale: 'fr',
+                throwExceptionOnParseError: true,
+                verbose: false,
+                dayOfWeekStartIndexZero: true
+            });
+            description.textContent = translatedCron;
+            description.className = 'form-text text-success';
+        } else {
+            // Fallback si cronstrue n'est pas chargé
+            description.textContent = 'Expression cron valide';
+            description.className = 'form-text text-success';
+        }
+    } catch (err) {
+        // Expression cron invalide
+        description.textContent = 'Expression cron invalide - Format: minute heure jour mois jour-semaine';
+        description.className = 'form-text text-danger';
+    }
+}
+
+function toggleTrendFilter() {
+    const enabled = document.getElementById('trend_filter_enabled').checked;
+    document.getElementById('trend-filter-fields').style.display = enabled ? 'flex' : 'none';
+}
+
+function toggleDynamicSizing() {
+    const enabled = document.getElementById('dynamic_sizing_enabled').checked;
+    document.getElementById('dynamic-sizing-fields').style.display = enabled ? 'flex' : 'none';
+}
+
+// Lecture d'un champ numérique : retourne null si vide, sinon le nombre parsé
+function numVal(id) {
+    const v = document.getElementById(id).value.trim();
+    return v === '' ? null : parseFloat(v);
+}
+function intVal(id) {
+    const v = document.getElementById(id).value.trim();
+    return v === '' ? null : parseInt(v, 10);
+}
+
+// Validation côté client, miroir de validateStrategyForm() côté serveur.
+// Ne contrôle que les sections visibles/actives pour rester cohérent avec ce qui est soumis.
+function validateStrategyForm() {
+    const errors = [];
+    const algorithm = document.getElementById('algorithm').value;
+
+    // Champs de base communs
+    if (!document.getElementById('name').value.trim()) {
+        errors.push("Le nom de la stratégie est requis.");
+    }
+    if (!document.getElementById('cron').value.trim()) {
+        errors.push("L'expression cron est requise.");
+    }
+    const quote = numVal('quote_amount');
+    if (quote === null || quote <= 0) {
+        errors.push("Le montant par ordre doit être positif.");
+    }
+    const cycles = intVal('concurrent_cycles');
+    if (cycles === null || cycles < 1) {
+        errors.push("Le nombre de cycles simultanés doit être au moins 1.");
+    }
+    const profit = numVal('profit_target');
+    if (profit === null || profit <= 0) {
+        errors.push("L'objectif de profit doit être positif.");
+    }
+    const trailing = numVal('trailing_stop_delta');
+    if (trailing !== null && trailing < 0) {
+        errors.push("Le trailing stop ne peut pas être négatif.");
+    }
+    const sellOffset = numVal('sell_offset');
+    if (sellOffset !== null && sellOffset < 0) {
+        errors.push("L'offset de vente ne peut pas être négatif.");
+    }
+    const volPeriod = intVal('volatility_period');
+    if (volPeriod !== null && volPeriod <= 0) {
+        errors.push("La période de volatilité doit être positive.");
+    }
+
+    // Validation spécifique à l'algorithme
+    if (algorithm === 'rsi_dca') {
+        const rsiThresh = numVal('rsi_threshold');
+        if (rsiThresh === null) {
+            errors.push("Le seuil RSI est requis pour l'algorithme RSI DCA.");
+        } else if (rsiThresh < 0 || rsiThresh > 100) {
+            errors.push("Le seuil RSI doit être compris entre 0 et 100.");
+        }
+        const rsiPeriod = intVal('rsi_period');
+        if (rsiPeriod === null) {
+            errors.push("La période RSI est requise pour l'algorithme RSI DCA.");
+        } else if (rsiPeriod <= 0) {
+            errors.push("La période RSI doit être positive.");
+        }
+    } else if (algorithm === 'macd_cross') {
+        const fast = intVal('macd_fast_period');
+        const slow = intVal('macd_slow_period');
+        const signal = intVal('macd_signal_period');
+        if (fast === null || fast <= 0) errors.push("L'EMA rapide MACD doit être positive.");
+        if (slow === null || slow <= 0) errors.push("L'EMA lente MACD doit être positive.");
+        if (signal === null || signal <= 0) errors.push("La ligne de signal MACD doit être positive.");
+        if (fast !== null && slow !== null && fast >= slow) {
+            errors.push("L'EMA rapide MACD doit être inférieure à l'EMA lente.");
+        }
+    } else {
+        errors.push("Veuillez sélectionner un algorithme.");
+    }
+
+    // Filtre de tendance EMA (si activé)
+    if (document.getElementById('trend_filter_enabled').checked) {
+        const fast = intVal('trend_filter_fast_period');
+        const slow = intVal('trend_filter_slow_period');
+        if (fast === null || slow === null) {
+            errors.push("Les périodes EMA rapide et lente sont requises quand le filtre de tendance est activé.");
+        } else {
+            if (fast <= 0 || slow <= 0) errors.push("Les périodes EMA du filtre de tendance doivent être positives.");
+            if (fast >= slow) errors.push("L'EMA rapide du filtre de tendance doit être inférieure à l'EMA lente.");
+        }
+    }
+
+    // Taille dynamique (si activée)
+    if (document.getElementById('dynamic_sizing_enabled').checked) {
+        const min = numVal('dynamic_sizing_min');
+        const max = numVal('dynamic_sizing_max');
+        const windowDays = intVal('dynamic_sizing_window_days');
+        const drawdown = numVal('dynamic_sizing_full_drawdown');
+        if (min === null || max === null || windowDays === null || drawdown === null) {
+            errors.push("Tous les paramètres de taille dynamique (mini, maxi, fenêtre, profondeur) sont requis quand elle est activée.");
+        } else {
+            if (min <= 0) errors.push("La taille mini dynamique doit être positive.");
+            if (max < min) errors.push("La taille maxi dynamique doit être supérieure ou égale à la taille mini.");
+            if (windowDays <= 0) errors.push("La fenêtre de taille dynamique doit être positive.");
+            if (drawdown <= 0 || drawdown > 100) errors.push("La profondeur pleine de taille dynamique doit être comprise entre 0 et 100.");
+        }
+    }
+
+    return errors;
+}
+
+// Affiche les erreurs et bloque la soumission le cas échéant
+function onStrategySubmit(event) {
+    const errors = validateStrategyForm();
+    const box = document.getElementById('form-errors');
+    if (errors.length > 0) {
+        event.preventDefault();
+        box.innerHTML = '<strong>Configuration invalide :</strong><ul class="mb-0 mt-2">' +
+            errors.map(e => '<li>' + e + '</li>').join('') + '</ul>';
+        box.classList.remove('d-none');
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+        box.classList.add('d-none');
+    }
+}
+
+// Initialize fields display on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateAlgorithmFields();
+    updateCronDescription();
+    toggleTrendFilter();
+    toggleDynamicSizing();
+    document.getElementById('strategy-form').addEventListener('submit', onStrategySubmit);
+});
+</script>
+{{end}}

@@ -45,6 +45,27 @@ func (a *RSI_DCA) ValidateConfig(strategy database.Strategy) error {
 		return fmt.Errorf("volatility_period must be positive, got %d", *strategy.VolatilityPeriod)
 	}
 
+	// Validation de la taille dynamique (uniquement si activée)
+	if strategy.DynamicSizingEnabled {
+		if strategy.DynamicSizingMin == nil || strategy.DynamicSizingMax == nil ||
+			strategy.DynamicSizingWindowDays == nil || strategy.DynamicSizingFullDrawdown == nil {
+			return fmt.Errorf("dynamic_sizing parameters (min, max, window_days, full_drawdown) are required when dynamic sizing is enabled")
+		}
+		if *strategy.DynamicSizingMin <= 0 {
+			return fmt.Errorf("dynamic_sizing_min must be positive, got %.2f", *strategy.DynamicSizingMin)
+		}
+		if *strategy.DynamicSizingMax < *strategy.DynamicSizingMin {
+			return fmt.Errorf("dynamic_sizing_max (%.2f) must be >= dynamic_sizing_min (%.2f)",
+				*strategy.DynamicSizingMax, *strategy.DynamicSizingMin)
+		}
+		if *strategy.DynamicSizingWindowDays <= 0 {
+			return fmt.Errorf("dynamic_sizing_window_days must be positive, got %d", *strategy.DynamicSizingWindowDays)
+		}
+		if *strategy.DynamicSizingFullDrawdown <= 0 || *strategy.DynamicSizingFullDrawdown > 100 {
+			return fmt.Errorf("dynamic_sizing_full_drawdown must be between 0 and 100, got %.2f", *strategy.DynamicSizingFullDrawdown)
+		}
+	}
+
 	return nil
 }
 
@@ -141,9 +162,12 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 	targetPrice := limitPrice * (1.0 + dynamicProfitPercent)
 	targetPrice = RoundPrice(targetPrice, ctx.Precision)
 
+	// Montant par ordre : fixe (QuoteAmount) ou dynamique selon la profondeur de baisse
+	quoteAmount := a.calculateDynamicQuoteAmount(ctx, strategy)
+
 	// Calculate amount to buy and round UP according to market precision
 	// This ensures the order value meets the minimum quote amount requirement
-	baseAmount := strategy.QuoteAmount / limitPrice
+	baseAmount := quoteAmount / limitPrice
 	baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%%, TargetPrice=%.4f",
@@ -157,6 +181,57 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		Reason: fmt.Sprintf("RSI %.2f < %.2f, Volatility=%.2f%%, DynamicProfitTarget=%.2f%%",
 			rsi, *strategy.RSIThreshold, volatility, dynamicProfitPercent*100.0),
 	}, nil
+}
+
+// calculateDynamicQuoteAmount calcule le montant par ordre (USDT) en fonction de la
+// profondeur de baisse depuis le plus-haut récent : petit ordre près des sommets,
+// gros ordre au creux. Retourne strategy.QuoteAmount en fallback si désactivé ou en cas d'erreur.
+func (a *RSI_DCA) calculateDynamicQuoteAmount(ctx TradingContext, strategy database.Strategy) float64 {
+	if !strategy.DynamicSizingEnabled {
+		return strategy.QuoteAmount
+	}
+
+	// Paramètres requis, sinon fallback (même logique de tolérance que le filtre de tendance)
+	if strategy.DynamicSizingMin == nil || strategy.DynamicSizingMax == nil ||
+		strategy.DynamicSizingWindowDays == nil || strategy.DynamicSizingFullDrawdown == nil {
+		logger.Warnf("[%s] RSI_DCA: Taille dynamique activée mais paramètres incomplets, fallback sur QuoteAmount (%.2f)",
+			ctx.ExchangeName, strategy.QuoteAmount)
+		return strategy.QuoteAmount
+	}
+
+	sizeMin := *strategy.DynamicSizingMin
+	sizeMax := *strategy.DynamicSizingMax
+	windowDays := *strategy.DynamicSizingWindowDays
+	fullDrawdown := *strategy.DynamicSizingFullDrawdown / 100.0 // % -> fraction
+
+	// Plus-haut de référence sur la fenêtre (bougies journalières)
+	recentHigh, err := ctx.Calculator.CalculateRecentHigh(ctx.Pair, "1d", windowDays)
+	if err != nil {
+		logger.Warnf("[%s] RSI_DCA: Taille dynamique - échec calcul plus-haut, fallback sur QuoteAmount (%.2f): %v",
+			ctx.ExchangeName, strategy.QuoteAmount, err)
+		return strategy.QuoteAmount
+	}
+
+	// Profondeur de baisse depuis le sommet (bornée >= 0)
+	drawdown := 0.0
+	if recentHigh > 0 && recentHigh > ctx.CurrentPrice {
+		drawdown = (recentHigh - ctx.CurrentPrice) / recentHigh
+	}
+
+	// Interpolation linéaire : sizeMin au sommet (drawdown 0), sizeMax à fullDrawdown et au-delà
+	factor := 0.0
+	if fullDrawdown > 0 {
+		factor = drawdown / fullDrawdown
+	}
+	if factor > 1.0 {
+		factor = 1.0
+	}
+	quoteAmount := sizeMin + (sizeMax-sizeMin)*factor
+
+	logger.Infof("[%s] RSI_DCA: Taille dynamique - PlusHaut(%dj)=%.2f, Prix=%.2f, Drawdown=%.2f%%, Taille=%.2f USDT",
+		ctx.ExchangeName, windowDays, recentHigh, ctx.CurrentPrice, drawdown*100.0, quoteAmount)
+
+	return quoteAmount
 }
 
 // ShouldSell determines if we should sell a position
@@ -198,18 +273,23 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 // GetParameterHints returns hints for configuring this algorithm
 func (a *RSI_DCA) GetParameterHints() map[string]string {
 	return map[string]string{
-		"rsi_threshold":            "RSI threshold for buy signals (30-70 typical range)",
-		"rsi_period":               "RSI calculation period (14 is standard)",
-		"rsi_timeframe":            "Timeframe for RSI calculation (1m, 5m, 15m, 1h, 4h, 1d)",
-		"profit_target":            "Base profit target in percentage (1.0-10.0 typical)",
-		"volatility_period":        "Period for volatility calculation (7 days typical)",
-		"volatility_adjustment":    "Volatility adjustment factor (50.0 = 50% per 1% volatility)",
-		"volatility_timeframe":     "Timeframe for volatility calculation",
-		"trailing_stop_delta":      "Trailing stop percentage (0.1-1.0 typical)",
-		"sell_offset":              "Price offset above market for sell orders (0.1-0.5 typical)",
-		"trend_filter_enabled":     "Activer le filtre de tendance EMA (évite d'acheter en tendance baissière)",
-		"trend_filter_fast_period": "Période EMA rapide pour le filtre de tendance (20 typique)",
-		"trend_filter_slow_period": "Période EMA lente pour le filtre de tendance (50 typique)",
-		"trend_filter_timeframe":   "Timeframe pour le filtre de tendance (1d recommandé pour BTC long terme)",
+		"rsi_threshold":                "RSI threshold for buy signals (30-70 typical range)",
+		"rsi_period":                   "RSI calculation period (14 is standard)",
+		"rsi_timeframe":                "Timeframe for RSI calculation (1m, 5m, 15m, 1h, 4h, 1d)",
+		"profit_target":                "Base profit target in percentage (1.0-10.0 typical)",
+		"volatility_period":            "Period for volatility calculation (7 days typical)",
+		"volatility_adjustment":        "Volatility adjustment factor (50.0 = 50% per 1% volatility)",
+		"volatility_timeframe":         "Timeframe for volatility calculation",
+		"trailing_stop_delta":          "Trailing stop percentage (0.1-1.0 typical)",
+		"sell_offset":                  "Price offset above market for sell orders (0.1-0.5 typical)",
+		"trend_filter_enabled":         "Activer le filtre de tendance EMA (évite d'acheter en tendance baissière)",
+		"trend_filter_fast_period":     "Période EMA rapide pour le filtre de tendance (20 typique)",
+		"trend_filter_slow_period":     "Période EMA lente pour le filtre de tendance (50 typique)",
+		"trend_filter_timeframe":       "Timeframe pour le filtre de tendance (1d recommandé pour BTC long terme)",
+		"dynamic_sizing_enabled":       "Active la taille d'ordre dynamique (petit ordre au sommet, gros ordre au creux)",
+		"dynamic_sizing_min":           "Taille mini en USDT, appliquée près des sommets récents (6 typique)",
+		"dynamic_sizing_max":           "Taille maxi en USDT, appliquée au plus profond de la baisse (40 typique)",
+		"dynamic_sizing_window_days":   "Fenêtre du plus-haut de référence en jours (14 recommandé)",
+		"dynamic_sizing_full_drawdown": "Profondeur de baisse en %% où la taille max est atteinte (25 typique)",
 	}
 }
