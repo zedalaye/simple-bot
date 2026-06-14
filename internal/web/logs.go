@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -115,18 +116,29 @@ func streamLogs(c *gin.Context, path string) {
 		offset = fi.Size()
 	}
 
+	// Flush immédiat des en-têtes via un commentaire SSE : sans cela, gin ne renvoie
+	// la réponse qu'au premier write (1er tick), et le client reste bloqué en
+	// "Connexion…" sans recevoir l'événement open.
+	fmt.Fprint(c.Writer, ": ok\n\n")
+	c.Writer.Flush()
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	heartbeat := 0
 
 	c.Stream(func(w io.Writer) bool {
 		<-ticker.C
 		lines, newOffset, err := readNewLines(path, offset)
-		if err != nil {
-			return true // erreur transitoire : on réessaie au prochain tick
+		if err == nil {
+			offset = newOffset
+			for _, line := range lines {
+				c.SSEvent("log", line)
+			}
 		}
-		offset = newOffset
-		for _, line := range lines {
-			c.SSEvent("log", line)
+		// Heartbeat (~15s) pour maintenir la connexion ouverte côté proxys/navigateur.
+		if heartbeat++; heartbeat >= 15 {
+			heartbeat = 0
+			fmt.Fprint(w, ": ping\n\n")
 		}
 		return true
 	})
