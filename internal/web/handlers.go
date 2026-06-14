@@ -196,7 +196,7 @@ func makeTitle(exchangeName string, title string) string {
 	return fmt.Sprintf("%s - %s - Simple Bot by PrY", exchangeName, title)
 }
 
-func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, client *BotClient) {
+func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, client *BotClient, logFilePath string) {
 	// Assigner le client bot global
 	botClient = client
 	// Configuration des templates
@@ -711,9 +711,46 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		c.JSON(http.StatusOK, gin.H{"message": "Strategy deleted successfully"})
 	})
 
+	// Vue des logs (le webui lit le fichier LOG_FILE écrit par le bot, partagé via le volume db/)
+	router.GET("/logs", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "logs_index", gin.H{
+			"title":      makeTitle(exchangeName, "Logs"),
+			"exchange":   exchangeName,
+			"active":     "logs",
+			"logFileSet": logFilePath != "",
+		})
+	})
+
 	// API endpoints JSON
 	api := router.Group("/api")
 	{
+		// Logs : chargement initial des N dernières lignes
+		api.GET("/logs", func(c *gin.Context) {
+			if logFilePath == "" {
+				c.JSON(http.StatusOK, gin.H{"configured": false, "lines": []string{}})
+				return
+			}
+			n, _ := strconv.Atoi(c.DefaultQuery("lines", "500"))
+			if n <= 0 || n > 5000 {
+				n = 500
+			}
+			lines, err := tailLines(logFilePath, n)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"configured": true, "lines": lines})
+		})
+
+		// Logs : flux SSE temps réel des nouvelles lignes
+		api.GET("/logs/stream", func(c *gin.Context) {
+			if logFilePath == "" {
+				c.JSON(http.StatusOK, gin.H{"configured": false})
+				return
+			}
+			streamLogs(c, logFilePath)
+		})
+
 		api.GET("/stats", func(c *gin.Context) {
 			metrics, err := db.GetDashboardMetrics()
 			if err != nil {
@@ -898,7 +935,7 @@ func securityHeaders() gin.HandlerFunc {
 }
 
 // Fonction d'initialisation du serveur web
-func SetupServer(exchangeName string, db *database.DB, rootDir string) *gin.Engine {
+func SetupServer(exchangeName string, db *database.DB, rootDir, logFilePath string) *gin.Engine {
 	// Mode release pour la production
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -918,7 +955,7 @@ func SetupServer(exchangeName string, db *database.DB, rootDir string) *gin.Engi
 	client := NewBotClient()
 
 	// Enregistrer les handlers
-	registerHandlers(router, exchangeName, db, client)
+	registerHandlers(router, exchangeName, db, client, logFilePath)
 
 	return router
 }

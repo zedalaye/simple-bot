@@ -52,6 +52,6 @@ func main() {
 		}
 	}
 
-	router := web.SetupServer(cfg.ExchangeName, db, rootDir)
+	router := web.SetupServer(cfg.ExchangeName, db, rootDir, cfg.GetLogFile())
 	router.Run(effectivePort)
 }

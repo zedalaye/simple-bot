@@ -1,0 +1,130 @@
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="text-gradient mb-0">
+        <i class="bi bi-terminal me-2"></i>Logs
+    </h1>
+    <div class="d-flex align-items-center gap-2">
+        <span id="log-status" class="badge bg-secondary">Connexion…</span>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="autoscroll" checked>
+            <label class="form-check-label" for="autoscroll">Défilement auto</label>
+        </div>
+        <button id="btn-pause" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-pause-fill me-1"></i>Pause
+        </button>
+        <button id="btn-clear" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-trash me-1"></i>Vider
+        </button>
+    </div>
+</div>
+
+{{if not .logFileSet}}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    La variable <code>LOG_FILE</code> n'est pas configurée. Définissez par exemple
+    <code>LOG_FILE=db/bot.log</code> dans le <code>.env</code> de l'instance (volume
+    partagé entre le bot et le webui) puis redémarrez pour activer cette vue.
+</div>
+{{else}}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <pre id="log-view" class="log-view mb-0"></pre>
+    </div>
+</div>
+{{end}}
+
+<style>
+    .log-view {
+        height: 70vh;
+        overflow-y: auto;
+        margin: 0;
+        padding: 1rem;
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.4;
+        border-radius: 0.5rem;
+    }
+    .log-line { white-space: pre-wrap; word-break: break-word; }
+    .log-line.level-error { color: #f48771; }
+    .log-line.level-warn  { color: #dcb67a; }
+    .log-line.level-info  { color: #d4d4d4; }
+    .log-line.level-debug { color: #6a9955; }
+</style>
+
+{{if .logFileSet}}
+<script>
+(function () {
+    const view = document.getElementById('log-view');
+    const statusBadge = document.getElementById('log-status');
+    const autoscroll = document.getElementById('autoscroll');
+    const btnPause = document.getElementById('btn-pause');
+    const btnClear = document.getElementById('btn-clear');
+
+    const MAX_LINES = 5000; // limite le DOM pour éviter de saturer le navigateur
+    let paused = false;
+    let source = null;
+
+    function levelClass(line) {
+        if (line.includes('[ERROR]')) return 'level-error';
+        if (line.includes('[WARN]')) return 'level-warn';
+        if (line.includes('[DEBUG]')) return 'level-debug';
+        return 'level-info';
+    }
+
+    function appendLine(line) {
+        const el = document.createElement('div');
+        el.className = 'log-line ' + levelClass(line);
+        el.textContent = line;
+        view.appendChild(el);
+        while (view.childElementCount > MAX_LINES) {
+            view.removeChild(view.firstChild);
+        }
+        if (autoscroll.checked) {
+            view.scrollTop = view.scrollHeight;
+        }
+    }
+
+    function setStatus(text, cls) {
+        statusBadge.textContent = text;
+        statusBadge.className = 'badge ' + cls;
+    }
+
+    // Chargement initial des dernières lignes
+    fetch('/api/logs?lines=500')
+        .then(r => r.json())
+        .then(data => {
+            (data.lines || []).forEach(appendLine);
+            view.scrollTop = view.scrollHeight;
+        })
+        .catch(() => {});
+
+    function connect() {
+        source = new EventSource('/api/logs/stream');
+        source.addEventListener('open', () => setStatus('En direct', 'bg-success'));
+        source.addEventListener('log', (e) => {
+            if (!paused) appendLine(e.data);
+        });
+        source.addEventListener('error', () => {
+            setStatus('Reconnexion…', 'bg-warning text-dark');
+            // EventSource se reconnecte automatiquement
+        });
+    }
+    connect();
+
+    btnPause.addEventListener('click', () => {
+        paused = !paused;
+        btnPause.innerHTML = paused
+            ? '<i class="bi bi-play-fill me-1"></i>Reprendre'
+            : '<i class="bi bi-pause-fill me-1"></i>Pause';
+        btnPause.classList.toggle('btn-outline-secondary', !paused);
+        btnPause.classList.toggle('btn-warning', paused);
+        setStatus(paused ? 'En pause' : 'En direct', paused ? 'bg-secondary' : 'bg-success');
+    });
+
+    btnClear.addEventListener('click', () => { view.innerHTML = ''; });
+})();
+</script>
+{{end}}
+{{end}}
