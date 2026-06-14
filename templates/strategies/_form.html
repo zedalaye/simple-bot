@@ -66,9 +66,9 @@
                                     </div>
                                     <div class="col-md-4">
                                         <label for="concurrent_cycles" class="form-label">Cycles simultanés max *</label>
-                                        <input type="number" step="1" class="form-control" id="concurrent_cycles" name="concurrent_cycles"
-                                               value="{{if .strategy.MaxConcurrentCycles}}{{.strategy.MaxConcurrentCycles}}{{else}}1{{end}}" required placeholder="1">
-                                        <div class="form-text">Limite de cycles ouverts en même temps</div>
+                                        <input type="number" step="1" min="0" class="form-control" id="concurrent_cycles" name="concurrent_cycles"
+                                               value="{{.strategy.MaxConcurrentCycles}}" required placeholder="1">
+                                        <div class="form-text">Limite de cycles ouverts en même temps (<strong>0 = illimité</strong>)</div>
                                     </div>
                                 </div>
 
@@ -405,8 +405,8 @@ function validateStrategyForm() {
         errors.push("Le montant par ordre doit être positif.");
     }
     const cycles = intVal('concurrent_cycles');
-    if (cycles === null || cycles < 1) {
-        errors.push("Le nombre de cycles simultanés doit être au moins 1.");
+    if (cycles === null || cycles < 0) {
+        errors.push("Le nombre de cycles simultanés ne peut pas être négatif (0 = illimité).");
     }
     const profit = numVal('profit_target');
     if (profit === null || profit <= 0) {

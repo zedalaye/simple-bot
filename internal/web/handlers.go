@@ -39,8 +39,8 @@ func validateStrategyForm(s database.Strategy) error {
 	if s.QuoteAmount <= 0 {
 		return fmt.Errorf("le montant par ordre doit être positif (reçu %.2f)", s.QuoteAmount)
 	}
-	if s.MaxConcurrentCycles < 1 {
-		return fmt.Errorf("le nombre de cycles simultanés doit être au moins 1 (reçu %d)", s.MaxConcurrentCycles)
+	if s.MaxConcurrentCycles < 0 {
+		return fmt.Errorf("le nombre de cycles simultanés ne peut pas être négatif (0 = illimité, reçu %d)", s.MaxConcurrentCycles)
 	}
 	if s.ProfitTarget <= 0 {
 		return fmt.Errorf("l'objectif de profit doit être positif (reçu %.2f)", s.ProfitTarget)
@@ -317,8 +317,8 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			"title":       makeTitle(exchangeName, "Nouvelle Stratégie"),
 			"exchange":    exchangeName,
 			"active":      "strategies",
-			"algorithms":  []string{"rsi_dca", "macd_cross"}, // Available algorithms
-			"strategy":    &database.Strategy{},              // Stratégie vide : les placeholders et defaults du handler s'appliquent
+			"algorithms":  []string{"rsi_dca", "macd_cross"},          // Available algorithms
+			"strategy":    &database.Strategy{MaxConcurrentCycles: 1}, // Défauts explicites (1 cycle) ; 0 est réservé à « illimité »
 			"pageTitle":   "Nouvelle Stratégie",
 			"cardHeader":  "Configuration de la stratégie",
 			"formAction":  "/strategies",

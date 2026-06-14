@@ -101,7 +101,7 @@ func (sm *StrategyManager) ExecuteBuyStrategy(strategy database.Strategy) error 
 		return err
 	}
 
-	// Check if strategy has reached max concurrent cycles
+	// Check if strategy has reached max concurrent cycles (0 = illimité : pas de plafond)
 	if strategy.MaxConcurrentCycles > 0 {
 		activeCycles, err := sm.countActiveCyclesForStrategy(strategy.ID)
 		if err != nil {
