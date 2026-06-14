@@ -129,9 +129,14 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: volatility = %.2f%%", ctx.ExchangeName, volatility)
 
-	// Calculate dynamic profit target based on volatility
-	volatilityFactor := (volatility - strategy.ProfitTarget) / 100.0
-	adjustmentPercent := volatilityFactor * (*strategy.VolatilityAdjustment / 100.0)
+	// Calculate dynamic profit target based on volatility.
+	// VolatilityAdjustment est optionnel : s'il est nil, pas d'ajustement
+	// (la cible de profit reste le ProfitTarget de base) — évite un nil deref.
+	adjustmentPercent := 0.0
+	if strategy.VolatilityAdjustment != nil {
+		volatilityFactor := (volatility - strategy.ProfitTarget) / 100.0
+		adjustmentPercent = volatilityFactor * (*strategy.VolatilityAdjustment / 100.0)
+	}
 	dynamicProfitPercent := (strategy.ProfitTarget / 100.0) + adjustmentPercent
 
 	// Clamp dynamic profit over 0.1%

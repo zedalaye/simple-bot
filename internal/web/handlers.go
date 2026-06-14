@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron/v3"
 )
 
 // Variable globale pour le client bot
@@ -35,6 +36,11 @@ func validateStrategyForm(s database.Strategy) error {
 	}
 	if strings.TrimSpace(s.CronExpression) == "" {
 		return fmt.Errorf("l'expression cron est requise")
+	}
+	// Parité avec le runtime : le scheduler utilise robfig/cron pour planifier.
+	// Un cron invalide passait la validation puis échouait silencieusement à se planifier.
+	if _, err := cron.ParseStandard(strings.TrimSpace(s.CronExpression)); err != nil {
+		return fmt.Errorf("expression cron invalide : %w", err)
 	}
 	if s.QuoteAmount <= 0 {
 		return fmt.Errorf("le montant par ordre doit être positif (reçu %.2f)", s.QuoteAmount)
