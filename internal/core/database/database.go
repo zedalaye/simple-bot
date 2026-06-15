@@ -39,12 +39,16 @@ const (
 
 // Core data structures
 type Strategy struct {
-	ID                    int      `json:"id"`
-	Name                  string   `json:"name"`
-	Description           string   `json:"description"`
-	Enabled               bool     `json:"enabled"`
-	AlgorithmName         string   `json:"algorithm_name"`
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Enabled       bool   `json:"enabled"`
+	AlgorithmName string `json:"algorithm_name"`
+	// Déclenchement des achats : soit une expression cron (heure fixe), soit un
+	// intervalle minimum entre deux achats (mode périodique). Exactement un des
+	// deux est renseigné — cron non vide XOR BuyIntervalSeconds > 0.
 	CronExpression        string   `json:"cron_expression"`
+	BuyIntervalSeconds    int      `json:"buy_interval_seconds"`
 	QuoteAmount           float64  `json:"quote_amount"`
 	MaxConcurrentCycles   int      `json:"max_concurrent_cycles"`
 	RSIThreshold          *float64 `json:"rsi_threshold,omitempty"`
@@ -470,6 +474,15 @@ var migrations = []Migration{
 			ALTER TABLE strategies ADD COLUMN trend_filter_fast_period INTEGER DEFAULT 20;
 			ALTER TABLE strategies ADD COLUMN trend_filter_slow_period INTEGER DEFAULT 50;
 			ALTER TABLE strategies ADD COLUMN trend_filter_timeframe TEXT DEFAULT '1d';
+		`,
+	},
+	{
+		// Déclenchement périodique des achats : intervalle minimum (en secondes)
+		// entre deux achats. 0 = mode cron (heure fixe) inchangé.
+		ID:   18,
+		Name: "add_buy_interval_to_strategies",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN buy_interval_seconds INTEGER NOT NULL DEFAULT 0;
 		`,
 	},
 }

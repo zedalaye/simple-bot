@@ -50,21 +50,46 @@
                                               placeholder="Description de la stratégie...">{{.strategy.Description}}</textarea>
                                 </div>
 
-                                <!-- Scheduling & Basic Config -->
+                                <!-- Déclenchement des achats : cron OU intervalle périodique -->
                                 <div class="row mb-3">
                                     <div class="col-md-4">
+                                        <label for="trigger_mode" class="form-label">Déclenchement des achats *</label>
+                                        <select class="form-select" id="trigger_mode" name="trigger_mode" onchange="toggleTriggerMode()">
+                                            <option value="cron" {{if not (gt .strategy.BuyIntervalSeconds 0)}}selected{{end}}>Heure fixe (cron)</option>
+                                            <option value="interval" {{if gt .strategy.BuyIntervalSeconds 0}}selected{{end}}>Périodique (intervalle)</option>
+                                        </select>
+                                        <div class="form-text">Cron = à heure(s) fixe(s). Intervalle = dès que les conditions sont réunies, espacé d'un délai minimum.</div>
+                                    </div>
+                                    <div class="col-md-8" id="trigger-cron-field">
                                         <label for="cron" class="form-label">Expression Cron *</label>
-                                        <input type="text" class="form-control" id="cron" name="cron" value="{{.strategy.CronExpression}}" required
+                                        <input type="text" class="form-control" id="cron" name="cron" value="{{.strategy.CronExpression}}"
                                                placeholder="0 */4 * * *" onchange="updateCronDescription()">
                                         <div class="form-text" id="cron-description">Format: minute heure jour mois jour-semaine</div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-8" id="trigger-interval-field" style="display: none;">
+                                        <label for="buy_interval_value" class="form-label">Intervalle minimum entre deux achats *</label>
+                                        <div class="input-group">
+                                            <input type="number" min="1" step="1" class="form-control" id="buy_interval_value" name="buy_interval_value"
+                                                   value="{{if gt .strategy.BuyIntervalSeconds 0}}{{intervalValue .strategy.BuyIntervalSeconds}}{{end}}" placeholder="24">
+                                            <select class="form-select" id="buy_interval_unit" name="buy_interval_unit">
+                                                <option value="hours" {{if eq (intervalUnit .strategy.BuyIntervalSeconds) "hours"}}selected{{end}}>heures</option>
+                                                <option value="days" {{if eq (intervalUnit .strategy.BuyIntervalSeconds) "days"}}selected{{end}}>jours</option>
+                                                <option value="weeks" {{if eq (intervalUnit .strategy.BuyIntervalSeconds) "weeks"}}selected{{end}}>semaines</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-text">Au moins 1 heure. L'achat part au premier contrôle (toutes les quelques minutes) où les conditions sont réunies, puis attend cet intervalle.</div>
+                                    </div>
+                                </div>
+
+                                <!-- Basic Config -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
                                         <label for="quote_amount" class="form-label">Montant par ordre (USDC) *</label>
                                         <input type="number" step="0.01" class="form-control" id="quote_amount" name="quote_amount"
                                                {{if .strategy.QuoteAmount}}value="{{.strategy.QuoteAmount}}"{{end}} required placeholder="25.00">
                                         <div class="form-text">Montant investi par ordre</div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-6">
                                         <label for="concurrent_cycles" class="form-label">Cycles simultanés max *</label>
                                         <input type="number" step="1" min="0" class="form-control" id="concurrent_cycles" name="concurrent_cycles"
                                                value="{{.strategy.MaxConcurrentCycles}}" required placeholder="1">
@@ -334,6 +359,13 @@ function updateAlgorithmFields() {
     // BB fields could be shown for a future bollinger bands algorithm
 }
 
+function toggleTriggerMode() {
+    const mode = document.getElementById('trigger_mode').value;
+    const isInterval = mode === 'interval';
+    document.getElementById('trigger-cron-field').style.display = isInterval ? 'none' : 'block';
+    document.getElementById('trigger-interval-field').style.display = isInterval ? 'block' : 'none';
+}
+
 function updateCronDescription() {
     const cron = document.getElementById('cron').value;
     const description = document.getElementById('cron-description');
@@ -397,7 +429,12 @@ function validateStrategyForm() {
     if (!document.getElementById('name').value.trim()) {
         errors.push("Le nom de la stratégie est requis.");
     }
-    if (!document.getElementById('cron').value.trim()) {
+    if (document.getElementById('trigger_mode').value === 'interval') {
+        const iv = intVal('buy_interval_value');
+        if (iv === null || iv <= 0) {
+            errors.push("L'intervalle d'achat périodique doit être positif.");
+        }
+    } else if (!document.getElementById('cron').value.trim()) {
         errors.push("L'expression cron est requise.");
     }
     const quote = numVal('quote_amount');
@@ -502,6 +539,7 @@ function onStrategySubmit(event) {
 // Initialize fields display on page load
 document.addEventListener('DOMContentLoaded', function() {
     updateAlgorithmFields();
+    toggleTriggerMode();
     updateCronDescription();
     toggleTrendFilter();
     toggleDynamicSizing();

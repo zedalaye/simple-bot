@@ -8,7 +8,7 @@ import (
 
 // colonnes SELECT communes à toutes les requêtes de stratégie
 const strategyColumns = `
-	id, name, description, enabled, algorithm_name, cron_expression, quote_amount, max_concurrent_cycles,
+	id, name, description, enabled, algorithm_name, cron_expression, buy_interval_seconds, quote_amount, max_concurrent_cycles,
 	rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 	bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 	volatility_period, volatility_adjustment, volatility_timeframe,
@@ -35,7 +35,7 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 
 	err := row.Scan(
 		&s.ID, &s.Name, &s.Description, &s.Enabled,
-		&s.AlgorithmName, &s.CronExpression, &s.QuoteAmount, &s.MaxConcurrentCycles,
+		&s.AlgorithmName, &s.CronExpression, &s.BuyIntervalSeconds, &s.QuoteAmount, &s.MaxConcurrentCycles,
 		&rsiThreshold, &rsiPeriod, &s.RSITimeframe, &s.MACDFastPeriod, &s.MACDSlowPeriod,
 		&s.MACDSignalPeriod, &s.MACDTimeframe, &s.BBPeriod, &s.BBMultiplier, &s.BBTimeframe,
 		&s.ProfitTarget, &s.TrailingStopDelta, &s.SellOffset,
@@ -219,7 +219,7 @@ func (db *DB) GetStrategyStats(strategyId int) (map[string]interface{}, error) {
 }
 
 // CreateStrategyFromWeb creates a strategy from web interface with full parameters
-func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, enabled bool,
+func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, buyIntervalSeconds int, enabled bool,
 	quoteAmount, profitTarget, trailingStopDelta, sellOffset float64,
 	rsiThreshold *float64, rsiPeriod *int, rsiTimeframe string,
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
@@ -259,7 +259,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 	// Insert strategy with all web form parameters
 	query := `
 		INSERT INTO strategies (
-			name, description, enabled, algorithm_name, cron_expression, quote_amount,
+			name, description, enabled, algorithm_name, cron_expression, buy_interval_seconds, quote_amount,
 			rsi_threshold, rsi_period, rsi_timeframe,
 			macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 			bb_period, bb_multiplier, bb_timeframe,
@@ -268,10 +268,10 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 			trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
 			dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
 			max_concurrent_cycles
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, quoteAmount,
+	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, buyIntervalSeconds, quoteAmount,
 		rsiThreshold, rsiPeriod, rsiTimeframe,
 		macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
 		bbPeriod, bbMultiplier, bbTimeframe,
@@ -288,7 +288,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, e
 }
 
 // UpdateStrategy updates an existing strategy
-func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, enabled bool,
+func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, buyIntervalSeconds int, enabled bool,
 	quoteAmount, profitTarget, trailingStopDelta, sellOffset float64,
 	rsiThreshold *float64, rsiPeriod *int, rsiTimeframe string,
 	macdFastPeriod, macdSlowPeriod, macdSignalPeriod int, macdTimeframe string,
@@ -321,6 +321,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			description = ?,
 			algorithm_name = ?,
 			cron_expression = ?,
+			buy_interval_seconds = ?,
 			enabled = ?,
       quote_amount = ?,
 			profit_target = ?,
@@ -353,7 +354,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
     WHERE id = ?
 	`
 
-	_, err := db.conn.Exec(query, name, description, algorithm, cron, enabled,
+	_, err := db.conn.Exec(query, name, description, algorithm, cron, buyIntervalSeconds, enabled,
 		quoteAmount, profitTarget, trailingStopDelta, sellOffset,
 		rsiThreshold, rsiPeriod, rsiTimeframe,
 		macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
@@ -364,6 +365,31 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		maxConcurrentCycles, id)
 
 	return err
+}
+
+// GetLastBuyTime retourne la date de création du dernier cycle (= dernier achat)
+// de la stratégie. Sert d'ancre au cooldown du mode périodique. Retourne nil si
+// la stratégie n'a jamais acheté (aucun cycle).
+func (db *DB) GetLastBuyTime(strategyId int) (*time.Time, error) {
+	// On sélectionne la colonne directement (ORDER BY + LIMIT 1) plutôt que
+	// MAX(created_at) : un agrégat perd l'affinité DATETIME et le driver
+	// renverrait une chaîne non scannable en time.Time.
+	query := `
+		SELECT c.created_at
+		FROM cycles c
+		JOIN orders o ON c.buy_order_id = o.id
+		WHERE o.strategy_id = ?
+		ORDER BY c.created_at DESC
+		LIMIT 1`
+	var lastBuy time.Time
+	err := db.conn.QueryRow(query, strategyId).Scan(&lastBuy)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last buy time for strategy: %w", err)
+	}
+	return &lastBuy, nil
 }
 
 // ToggleStrategyEnabled toggles the enabled status of a strategy

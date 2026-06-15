@@ -74,8 +74,12 @@ func (ss *StrategyScheduler) Start() error {
 			logger.Errorf("Failed to schedule strategy %s: %v", strategy.Name, err)
 			continue
 		}
-		logger.Infof("[%s] ✓ Scheduled strategy '%s' (%s) with cron '%s'",
-			ss.exchangeName, strategy.Name, strategy.AlgorithmName, strategy.CronExpression)
+		// Les stratégies périodiques (sans cron) loguent leur propre message dans
+		// ScheduleStrategy ; on n'affiche le récap cron que pour les autres.
+		if strings.TrimSpace(strategy.CronExpression) != "" {
+			logger.Infof("[%s] ✓ Scheduled strategy '%s' (%s) with cron '%s'",
+				ss.exchangeName, strategy.Name, strategy.AlgorithmName, strategy.CronExpression)
+		}
 	}
 
 	// Start the scheduler
@@ -106,6 +110,15 @@ func (ss *StrategyScheduler) Start() error {
 
 // ScheduleStrategy schedules a single strategy with its cron expression
 func (ss *StrategyScheduler) ScheduleStrategy(strategy database.Strategy) error {
+	// Les stratégies en mode périodique (intervalle, sans cron) ne sont pas
+	// planifiées par gocron : leurs achats sont évalués à chaque tick du bot
+	// (cf. Bot.handleBuyChecks), comme les ventes.
+	if strings.TrimSpace(strategy.CronExpression) == "" {
+		logger.Infof("[%s] Strategy '%s' (ID: %d) en mode périodique (intervalle %ds) — pas de planification cron",
+			ss.exchangeName, strategy.Name, strategy.ID, strategy.BuyIntervalSeconds)
+		return nil
+	}
+
 	// Create the job with cron expression (simplified version)
 	job, err := ss.scheduler.NewJob(
 		gocron.CronJob(strategy.CronExpression, false), // false = no seconds

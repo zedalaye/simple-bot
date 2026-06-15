@@ -34,13 +34,25 @@ func validateStrategyForm(s database.Strategy) error {
 	if strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("le nom de la stratégie est requis")
 	}
-	if strings.TrimSpace(s.CronExpression) == "" {
-		return fmt.Errorf("l'expression cron est requise")
+	// Déclenchement des achats : cron (heure fixe) XOR intervalle périodique.
+	// Exactement un des deux doit être renseigné.
+	hasCron := strings.TrimSpace(s.CronExpression) != ""
+	hasInterval := s.BuyIntervalSeconds > 0
+	if hasCron && hasInterval {
+		return fmt.Errorf("choisissez soit une expression cron, soit un intervalle périodique, pas les deux")
 	}
-	// Parité avec le runtime : le scheduler utilise robfig/cron pour planifier.
-	// Un cron invalide passait la validation puis échouait silencieusement à se planifier.
-	if _, err := cron.ParseStandard(strings.TrimSpace(s.CronExpression)); err != nil {
-		return fmt.Errorf("expression cron invalide : %w", err)
+	if !hasCron && !hasInterval {
+		return fmt.Errorf("une expression cron ou un intervalle d'achat périodique est requis")
+	}
+	if hasCron {
+		// Parité avec le runtime : le scheduler utilise robfig/cron pour planifier.
+		// Un cron invalide passait la validation puis échouait silencieusement à se planifier.
+		if _, err := cron.ParseStandard(strings.TrimSpace(s.CronExpression)); err != nil {
+			return fmt.Errorf("expression cron invalide : %w", err)
+		}
+	}
+	if hasInterval && s.BuyIntervalSeconds < 3600 {
+		return fmt.Errorf("l'intervalle d'achat périodique doit être d'au moins 1 heure (reçu %d s)", s.BuyIntervalSeconds)
 	}
 	if s.QuoteAmount <= 0 {
 		return fmt.Errorf("le montant par ordre doit être positif (reçu %.2f)", s.QuoteAmount)
@@ -83,6 +95,27 @@ func validateStrategyForm(s database.Strategy) error {
 	return algo.ValidateConfig(s)
 }
 
+// parseTrigger lit le mode de déclenchement des achats depuis le formulaire :
+// soit une expression cron (heure fixe), soit un intervalle périodique
+// (valeur + unité). Retourne (cron, intervalSeconds) avec au plus un renseigné.
+func parseTrigger(c *gin.Context) (string, int) {
+	if c.PostForm("trigger_mode") == "interval" {
+		value, _ := strconv.Atoi(c.PostForm("buy_interval_value"))
+		if value <= 0 {
+			return "", 0
+		}
+		unitSeconds := 3600 // heures par défaut
+		switch c.PostForm("buy_interval_unit") {
+		case "days":
+			unitSeconds = 86400
+		case "weeks":
+			unitSeconds = 604800
+		}
+		return "", value * unitSeconds
+	}
+	return strings.TrimSpace(c.PostForm("cron")), 0
+}
+
 // Fonctions helper pour les templates
 var templateFuncs = template.FuncMap{
 	"timeAgo": func(t time.Time) string {
@@ -98,6 +131,40 @@ var templateFuncs = template.FuncMap{
 		} else {
 			days := int(duration.Hours() / 24)
 			return fmt.Sprintf("Il y a %d j", days)
+		}
+	},
+	// intervalUnit / intervalValue : décomposent un intervalle (en secondes) en
+	// (valeur, unité) pour le round-trip du formulaire. Choisit la plus grande
+	// unité qui divise exactement l'intervalle.
+	"intervalUnit": func(seconds int) string {
+		switch {
+		case seconds > 0 && seconds%604800 == 0:
+			return "weeks"
+		case seconds > 0 && seconds%86400 == 0:
+			return "days"
+		default:
+			return "hours"
+		}
+	},
+	"intervalValue": func(seconds int) int {
+		switch {
+		case seconds > 0 && seconds%604800 == 0:
+			return seconds / 604800
+		case seconds > 0 && seconds%86400 == 0:
+			return seconds / 86400
+		default:
+			return seconds / 3600
+		}
+	},
+	// intervalLabel : libellé court FR d'un intervalle (ex: « toutes les 24 h »).
+	"intervalLabel": func(seconds int) string {
+		switch {
+		case seconds > 0 && seconds%604800 == 0:
+			return fmt.Sprintf("toutes les %d sem", seconds/604800)
+		case seconds > 0 && seconds%86400 == 0:
+			return fmt.Sprintf("tous les %d j", seconds/86400)
+		default:
+			return fmt.Sprintf("toutes les %d h", seconds/3600)
 		}
 	},
 	"add": func(a, b float64) float64 {
@@ -338,7 +405,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		name := c.PostForm("name")
 		description := c.PostForm("description")
 		algorithm := c.PostForm("algorithm")
-		cron := c.PostForm("cron")
+		cron, buyIntervalSeconds := parseTrigger(c)
 		enabled := c.PostForm("enabled") == "on"
 
 		quoteAmount, _ := strconv.ParseFloat(c.PostForm("quote_amount"), 64)
@@ -442,7 +509,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		// Valider la configuration avant insertion (parité avec le runtime)
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
-			AlgorithmName: algorithm, CronExpression: cron, QuoteAmount: quoteAmount,
+			AlgorithmName: algorithm, CronExpression: cron, BuyIntervalSeconds: buyIntervalSeconds, QuoteAmount: quoteAmount,
 			MaxConcurrentCycles: int(concurrentCycles),
 			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
 			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
@@ -458,7 +525,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		}
 
 		// Use the new comprehensive method
-		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, enabled,
+		err := db.CreateStrategyFromWeb(name, description, algorithm, cron, buyIntervalSeconds, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
 			rsiThreshold, rsiPeriod, rsiTimeframe,
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,
@@ -522,7 +589,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		name := c.PostForm("name")
 		description := c.PostForm("description")
 		algorithm := c.PostForm("algorithm")
-		cron := c.PostForm("cron")
+		cron, buyIntervalSeconds := parseTrigger(c)
 		enabled := c.PostForm("enabled") == "on"
 
 		quoteAmount, _ := strconv.ParseFloat(c.PostForm("quote_amount"), 64)
@@ -626,7 +693,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		// Valider la configuration avant mise à jour (parité avec le runtime)
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
-			AlgorithmName: algorithm, CronExpression: cron, QuoteAmount: quoteAmount,
+			AlgorithmName: algorithm, CronExpression: cron, BuyIntervalSeconds: buyIntervalSeconds, QuoteAmount: quoteAmount,
 			MaxConcurrentCycles: int(concurrentCycles),
 			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
 			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
@@ -641,7 +708,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			return
 		}
 
-		err = db.UpdateStrategy(strategyID, name, description, algorithm, cron, enabled,
+		err = db.UpdateStrategy(strategyID, name, description, algorithm, cron, buyIntervalSeconds, enabled,
 			quoteAmount, profitTarget, trailingStopDelta, sellOffset,
 			rsiThreshold, rsiPeriod, rsiTimeframe,
 			macdFastPeriod, macdSlowPeriod, macdSignalPeriod, macdTimeframe,

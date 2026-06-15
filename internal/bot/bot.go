@@ -10,6 +10,7 @@ import (
 	"bot/internal/telegram"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -154,6 +155,7 @@ func (b *Bot) Start(buyAtLaunch bool) error {
 
 	b.handleOrderCheck()
 	b.handlePriceCheck()
+	b.executeBuyStrategies()
 	b.ShowStatistics()
 
 	// buyAtLaunch is now handled by the strategy scheduler
@@ -196,8 +198,9 @@ func (b *Bot) run() {
 			}
 			return
 		case <-checkTicker.C:
-			b.handlePriceCheck() // Update position max prices + trailing stop
-			b.handleOrderCheck() // Check pending orders status
+			b.handlePriceCheck()     // Update position max prices + trailing stop
+			b.executeBuyStrategies() // Achats périodiques (stratégies sans cron)
+			b.handleOrderCheck()     // Check pending orders status
 			b.ShowStatistics()
 		}
 	}
@@ -263,6 +266,46 @@ func (b *Bot) executeSellStrategies(currentPrice float64) {
 		if err != nil {
 			logger.Errorf("[%s] Failed to execute sell strategy %s: %v", b.Config.ExchangeName, strategy.Name, err)
 			continue
+		}
+	}
+}
+
+// executeBuyStrategies évalue les achats des stratégies en mode périodique
+// (intervalle, sans cron) à chaque tick, en respectant un cooldown minimum entre
+// deux achats. Tant que ShouldBuy est faux, on ré-évalue au tick suivant ; une
+// fois un achat posé (cycle créé), on attend l'intervalle avant le prochain.
+// Le mode cron reste piloté par le scheduler.
+func (b *Bot) executeBuyStrategies() {
+	strategies, err := b.db.GetAllStrategies()
+	if err != nil {
+		logger.Errorf("[%s] Failed to get strategies for periodic buy: %v", b.Config.ExchangeName, err)
+		return
+	}
+
+	strategyManager := b.strategyScheduler.GetStrategyManager()
+
+	for _, strategy := range strategies {
+		// On ne gère ici que les stratégies périodiques activées.
+		if !strategy.Enabled || strategy.BuyIntervalSeconds <= 0 || strings.TrimSpace(strategy.CronExpression) != "" {
+			continue
+		}
+
+		interval := time.Duration(strategy.BuyIntervalSeconds) * time.Second
+		lastBuy, err := b.db.GetLastBuyTime(strategy.ID)
+		if err != nil {
+			logger.Errorf("[%s] Failed to get last buy time for strategy %s: %v", b.Config.ExchangeName, strategy.Name, err)
+			continue
+		}
+		if lastBuy != nil {
+			if elapsed := time.Since(*lastBuy); elapsed < interval {
+				logger.Debugf("[%s] Strategy %s: cooldown actif, %s restant", b.Config.ExchangeName, strategy.Name, (interval - elapsed).Round(time.Second))
+				continue
+			}
+		}
+
+		logger.Infof("[%s] Executing periodic BUY strategy '%s' (intervalle %s)", b.Config.ExchangeName, strategy.Name, interval)
+		if err := strategyManager.ExecuteBuyStrategy(strategy); err != nil {
+			logger.Errorf("[%s] Failed to execute periodic buy strategy %s: %v", b.Config.ExchangeName, strategy.Name, err)
 		}
 	}
 }

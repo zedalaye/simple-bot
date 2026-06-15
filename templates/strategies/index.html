@@ -116,7 +116,11 @@
                             </div>
 
                             <div class="d-flex justify-content-between align-items-center text-muted small">
+                                {{if gt .BuyIntervalSeconds 0}}
+                                <span><i class="fas fa-rotate"></i> {{intervalLabel .BuyIntervalSeconds}}</span>
+                                {{else}}
                                 <span><i class="fas fa-clock"></i> <code>{{.CronExpression}}</code></span>
+                                {{end}}
                                 {{if .LastExecutedAt}}
                                 <span>{{timeAgo .LastExecutedAt}}</span>
                                 {{end}}
