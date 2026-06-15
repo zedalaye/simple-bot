@@ -239,7 +239,7 @@ func (db *DB) GetOpenCyclesForStrategy(strategyId int) ([]CycleEnhanced, error) 
 		FROM cycles c
 		JOIN orders bo ON c.buy_order_id = bo.id
 		LEFT JOIN orders so ON c.sell_order_id = so.id
-		WHERE bo.strategy_id = ? AND (c.sell_order_id IS NULL OR so.status = 'CANCELLED')
+		WHERE bo.strategy_id = ? AND bo.status = 'FILLED' AND (c.sell_order_id IS NULL OR so.status = 'CANCELLED')
 		ORDER BY c.created_at DESC
 	`
 
