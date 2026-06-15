@@ -32,7 +32,7 @@ type StrategyScheduler struct {
 func NewStrategyScheduler(exchangeName, pair string, db *database.DB, market StrategyMarket, marketCollector *market.MarketDataCollector, calculator *market.Calculator, algorithmRegistry *algorithms.AlgorithmRegistry, exchange StrategyExchange) (*StrategyScheduler, error) {
 	// Create the scheduler with options
 	s, err := gocron.NewScheduler(
-		gocron.WithLocation(time.UTC),
+		gocron.WithLocation(time.Local),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
