@@ -9,8 +9,8 @@ VERSION  ?= $(GIT_TAG)
         build-image push-image \
         clean \
         run-bot run-admin run-web run-test \
-        fmt vet check \
-        deps deps-check deps-update
+        fmt vet check vulncheck \
+        deps deps-check deps-update deps-verify
 
 all: build-all
 
@@ -43,8 +43,9 @@ build-rsi:
 build-order:
 	go build -o bin/order ./cmd/order
 
-# Construction de l'image docker
-build-image:
+# Construction de l'image docker (précédée des vérifications dépendances + vulnérabilités)
+# deps-check est informatif (liste les MAJ dispo, ne bloque pas) ; deps-verify et vulncheck sont bloquants
+build-image: deps-check deps-verify vulncheck
 	docker build --pull --platform ${PLATFORMS} \
 		--build-arg VERSION=$(VERSION) \
 		-t ${DOCKER_IMAGE}:$(VERSION) \
@@ -81,14 +82,25 @@ vet:
 
 check: fmt vet build-all
 
+# Vérifier l'intégrité des modules téléchargés (go.sum) — bloquant
+deps-verify:
+	go mod verify
+
+# Scanner les vulnérabilités connues du code et des dépendances — bloquant
+# (sans installation globale : exécuté à la volée)
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
 # Installation des dépendances
 deps:
 	go mod download
 	go mod tidy
 
 # Vérifier les mises à jour disponibles des dépendances directes (sans modifier go.mod)
+# Informatif : n'échoue jamais (|| true) pour ne pas bloquer build-image
 deps-check:
-	@grep -E '^\s+\S+ v' go.mod | grep -v '// indirect' | awk '{print $$1}' | xargs go list -u -m -f '{{if .Update}}{{.Path}}: {{.Version}} → {{.Update.Version}}{{end}}'
+	@echo "==> Dépendances directes avec mise à jour disponible :"
+	@grep -E '^\s+\S+ v' go.mod | grep -v '// indirect' | awk '{print $$1}' | xargs go list -u -m -f '{{if .Update}}{{.Path}}: {{.Version}} → {{.Update.Version}}{{end}}' || true
 
 # Mettre à jour toutes les dépendances vers leur dernière version + tidy
 deps-update:
