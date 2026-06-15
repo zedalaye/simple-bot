@@ -35,6 +35,8 @@ const (
 	Open      CycleStatus = "Open"
 	Running   CycleStatus = "Running"
 	Completed CycleStatus = "Completed"
+
+	CycleCancelled CycleStatus = "Cancelled" // Achat annulé avant remplissage (cycle mort, jamais de position)
 )
 
 // Core data structures

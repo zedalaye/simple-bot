@@ -105,7 +105,9 @@ func (db *DB) GetCycles(filter string) ([]CycleEnhanced, error) {
 	var whereClause string
 	switch filter {
 	case "new":
-		whereClause = "WHERE bo.status IN ('PENDING', 'CANCELLED') AND c.sell_order_id IS NULL"
+		whereClause = "WHERE bo.status = 'PENDING' AND c.sell_order_id IS NULL"
+	case "cancelled":
+		whereClause = "WHERE bo.status = 'CANCELLED' AND c.sell_order_id IS NULL"
 	case "open":
 		whereClause = "WHERE bo.status = 'FILLED' AND c.sell_order_id IS NULL"
 	case "running":
@@ -113,7 +115,8 @@ func (db *DB) GetCycles(filter string) ([]CycleEnhanced, error) {
 	case "completed":
 		whereClause = "WHERE bo.status = 'FILLED' AND so.status = 'FILLED'"
 	case "active":
-		whereClause = "WHERE c.sell_order_id IS NULL OR so.status <> 'FILLED'"
+		// Cycles « vivants » : exclut les terminés et les achats annulés
+		whereClause = "WHERE (c.sell_order_id IS NULL AND bo.status <> 'CANCELLED') OR so.status <> 'FILLED'"
 	default: // "all"
 		whereClause = ""
 	}

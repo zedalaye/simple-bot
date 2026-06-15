@@ -320,7 +320,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 	}
 
 	router.GET("/orders", func(c *gin.Context) {
-		serveOrders(c, "pending", "Ordres En Attente", "/orders")
+		serveOrders(c, "pending", "Ordres En attente", "/orders")
 	})
 	router.GET("/orders/filled", func(c *gin.Context) {
 		serveOrders(c, "filled", "Ordres Exécutés", "/orders/filled")
@@ -354,6 +354,9 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 	})
 	router.GET("/cycles/new", func(c *gin.Context) {
 		serveCycles(c, "new", "Nouveaux Cycles", "/cycles/new")
+	})
+	router.GET("/cycles/cancelled", func(c *gin.Context) {
+		serveCycles(c, "cancelled", "Cycles Annulés", "/cycles/cancelled")
 	})
 	router.GET("/cycles/open", func(c *gin.Context) {
 		serveCycles(c, "open", "Cycles Ouverts", "/cycles/open")
@@ -853,6 +856,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		api.GET("/cycles", func(c *gin.Context) { serveAPICycles(c, "all") })
 		api.GET("/cycles/active", func(c *gin.Context) { serveAPICycles(c, "active") })
 		api.GET("/cycles/new", func(c *gin.Context) { serveAPICycles(c, "new") })
+		api.GET("/cycles/cancelled", func(c *gin.Context) { serveAPICycles(c, "cancelled") })
 		api.GET("/cycles/open", func(c *gin.Context) { serveAPICycles(c, "open") })
 		api.GET("/cycles/running", func(c *gin.Context) { serveAPICycles(c, "running") })
 		api.GET("/cycles/completed", func(c *gin.Context) { serveAPICycles(c, "completed") })

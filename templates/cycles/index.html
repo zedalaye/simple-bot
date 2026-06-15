@@ -7,10 +7,19 @@
         <span class="badge bg-primary">{{len .cycles}} cycles</span>
         <div class="btn-group" role="group">
             <a href="/cycles" class="btn btn-outline-secondary {{if eq .cycleType "active"}}active{{end}}">Actifs</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/cycles/new" class="btn btn-outline-secondary {{if eq .cycleType "new"}}active{{end}}">Nouveaux</a>
             <a href="/cycles/open" class="btn btn-outline-secondary {{if eq .cycleType "open"}}active{{end}}">Ouverts</a>
             <a href="/cycles/running" class="btn btn-outline-secondary {{if eq .cycleType "running"}}active{{end}}">En cours</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/cycles/completed" class="btn btn-outline-secondary {{if eq .cycleType "completed"}}active{{end}}">Terminés</a>
+        </div>
+        <div class="btn-group" role="group">
+            <a href="/cycles/cancelled" class="btn btn-outline-secondary {{if eq .cycleType "cancelled"}}active{{end}}">Annulés</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/cycles/all" class="btn btn-outline-secondary {{if eq .cycleType "all"}}active{{end}}">Tous</a>
         </div>
         <a href="{{.currentURL}}" class="btn btn-outline-primary">
@@ -81,6 +90,10 @@
                         {{else if eq .Status "Completed"}}
                             <span class="badge bg-success">
                                 <i class="bi bi-check-circle me-1"></i>Terminé
+                            </span>
+                        {{else if eq .Status "Cancelled"}}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle me-1"></i>Annulé
                             </span>
                         {{else}}
                             <span class="badge bg-secondary">

@@ -42,30 +42,40 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	}
 	stats["cycles_count"] = cyclesCount
 
-	// Nombre de cycles en cours
+	// Nombre de cycles actifs : positions vivantes (Nouveau en attente, Ouvert, En cours),
+	// hors achats annulés et hors cycles terminés. Aligné sur le filtre "active" de GetCycles.
 	var activeCyclesCount int
-	err = db.conn.QueryRow(`SELECT COUNT(*) FROM cycles where sell_order_id is NULL`).Scan(&activeCyclesCount)
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		LEFT JOIN orders so ON c.sell_order_id = so.id
+		WHERE (c.sell_order_id IS NULL AND bo.status <> 'CANCELLED') OR so.status <> 'FILLED'`).Scan(&activeCyclesCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active cycles count: %w", err)
 	}
 	stats["active_cycles_count"] = activeCyclesCount
 
-	// Nombre de cycles complets
+	// Nombre de cycles terminés : vente réellement exécutée
 	var completedCyclesCount int
-	err = db.conn.QueryRow(`SELECT COUNT(*) FROM cycles where sell_order_id is NOT NULL`).Scan(&completedCyclesCount)
+	err = db.conn.QueryRow(`
+		SELECT COUNT(*)
+		FROM cycles c
+		JOIN orders so ON c.sell_order_id = so.id
+		WHERE so.status = 'FILLED'`).Scan(&completedCyclesCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get completed cycles count: %w", err)
 	}
 	stats["completed_cycles_count"] = completedCyclesCount
 
-	// Calcul du profit moyen
+	// Calcul du profit moyen (uniquement le profit réalisé : achat et vente exécutés)
 	var avgProfit sql.NullFloat64
 	err = db.conn.QueryRow(`
 		SELECT AVG((so.price - bo.price) * bo.amount - bo.fees - so.fees)
-		FROM cycles c 
-		JOIN orders bo ON c.buy_order_id = bo.id 
-		JOIN orders so ON c.sell_order_id = so.id 
-		WHERE so.id IS NOT NULL
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		JOIN orders so ON c.sell_order_id = so.id
+		WHERE bo.status = 'FILLED' AND so.status = 'FILLED'
 	`).Scan(&avgProfit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get average profit: %w", err)
@@ -76,14 +86,14 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 		stats["average_profit"] = 0.0
 	}
 
-	// Calcul du profit total
+	// Calcul du profit total (uniquement le profit réalisé : achat et vente exécutés)
 	var totalProfit sql.NullFloat64
 	err = db.conn.QueryRow(`
 		SELECT SUM((so.price - bo.price) * bo.amount - bo.fees - so.fees)
-		FROM cycles c 
-		JOIN orders bo ON c.buy_order_id = bo.id 
-		JOIN orders so ON c.sell_order_id = so.id 
-		WHERE so.id IS NOT NULL
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		JOIN orders so ON c.sell_order_id = so.id
+		WHERE bo.status = 'FILLED' AND so.status = 'FILLED'
 	`).Scan(&totalProfit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get total profit: %w", err)

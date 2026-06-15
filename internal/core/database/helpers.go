@@ -82,8 +82,10 @@ func (db *DB) buildCycleEnhancedFromOrders(id int, targetPrice, maxPrice float64
 	// Logique de statut et profit (réutilisée de buildCycleEnhanced)
 	if cycle.SellOrder == nil {
 		switch cycle.BuyOrder.Status {
-		case Pending, Cancelled:
+		case Pending:
 			cycle.Status = New
+		case Cancelled:
+			cycle.Status = CycleCancelled
 		case Filled:
 			cycle.Status = Open
 		}

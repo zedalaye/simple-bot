@@ -6,9 +6,15 @@
     <div class="d-flex align-items-center gap-2">
         <span class="badge bg-primary">{{len .orders}} ordres</span>
         <div class="btn-group" role="group">
-            <a href="/orders" class="btn btn-outline-secondary {{if eq .orderType "pending"}}active{{end}}">En Attente</a>
+            <a href="/orders" class="btn btn-outline-secondary {{if eq .orderType "pending"}}active{{end}}">En attente</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/orders/filled" class="btn btn-outline-secondary {{if eq .orderType "filled"}}active{{end}}">Exécutés</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/orders/cancelled" class="btn btn-outline-secondary {{if eq .orderType "cancelled"}}active{{end}}">Annulés</a>
+        </div>
+        <div class="btn-group" role="group">
             <a href="/orders/all" class="btn btn-outline-secondary {{if eq .orderType "all"}}active{{end}}">Tous</a>
         </div>
         <a href="{{.currentURL}}" class="btn btn-outline-primary">
