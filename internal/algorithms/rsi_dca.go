@@ -6,6 +6,14 @@ import (
 	"fmt"
 )
 
+// volatilityReferenceMultiplier définit la fenêtre de la volatilité de RÉFÉRENCE
+// (la « normale » récente) par rapport à la volatilité courante : on mesure la
+// référence sur `VolatilityPeriod * volatilityReferenceMultiplier` bougies du
+// même timeframe. La cible de profit est augmentée quand la vol courante dépasse
+// cette référence, abaissée sinon. ~12 = environ deux semaines pour une vol 4h
+// de période 7 (7*12*4h ≈ 14 j).
+const volatilityReferenceMultiplier = 12
+
 // RSI_DCA implements RSI-based Dollar Cost Averaging algorithm
 type RSI_DCA struct{}
 
@@ -129,13 +137,30 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 
 	logger.Infof("[%s] RSI_DCA.ShouldBuy: volatility = %.2f%%", ctx.ExchangeName, volatility)
 
-	// Calculate dynamic profit target based on volatility.
-	// VolatilityAdjustment est optionnel : s'il est nil, pas d'ajustement
-	// (la cible de profit reste le ProfitTarget de base) — évite un nil deref.
+	// Cible de profit dynamique en fonction de la volatilité.
+	//
+	// On compare la volatilité COURANTE à une volatilité de RÉFÉRENCE (le régime
+	// « normal » récent, cf. volatilityReferenceMultiplier) : au-dessus de la
+	// référence la cible monte (le prix peut atteindre une cible plus haute aussi
+	// vite), en-dessous elle baisse (pour que le cycle se boucle quand même en
+	// marché calme). À la référence, la cible vaut exactement ProfitTarget.
+	//
+	// VolatilityAdjustment nil ou nul => aucun ajustement (cible = ProfitTarget),
+	// ce qui préserve la rétro-compatibilité.
 	adjustmentPercent := 0.0
-	if strategy.VolatilityAdjustment != nil {
-		volatilityFactor := (volatility - strategy.ProfitTarget) / 100.0
+	if strategy.VolatilityAdjustment != nil && *strategy.VolatilityAdjustment != 0 && strategy.VolatilityPeriod != nil {
+		refPeriod := *strategy.VolatilityPeriod * volatilityReferenceMultiplier
+		volRef, refErr := ctx.Calculator.CalculateVolatility(ctx.Pair, strategy.VolatilityTimeframe, refPeriod)
+		if refErr != nil {
+			// Historique insuffisant pour la référence : on neutralise l'ajustement
+			// (volRef = vol courante) plutôt que de biaiser la cible.
+			logger.Warnf("[%s] RSI_DCA.ShouldBuy: vol de référence indisponible (%v), ajustement neutralisé", ctx.ExchangeName, refErr)
+			volRef = volatility
+		}
+		volatilityFactor := (volatility - volRef) / 100.0
 		adjustmentPercent = volatilityFactor * (*strategy.VolatilityAdjustment / 100.0)
+		logger.Infof("[%s] RSI_DCA.ShouldBuy: vol=%.2f%%, volRef=%.2f%%, ajustement cible=%+.3f%%",
+			ctx.ExchangeName, volatility, volRef, adjustmentPercent*100.0)
 	}
 	dynamicProfitPercent := (strategy.ProfitTarget / 100.0) + adjustmentPercent
 
