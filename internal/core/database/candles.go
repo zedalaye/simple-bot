@@ -102,6 +102,54 @@ func (db *DB) GetPairs() ([]string, error) {
 	return pairs, nil
 }
 
+// GetCandleTimeframes retourne les timeframes distinctes disponibles en base
+// pour une paire (utilisé par le backtest pour charger toutes les séries).
+func (db *DB) GetCandleTimeframes(pair string) ([]string, error) {
+	rows, err := db.conn.Query(`SELECT DISTINCT timeframe FROM candles WHERE pair = ?`, pair)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get candle timeframes: %w", err)
+	}
+	defer rows.Close()
+
+	var tfs []string
+	for rows.Next() {
+		var tf string
+		if err := rows.Scan(&tf); err != nil {
+			return nil, fmt.Errorf("failed to scan timeframe: %w", err)
+		}
+		tfs = append(tfs, tf)
+	}
+	return tfs, nil
+}
+
+// GetAllCandles retourne TOUTES les bougies d'une paire/timeframe en ordre
+// chronologique (plus ancienne d'abord). Réservé aux usages hors temps réel
+// (backtest, analyse) où l'on veut l'historique complet.
+func (db *DB) GetAllCandles(pair, timeframe string) ([]Candle, error) {
+	query := `
+		SELECT id, pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume, created_at
+		FROM candles
+		WHERE pair = ? AND timeframe = ?
+		ORDER BY timestamp ASC
+	`
+	rows, err := db.conn.Query(query, pair, timeframe)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all candles: %w", err)
+	}
+	defer rows.Close()
+
+	var candles []Candle
+	for rows.Next() {
+		var c Candle
+		if err := rows.Scan(&c.ID, &c.Pair, &c.Timeframe, &c.Timestamp,
+			&c.OpenPrice, &c.HighPrice, &c.LowPrice, &c.ClosePrice, &c.Volume, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan candle: %w", err)
+		}
+		candles = append(candles, c)
+	}
+	return candles, nil
+}
+
 // GetActiveTimeframes retrieves active timeframes for a specific pair
 func (db *DB) GetActiveTimeframes(pair string) ([]ActiveTimeframe, error) {
 	query := `

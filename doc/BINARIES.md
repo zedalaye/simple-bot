@@ -162,6 +162,30 @@ make build-image
 ./bin/volatility --root storage/mexc
 ```
 
+### backtest (`cmd/backtest/main.go`)
+
+**Purpose**: Replay an `rsi_dca` strategy over historical candles to evaluate
+and optimise parameters.
+
+**Key Features:**
+- Reuses the real decision code (`internal/algorithms`) and indicator math
+  (`internal/market`) via the shared `IndicatorCalculator` interface — faithful
+  to production
+- No look-ahead: decisions at candle close, orders fill on later candles
+- Parameter grid sweep over RSI timeframe, threshold, profit target and buy
+  interval; reports buys/day, cycles/day, capital, inventory, P&L
+- Works directly on an instance database (`--db`), no network access
+
+**Usage:**
+```bash
+# Reproduce an existing strategy
+./bin/backtest --db storage/mexc/db/bot.db --strategy-id 1
+
+# Sweep parameters
+./bin/backtest --db storage/mexc/db/bot.db --rsi-tf 15m,1h \
+  --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400 --vol-adj 0
+```
+
 ## 🐳 Docker Integration
 
 All binaries are available through Docker Compose with multi-exchange support:

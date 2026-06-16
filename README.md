@@ -221,6 +221,32 @@ When the `storage/.env.tg` file is available, Telegram notifications are automat
 $ ./bin/web --root storage/<exchange>
 ```
 
+## Backtesting strategies
+
+The `backtest` binary replays an `rsi_dca` strategy over the historical candles
+stored in an instance database. It reuses the **real** decision code
+(`internal/algorithms`) and the **real** indicator math (`internal/market`), so
+results stay faithful to production behaviour. Decisions are taken at candle
+close and orders only fill on later candles (no look-ahead bias).
+
+```bash
+# Single run reproducing an existing strategy (#1) on 15m price path
+$ ./bin/backtest --db storage/mexc/db/bot.db --strategy-id 1
+
+# Parameter sweep: RSI timeframe × threshold × profit target × buy interval
+$ make run-backtest ARGS="--db storage/mexc/db/bot.db \
+    --rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 \
+    --interval 21600,43200,86400 --vol-adj 0"
+```
+
+Output columns: filled buys/day, closed cycles/day, median cycle duration,
+peak simultaneous cycles, peak deployed capital, unsold inventory, realized
+net P&L, return %, win rate. Use `--from`/`--to` (YYYY-MM-DD) to restrict the
+period and `--fee` to set the per-side fee (default 0.1%). Note: `rsi_dca`
+only sells at a profit target, so the win rate is ~100% by construction — the
+real risk to watch is **inventory accumulation** (unsold cycles) during
+downtrends.
+
 ## 📚 Documentation
 
 Comprehensive documentation is available in the [`doc/`](doc/) directory:

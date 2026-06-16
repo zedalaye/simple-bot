@@ -2,7 +2,6 @@ package algorithms
 
 import (
 	"bot/internal/core/database"
-	"bot/internal/market"
 )
 
 // MarketPrecision represents market precision information
@@ -13,12 +12,25 @@ type MarketPrecision struct {
 	AmountDecimals int
 }
 
+// IndicatorCalculator fournit les indicateurs techniques nécessaires aux
+// algorithmes. Il est implémenté par *market.Calculator (exécution réelle,
+// données live) et par le calculateur du package backtest (données historiques
+// rejouées « as-of »). Garder ce contrat minimal : n'y ajouter que les méthodes
+// réellement appelées par les algorithmes, pour que le backtest reste fidèle.
+type IndicatorCalculator interface {
+	CalculateRSI(pair, timeframe string, period int) (float64, error)
+	CalculateEMA(pair, timeframe string, period int) (float64, error)
+	CalculateVolatility(pair, timeframe string, period int) (float64, error)
+	CalculateRecentHigh(pair, timeframe string, periods int) (float64, error)
+	CalculateMACD(pair, timeframe string, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, histogram float64, err error)
+}
+
 // TradingContext provides all necessary data for trading decisions
 type TradingContext struct {
 	ExchangeName string
 	Pair         string
 	CurrentPrice float64
-	Calculator   *market.Calculator
+	Calculator   IndicatorCalculator
 	Precision    MarketPrecision // Ajout des précisions du marché
 }
 

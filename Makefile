@@ -5,10 +5,10 @@ GIT_TAG := $(shell git describe --tags --always --dirty)
 VERSION  ?= $(GIT_TAG)
 
 .PHONY: build-all \
-        build-bot build-admin build-web build-test build-volatility build-rsi build-order \
+        build-bot build-admin build-web build-test build-volatility build-rsi build-order build-backtest \
         build-image push-image \
         clean \
-        run-bot run-admin run-web run-test \
+        run-bot run-admin run-web run-test run-backtest \
         fmt vet check vulncheck \
         deps deps-check deps-update deps-verify
 
@@ -19,7 +19,7 @@ release: FLAGS = -ldflags "-s -w -X bot/internal/version.Version=$(VERSION)"
 release: build-all
 
 # Construire tous les binaires
-build-all: build-bot build-web build-admin build-test build-volatility build-rsi build-order
+build-all: build-bot build-web build-admin build-test build-volatility build-rsi build-order build-backtest
 
 # Construire chaque binaire individuellement
 build-bot:
@@ -42,6 +42,9 @@ build-rsi:
 
 build-order:
 	go build -o bin/order ./cmd/order
+
+build-backtest:
+	go build -o bin/backtest ${FLAGS} ./cmd/backtest
 
 # Construction de l'image docker (précédée des vérifications dépendances + vulnérabilités)
 # deps-check est informatif (liste les MAJ dispo, ne bloque pas) ; deps-verify et vulncheck sont bloquants
@@ -72,6 +75,10 @@ run-web:
 
 run-test:
 	DEBUG=true go run ./cmd/test $(ARGS)
+
+# Backtest : ex. make run-backtest ARGS="--db storage/mexc/db/bot.db --rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400"
+run-backtest:
+	go run ./cmd/backtest $(ARGS)
 
 # Vérifications avant commit
 fmt:

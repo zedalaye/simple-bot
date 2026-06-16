@@ -5,7 +5,6 @@ import (
 	"bot/internal/logger"
 	"fmt"
 
-	"github.com/cinar/indicator/v2/momentum"
 	"github.com/cinar/indicator/v2/trend"
 	"github.com/cinar/indicator/v2/volatility"
 )
@@ -29,7 +28,7 @@ func (c *Calculator) CalculateRSI(pair, timeframe string, period int) (float64, 
 	logger.Debugf("Calculating RSI for %s/%s with period %d", pair, timeframe, period)
 
 	// Ensure we have enough candles (RSI needs at least period+1 candles)
-	requiredCandles := period * 3 // Get more data for accurate RSI calculation
+	requiredCandles := RSIWindow(period) // Get more data for accurate RSI calculation
 	err := c.collector.EnsureCandlesAvailable(pair, timeframe, requiredCandles)
 	if err != nil {
 		return 0, fmt.Errorf("failed to ensure candles availability: %w", err)
@@ -41,44 +40,24 @@ func (c *Calculator) CalculateRSI(pair, timeframe string, period int) (float64, 
 		return 0, fmt.Errorf("failed to get candles for RSI: %w", err)
 	}
 
-	if len(candles) < period+1 {
-		return 0, fmt.Errorf("insufficient candles for RSI calculation: need %d, got %d", period+1, len(candles))
+	// Calcul délégué aux helpers partagés (cf. indicators_math.go) pour rester
+	// strictement identique au backtest.
+	latestRSI, err := RSIValue(closesOf(candles), period)
+	if err != nil {
+		return 0, err
 	}
+	logger.Debugf("Calculated RSI: %.2f", latestRSI)
 
-	// Convert candles to closes array for indicator library
+	return latestRSI, nil
+}
+
+// closesOf extrait la série des prix de clôture d'une liste de bougies.
+func closesOf(candles []database.Candle) []float64 {
 	closes := make([]float64, len(candles))
 	for i, candle := range candles {
 		closes[i] = candle.ClosePrice
 	}
-
-	// Calculate RSI using indicator v2 library with channels (following your example)
-	rsi := momentum.NewRsiWithPeriod[float64](period)
-
-	// Create input channel and send closing prices
-	inputChan := make(chan float64, len(closes))
-	for _, price := range closes {
-		inputChan <- price
-	}
-	close(inputChan)
-
-	// Compute RSI values using the channel API
-	rsiChan := rsi.Compute(inputChan)
-
-	// Collect all RSI values
-	var rsiValues []float64
-	for value := range rsiChan {
-		rsiValues = append(rsiValues, value)
-	}
-
-	if len(rsiValues) == 0 {
-		return 0, fmt.Errorf("RSI calculation returned no values")
-	}
-
-	// Return the latest RSI value
-	latestRSI := rsiValues[len(rsiValues)-1]
-	logger.Debugf("Calculated RSI: %.2f", latestRSI)
-
-	return latestRSI, nil
+	return closes
 }
 
 // CalculateVolatility calculates price volatility (standard deviation)
@@ -86,7 +65,7 @@ func (c *Calculator) CalculateVolatility(pair, timeframe string, period int) (fl
 	logger.Debugf("Calculating volatility for %s/%s with period %d", pair, timeframe, period)
 
 	// Ensure we have enough candles
-	requiredCandles := period * 2
+	requiredCandles := VolatilityWindow(period)
 	err := c.collector.EnsureCandlesAvailable(pair, timeframe, requiredCandles)
 	if err != nil {
 		return 0, fmt.Errorf("failed to ensure candles availability: %w", err)
@@ -98,59 +77,11 @@ func (c *Calculator) CalculateVolatility(pair, timeframe string, period int) (fl
 		return 0, fmt.Errorf("failed to get candles for volatility: %w", err)
 	}
 
-	if len(candles) < period {
-		return 0, fmt.Errorf("insufficient candles for volatility calculation: need %d, got %d", period, len(candles))
+	// Calcul délégué aux helpers partagés (cf. indicators_math.go).
+	latestVolatility, err := VolatilityValue(closesOf(candles), period)
+	if err != nil {
+		return 0, err
 	}
-
-	// Convert candles to closes array
-	closes := make([]float64, len(candles))
-	for i, candle := range candles {
-		closes[i] = candle.ClosePrice
-	}
-
-	// Calculate volatility properly: first compute returns, then standard deviation with indicator v2
-	if len(closes) < 2 {
-		return 0, fmt.Errorf("need at least 2 prices for volatility calculation")
-	}
-
-	// Calculate returns (percentage change between consecutive prices)
-	returns := make([]float64, len(closes)-1)
-	for i := 1; i < len(closes); i++ {
-		returns[i-1] = (closes[i] - closes[i-1]) / closes[i-1]
-	}
-
-	// Use the most recent 'period' returns for volatility calculation
-	if len(returns) < period {
-		period = len(returns) // Use all available returns if less than period
-	}
-
-	recentReturns := returns[len(returns)-period:]
-
-	// Now use MovingStd on the returns (not raw prices)
-	movingStd := volatility.NewMovingStdWithPeriod[float64](len(recentReturns))
-
-	// Create input channel and send returns (not prices)
-	inputChan := make(chan float64, len(recentReturns))
-	for _, returnVal := range recentReturns {
-		inputChan <- returnVal
-	}
-	close(inputChan)
-
-	// Compute moving standard deviation of returns
-	stdChan := movingStd.Compute(inputChan)
-
-	// Collect standard deviation values
-	var stdValues []float64
-	for value := range stdChan {
-		stdValues = append(stdValues, value)
-	}
-
-	if len(stdValues) == 0 {
-		return 0, fmt.Errorf("volatility calculation returned no values")
-	}
-
-	// Return latest volatility as percentage (standard deviation of returns * 100)
-	latestVolatility := stdValues[len(stdValues)-1] * 100
 	logger.Debugf("Calculated volatility with MovingStd v2 (on returns): %.2f%%", latestVolatility)
 
 	return latestVolatility, nil
@@ -162,7 +93,7 @@ func (c *Calculator) CalculateMACD(pair, timeframe string, fastPeriod, slowPerio
 		pair, timeframe, fastPeriod, slowPeriod, signalPeriod)
 
 	// Ensure we have enough candles
-	requiredCandles := slowPeriod * 3
+	requiredCandles := MACDWindow(slowPeriod)
 	err = c.collector.EnsureCandlesAvailable(pair, timeframe, requiredCandles)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to ensure candles availability: %w", err)
@@ -174,51 +105,11 @@ func (c *Calculator) CalculateMACD(pair, timeframe string, fastPeriod, slowPerio
 		return 0, 0, 0, fmt.Errorf("failed to get candles for MACD: %w", err)
 	}
 
-	if len(candles) < slowPeriod+signalPeriod {
-		return 0, 0, 0, fmt.Errorf("insufficient candles for MACD calculation: need %d, got %d",
-			slowPeriod+signalPeriod, len(candles))
+	// Calcul délégué aux helpers partagés (cf. indicators_math.go).
+	latestMACD, latestSignal, histogramVal, err := MACDValue(closesOf(candles), fastPeriod, slowPeriod, signalPeriod)
+	if err != nil {
+		return 0, 0, 0, err
 	}
-
-	// Convert to closes array
-	closes := make([]float64, len(candles))
-	for i, candle := range candles {
-		closes[i] = candle.ClosePrice
-	}
-
-	// Create MACD instance following v2 API pattern
-	macdIndicator := trend.NewMacd[float64]()
-
-	// Create input channel and send closing prices
-	inputChan := make(chan float64, len(closes))
-	for _, price := range closes {
-		inputChan <- price
-	}
-	close(inputChan)
-
-	// Compute MACD values using channels (returns 2 values: macd and signal)
-	macdChan, signalChan := macdIndicator.Compute(inputChan)
-
-	// Collect MACD values from first channel
-	var macdResults []float64
-	for value := range macdChan {
-		macdResults = append(macdResults, value)
-	}
-
-	// Collect signal values from second channel
-	var signalResults []float64
-	for value := range signalChan {
-		signalResults = append(signalResults, value)
-	}
-
-	if len(macdResults) == 0 || len(signalResults) == 0 {
-		return 0, 0, 0, fmt.Errorf("MACD calculation returned no values")
-	}
-
-	// Get latest values
-	latestMACD := macdResults[len(macdResults)-1]
-	latestSignal := signalResults[len(signalResults)-1]
-	histogramVal := latestMACD - latestSignal
-
 	logger.Debugf("Calculated MACD: %.4f, Signal: %.4f, Histogram: %.4f", latestMACD, latestSignal, histogramVal)
 	return latestMACD, latestSignal, histogramVal, nil
 }
@@ -352,7 +243,7 @@ func (c *Calculator) CalculateEMA(pair, timeframe string, period int) (float64, 
 	logger.Debugf("Calculating EMA for %s/%s with period %d", pair, timeframe, period)
 
 	// Ensure we have enough candles
-	requiredCandles := period * 3
+	requiredCandles := EMAWindow(period)
 	err := c.collector.EnsureCandlesAvailable(pair, timeframe, requiredCandles)
 	if err != nil {
 		return 0, fmt.Errorf("failed to ensure candles availability: %w", err)
@@ -364,35 +255,11 @@ func (c *Calculator) CalculateEMA(pair, timeframe string, period int) (float64, 
 		return 0, fmt.Errorf("failed to get candles for EMA: %w", err)
 	}
 
-	if len(candles) < period {
-		return 0, fmt.Errorf("insufficient candles for EMA calculation: need %d, got %d", period, len(candles))
+	// Calcul délégué aux helpers partagés (cf. indicators_math.go).
+	latestEMA, err := EMAValue(closesOf(candles), period)
+	if err != nil {
+		return 0, err
 	}
-
-	// Create EMA instance using indicator v2
-	ema := trend.NewEmaWithPeriod[float64](period)
-
-	// Create input channel and send closing prices
-	inputChan := make(chan float64, len(candles))
-	for _, candle := range candles {
-		inputChan <- candle.ClosePrice
-	}
-	close(inputChan)
-
-	// Compute EMA values using channels
-	emaChan := ema.Compute(inputChan)
-
-	// Collect all EMA values
-	var emaValues []float64
-	for value := range emaChan {
-		emaValues = append(emaValues, value)
-	}
-
-	if len(emaValues) == 0 {
-		return 0, fmt.Errorf("EMA calculation returned no values")
-	}
-
-	// Return latest EMA value
-	latestEMA := emaValues[len(emaValues)-1]
 	logger.Debugf("Calculated EMA: %.4f", latestEMA)
 
 	return latestEMA, nil
