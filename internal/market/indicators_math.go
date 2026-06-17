@@ -56,6 +56,34 @@ func RSIValue(closes []float64, period int) (float64, error) {
 	return rsiValues[len(rsiValues)-1], nil
 }
 
+// RSISeries calcule le RSI (Wilder) sur la série de clôtures fournie et renvoie
+// TOUTES les valeurs produites (et non la seule dernière comme RSIValue), pour
+// l'affichage d'une courbe. Le calcul cinar consomme `period` clôtures avant
+// d'émettre sa première valeur : la série retournée correspond donc aux
+// `len(closes) - period` dernières bougies. L'appelant aligne les timestamps en
+// prenant la même longueur en fin de série (cf. /api/rsi).
+func RSISeries(closes []float64, period int) ([]float64, error) {
+	if len(closes) < period+1 {
+		return nil, fmt.Errorf("insufficient candles for RSI calculation: need %d, got %d", period+1, len(closes))
+	}
+
+	rsi := momentum.NewRsiWithPeriod[float64](period)
+	inputChan := make(chan float64, len(closes))
+	for _, price := range closes {
+		inputChan <- price
+	}
+	close(inputChan)
+
+	var rsiValues []float64
+	for value := range rsi.Compute(inputChan) {
+		rsiValues = append(rsiValues, value)
+	}
+	if len(rsiValues) == 0 {
+		return nil, fmt.Errorf("RSI calculation returned no values")
+	}
+	return rsiValues, nil
+}
+
 // VolatilityValue calcule la volatilité (écart-type des rendements, en %) sur la
 // série de clôtures fournie : on dérive les rendements, on garde les `period`
 // derniers, puis MovingStd. Identique à l'implémentation de production.

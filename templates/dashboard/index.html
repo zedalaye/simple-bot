@@ -25,7 +25,7 @@
                         </div>
                     </div>
                 </div>
-                <div id="chart-container" style="height: 400px;"></div>
+                <div id="chart-container" style="height: 520px;"></div>
             </div>
         </div>
     </div>
@@ -126,6 +126,10 @@ const ALL_TIMEFRAMES = [
 
 let chart = null;
 let candleSeries = null;
+let rsiSeries = null;            // courbe RSI dans le pane secondaire
+let markersPrimitive = null;     // marqueurs achat/vente sur les bougies
+let rsiThresholdLine = null;     // ligne de seuil d'achat sur le pane RSI
+let currentRsiThreshold = null;  // valeur de seuil actuellement tracée
 let currentPair = '';
 let currentTimeframe = '4h';
 let availableTimeframes = ALL_TIMEFRAMES; // Tous les timeframes sont disponibles par défaut
@@ -136,10 +140,30 @@ function isIntradayTimeframe(tf) {
     return tf.endsWith('m') || tf.endsWith('h');
 }
 
+// Durée d'une bougie en secondes, pour aligner les marqueurs d'ordres sur la
+// bougie qui les contient (lightweight-charts attache les marqueurs à un temps
+// de barre existant).
+function timeframeSeconds(tf) {
+    const n = parseInt(tf, 10) || 1;
+    if (tf.endsWith('m')) return n * 60;
+    if (tf.endsWith('h')) return n * 3600;
+    if (tf === '1d') return 86400;
+    if (tf === '1w') return 604800;
+    if (tf === '1M') return 2592000; // approximation (30 j)
+    return 60;
+}
+
+// Arrondit un timestamp ISO à l'ouverture de la bougie de la timeframe courante.
+function bucketTime(iso, bucketSeconds) {
+    const sec = Math.floor(Date.parse(iso) / 1000);
+    return Math.floor(sec / bucketSeconds) * bucketSeconds;
+}
+
 function initChart() {
     chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
-        width: document.getElementById('chart-container').offsetWidth,
-        height: 400,
+        // autoSize : dimensionne le canvas au conteneur (ResizeObserver natif) dès la
+        // première frame et suit ses changements (fenêtre, retour d'onglet).
+        autoSize: true,
         layout: {
             backgroundColor: '#ffffff',
             textColor: '#333',
@@ -157,12 +181,35 @@ function initChart() {
         },
     });
 
-    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, { 
-        upColor: '#26a69a', downColor: '#ef5350', 
-        borderVisible: false, 
-        wickUpColor: '#26a69a', wickDownColor: '#ef5350' 
+    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+        upColor: '#26a69a', downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a', wickDownColor: '#ef5350'
     });
+
+    // Pane secondaire (index 1) pour le RSI.
+    rsiSeries = chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#7e57c2',
+        lineWidth: 2,
+        priceFormat: { type: 'custom', minMove: 0.01, formatter: (v) => v.toFixed(1) },
+    }, 1);
+
+    // Lignes de référence classiques (survente 30 / surachat 70).
+    rsiSeries.createPriceLine({ price: 70, color: '#bdbdbd', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '70' });
+    rsiSeries.createPriceLine({ price: 30, color: '#bdbdbd', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '30' });
+
+    // Le pane RSI n'a besoin que d'une hauteur réduite.
+    const panes = chart.panes();
+    if (panes.length > 1) {
+        panes[1].setHeight(120);
+    }
 }
+
+// Attend 2 frames de rendu. Après un setData, l'axe de temps n'est committé qu'au
+// prochain rendu ; il faut donc attendre avant de (re)poser les marqueurs, sinon
+// ils sont calculés sur l'ancienne échelle (agglutinés en haut à droite après un
+// changement de TF). 2 frames garantissent qu'un rendu complet a eu lieu.
+const nextFrames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 async function loadChartData() {
     try {
@@ -176,6 +223,117 @@ async function loadChartData() {
         }
     } catch (error) {
         console.error('Erreur lors du chargement des données:', error);
+    }
+}
+
+// Charge la courbe RSI (même paire/timeframe que le graphe) et trace la ligne de
+// seuil d'achat issue de la stratégie.
+async function loadRSI() {
+    if (!currentPair || !currentTimeframe) return;
+    try {
+        const encodedPair = encodeURIComponent(currentPair);
+        const response = await fetch(`/api/rsi?pair=${encodedPair}&timeframe=${currentTimeframe}`);
+        const result = await response.json();
+
+        rsiSeries.setData(result.data || []);
+
+        // (Re)tracer la ligne de seuil si elle a changé.
+        if (result.threshold != null && result.threshold !== currentRsiThreshold) {
+            if (rsiThresholdLine) {
+                rsiSeries.removePriceLine(rsiThresholdLine);
+            }
+            rsiThresholdLine = rsiSeries.createPriceLine({
+                price: result.threshold,
+                color: '#ff9800',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: 'Seuil ' + result.threshold,
+            });
+            currentRsiThreshold = result.threshold;
+        }
+    } catch (error) {
+        console.error('Erreur lors du chargement du RSI:', error);
+    }
+}
+
+// Charge les marqueurs achat/vente à partir des ordres remplis des cycles.
+// Les ordres sont AGRÉGÉS par bougie (selon la timeframe courante) et par sens :
+// au plus un marqueur d'achat (sous la barre) et un de vente (au-dessus) par
+// bougie. Quand une bougie contient plusieurs ordres, le texte indique le nombre
+// (« A ×3 ») au lieu du prix ; un ordre isolé affiche son prix (« A 64741 »).
+// Cette agrégation garde le graphe lisible sur toutes les timeframes, y compris
+// daily/weekly/monthly.
+async function loadMarkers() {
+    if (!currentPair) return;
+
+    // Bornes temporelles des bougies effectivement chargées (limit=500). Les
+    // ordres hors de cette plage ne correspondent à aucune barre : sans filtrage
+    // lightweight-charts les rabat tous sur la bougie de bord, créant une pile
+    // illisible de vieux ordres aux extrémités du graphe.
+    const candleData = candleSeries.data();
+    if (!candleData || candleData.length === 0) return;
+    const firstTime = candleData[0].time;
+    const lastTime = candleData[candleData.length - 1].time;
+
+    try {
+        const response = await fetch('/api/cycles');
+        const cycles = await response.json();
+        if (!Array.isArray(cycles)) return;
+
+        const bucket = timeframeSeconds(currentTimeframe);
+        const inRange = (iso) => {
+            const t = bucketTime(iso, bucket);
+            return t >= firstTime && t <= lastTime;
+        };
+
+        // Regroupement par temps de bougie : { count, price (du dernier ordre) }.
+        const buys = new Map();
+        const sells = new Map();
+        const accumulate = (map, iso, price) => {
+            const t = bucketTime(iso, bucket);
+            const entry = map.get(t) || { count: 0, price: 0 };
+            entry.count += 1;
+            entry.price = price; // prix conservé pour le cas « ordre isolé »
+            map.set(t, entry);
+        };
+
+        cycles.forEach(cycle => {
+            const buy = cycle.buy_order;
+            const sell = cycle.sell_order;
+            if (buy && buy.status === 'FILLED' && inRange(buy.updated_at)) {
+                accumulate(buys, buy.updated_at, buy.price);
+            }
+            if (sell && sell.status === 'FILLED' && inRange(sell.updated_at)) {
+                accumulate(sells, sell.updated_at, sell.price);
+            }
+        });
+
+        const markers = [];
+        buys.forEach((e, t) => markers.push({
+            time: t,
+            position: 'belowBar',
+            color: '#26a69a',
+            shape: 'arrowUp',
+            text: e.count > 1 ? 'A ×' + e.count : 'A ' + e.price.toFixed(0),
+        }));
+        sells.forEach((e, t) => markers.push({
+            time: t,
+            position: 'aboveBar',
+            color: '#ef5350',
+            shape: 'arrowDown',
+            text: e.count > 1 ? 'V ×' + e.count : 'V ' + e.price.toFixed(0),
+        }));
+
+        markers.sort((a, b) => a.time - b.time);
+
+        if (!markersPrimitive) {
+            markersPrimitive = LightweightCharts.createSeriesMarkers(candleSeries, markers);
+        } else {
+            markersPrimitive.setMarkers(markers);
+        }
+    } catch (error) {
+        console.error('Erreur lors du chargement des marqueurs:', error);
     }
 }
 
@@ -246,13 +404,22 @@ async function changeTimeframe(timeframe) {
     });
     
     // Charger les données (l'endpoint /api/candles gère automatiquement le téléchargement si nécessaire)
-    loadChartData();
+    // loadMarkers dépend des bougies déjà posées (bornes temporelles) → on attend loadChartData.
+    await loadChartData();
+    loadRSI();
+    await nextFrames();   // laisser l'axe de temps se committer avant les marqueurs
+    await loadMarkers();
+    chart.timeScale().fitContent();
 }
 
 async function changePair(pair) {
     currentPair = pair;
     renderTimeframeButtons(); // Réafficher les boutons de timeframes
-    loadChartData();
+    await loadChartData();
+    loadRSI();
+    await nextFrames();   // laisser l'axe de temps se committer avant les marqueurs
+    await loadMarkers();
+    chart.timeScale().fitContent();
 }
 
 // Fonction pour rafraîchir les statistiques du dashboard
@@ -388,6 +555,8 @@ async function refreshChartData() {
             if (data && data.length > 0) {
                 candleSeries.setData(data);
             }
+            loadRSI();
+            loadMarkers();
         } catch (error) {
             console.error('Erreur lors du rafraîchissement des données du graphique:', error);
         }
@@ -399,28 +568,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     initChart();
     await loadPairs();
     renderTimeframeButtons(); // Afficher tous les timeframes disponibles
-    loadChartData();
+    // Même séquence que changeTimeframe : bougies → commit de l'axe (nextFrames)
+    // → marqueurs → fitContent, pour des marqueurs bien placés dès le 1er rendu.
+    await loadChartData();
+    loadRSI();
+    await nextFrames();   // laisser l'axe de temps se committer avant les marqueurs
+    await loadMarkers();
+    chart.timeScale().fitContent();
     refreshBalance();
 
     // Event listeners pour le sélecteur de paires
     document.getElementById('pair-selector').addEventListener('change', (e) => {
         changePair(e.target.value);
     });
-    
-    // Responsiveness
-    window.addEventListener('resize', () => {
-        chart.applyOptions({
-            width: document.getElementById('chart-container').offsetWidth
-        });
-    });
-    
+
     // Démarrer le rafraîchissement automatique des données toutes les 30 secondes
     setInterval(() => {
         refreshDashboardStats();
         refreshChartData();
         refreshBalance();
     }, 30000);
-    
+
     console.log('Dashboard initialisé avec téléchargement automatique côté serveur');
 });
 </script>

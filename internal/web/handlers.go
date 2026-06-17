@@ -4,6 +4,7 @@ import (
 	"bot/internal/algorithms"
 	"bot/internal/core/database"
 	"bot/internal/logger"
+	"bot/internal/market"
 	"fmt"
 	"html/template"
 	"log"
@@ -947,6 +948,68 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			}
 
 			c.JSON(http.StatusOK, data)
+		})
+
+		// RSI API : courbe RSI calculée sur la même timeframe que le graphe, pour
+		// l'affichage dans un pane dédié. La période et le seuil par défaut sont
+		// repris de la première stratégie rsi_dca activée (ils restent surchargeables
+		// via query string) afin que la ligne de seuil reflète la config du bot.
+		api.GET("/rsi", func(c *gin.Context) {
+			pair := c.Query("pair")
+			timeframe := c.Query("timeframe")
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "500"))
+
+			if pair == "" || timeframe == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "pair and timeframe are required"})
+				return
+			}
+
+			// Valeurs par défaut depuis la stratégie rsi_dca activée.
+			period := 14
+			var threshold *float64
+			if strategies, err := db.GetEnabledStrategies(); err == nil {
+				for _, s := range strategies {
+					if s.AlgorithmName == "rsi_dca" && s.RSIPeriod != nil {
+						period = *s.RSIPeriod
+						threshold = s.RSIThreshold
+						break
+					}
+				}
+			}
+			if p, err := strconv.Atoi(c.Query("period")); err == nil && p > 0 {
+				period = p
+			}
+
+			candles, err := db.GetCandles(pair, timeframe, limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			closes := make([]float64, len(candles))
+			for i, candle := range candles {
+				closes[i] = candle.ClosePrice
+			}
+
+			rsiValues, err := market.RSISeries(closes, period)
+			if err != nil {
+				// Pas assez de bougies : on renvoie une série vide plutôt qu'une erreur.
+				c.JSON(http.StatusOK, gin.H{"period": period, "threshold": threshold, "data": []any{}})
+				return
+			}
+
+			// RSISeries émet len(closes)-period valeurs : on aligne sur les dernières
+			// bougies correspondantes (ordre chronologique).
+			offset := len(candles) - len(rsiValues)
+			data := make([]map[string]interface{}, 0, len(rsiValues))
+			for i, v := range rsiValues {
+				data = append(data, map[string]interface{}{
+					"time":  candles[offset+i].Timestamp / 1000,
+					"value": v,
+				})
+			}
+
+			c.JSON(http.StatusOK, gin.H{"period": period, "threshold": threshold, "data": data})
 		})
 
 		// Balance portefeuille
