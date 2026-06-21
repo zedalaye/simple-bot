@@ -177,7 +177,7 @@ func (b *dashboardBot) loop(ctx context.Context) {
 				return
 			}
 			logger.Warnf("Telegram getUpdates : %v", err)
-			time.Sleep(3 * time.Second)
+			time.Sleep(10 * time.Second)
 			continue
 		}
 
@@ -210,14 +210,18 @@ func (b *dashboardBot) getUpdates(ctx context.Context) ([]tgUpdate, error) {
 	defer resp.Body.Close()
 
 	var result struct {
-		OK     bool       `json:"ok"`
-		Result []tgUpdate `json:"result"`
+		OK          bool       `json:"ok"`
+		ErrorCode   int        `json:"error_code"`
+		Description string     `json:"description"`
+		Result      []tgUpdate `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 	if !result.OK {
-		return nil, fmt.Errorf("réponse getUpdates non ok")
+		// Ex. 409 Conflict : un autre process interroge getUpdates avec le même
+		// token (un seul consommateur autorisé par bot).
+		return nil, fmt.Errorf("%d %s", result.ErrorCode, result.Description)
 	}
 	return result.Result, nil
 }
