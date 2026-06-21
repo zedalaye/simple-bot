@@ -198,9 +198,10 @@ func (b *Bot) run() {
 			}
 			return
 		case <-checkTicker.C:
-			b.handlePriceCheck()     // Update position max prices + trailing stop
-			b.executeBuyStrategies() // Achats périodiques (stratégies sans cron)
-			b.handleOrderCheck()     // Check pending orders status
+			b.handlePriceCheck()       // Update position max prices + trailing stop
+			b.executeBuyStrategies()   // Achats périodiques (stratégies sans cron)
+			b.handleOrderCheck()       // Check pending orders status
+			b.handleStaleBuyOrders()   // Annule les ordres d'achat en attente trop vieux
 			b.ShowStatistics()
 		}
 	}
@@ -320,6 +321,52 @@ func (b *Bot) handleOrderCheck() {
 	}
 
 	for _, dbOrder := range pendingOrders {
+		b.processOrder(dbOrder)
+	}
+}
+
+// handleStaleBuyOrders annule automatiquement les ordres d'achat en attente plus
+// vieux que le seuil défini par leur stratégie (max_buy_order_age_hours). 0 = désactivé.
+func (b *Bot) handleStaleBuyOrders() {
+	pendingOrders, err := b.db.GetPendingOrders()
+	if err != nil {
+		logger.Errorf("Failed to get pending orders for stale buy sweep: %v", err)
+		return
+	}
+
+	for _, dbOrder := range pendingOrders {
+		if dbOrder.Side != database.Buy || dbOrder.StrategyID == nil {
+			continue
+		}
+
+		strategy, err := b.db.GetStrategy(*dbOrder.StrategyID)
+		if err != nil {
+			logger.Errorf("[%s] Balayage achats périmés : stratégie %d introuvable : %v", b.Config.ExchangeName, *dbOrder.StrategyID, err)
+			continue
+		}
+		if strategy.MaxBuyOrderAgeHours <= 0 {
+			continue
+		}
+
+		maxAge := time.Duration(strategy.MaxBuyOrderAgeHours) * time.Hour
+		age := time.Since(dbOrder.CreatedAt)
+		if age < maxAge {
+			continue
+		}
+
+		logger.Infof("[%s] Ordre d'achat %s (stratégie %s) en attente depuis %s (> %s) : annulation automatique",
+			b.Config.ExchangeName, dbOrder.ExternalID, strategy.Name, age.Round(time.Minute), maxAge)
+
+		if _, err := b.exchange.CancelOrder(dbOrder.ExternalID, b.Config.Pair); err != nil {
+			// L'ordre a pu se remplir entre-temps : le cancel échoue, handleOrderCheck
+			// (tick courant ou suivant) traitera le remplissage. On ne force rien ici.
+			logger.Errorf("[%s] Échec annulation ordre d'achat périmé %s : %v", b.Config.ExchangeName, dbOrder.ExternalID, err)
+			continue
+		}
+
+		// Resynchronise depuis la vérité exchange : route vers handleCanceledOrder
+		// (statut CANCELLED + notif Telegram) ou handleClosedOrder en cas de course
+		// fill/cancel (l'ordre s'est rempli juste avant l'annulation).
 		b.processOrder(dbOrder)
 	}
 }

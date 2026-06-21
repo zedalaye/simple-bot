@@ -96,6 +96,21 @@
                                         <div class="form-text">Limite de cycles ouverts en même temps (<strong>0 = illimité</strong>)</div>
                                     </div>
                                 </div>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="max_buy_order_age_value" class="form-label">Annulation d'un achat périmé</label>
+                                        <div class="input-group">
+                                            <input type="number" min="0" step="1" class="form-control" id="max_buy_order_age_value" name="max_buy_order_age_value"
+                                                   value="{{if gt .strategy.MaxBuyOrderAgeHours 0}}{{buyAgeValue .strategy.MaxBuyOrderAgeHours}}{{end}}" placeholder="0">
+                                            <select class="form-select" id="max_buy_order_age_unit" name="max_buy_order_age_unit">
+                                                <option value="hours" {{if eq (buyAgeUnit .strategy.MaxBuyOrderAgeHours) "hours"}}selected{{end}}>heures</option>
+                                                <option value="days" {{if eq (buyAgeUnit .strategy.MaxBuyOrderAgeHours) "days"}}selected{{end}}>jours</option>
+                                                <option value="weeks" {{if eq (buyAgeUnit .strategy.MaxBuyOrderAgeHours) "weeks"}}selected{{end}}>semaines</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-text">Annule un ordre d'achat en attente plus vieux que ce délai (<strong>0 ou vide = désactivé</strong>)</div>
+                                    </div>
+                                </div>
 
                                 <!-- Profit & Risk Settings -->
                                 <h6 class="text-secondary mb-3">📈 Paramètres de Profit et Risque</h6>
@@ -444,6 +459,10 @@ function validateStrategyForm() {
     const cycles = intVal('concurrent_cycles');
     if (cycles === null || cycles < 0) {
         errors.push("Le nombre de cycles simultanés ne peut pas être négatif (0 = illimité).");
+    }
+    const buyAge = intVal('max_buy_order_age_value');
+    if (buyAge !== null && buyAge < 0) {
+        errors.push("Le délai d'annulation d'un achat périmé ne peut pas être négatif (0 = désactivé).");
     }
     const profit = numVal('profit_target');
     if (profit === null || profit <= 0) {

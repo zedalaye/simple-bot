@@ -8,7 +8,7 @@ import (
 
 // colonnes SELECT communes à toutes les requêtes de stratégie
 const strategyColumns = `
-	id, name, description, enabled, algorithm_name, cron_expression, buy_interval_seconds, quote_amount, max_concurrent_cycles,
+	id, name, description, enabled, algorithm_name, cron_expression, buy_interval_seconds, quote_amount, max_concurrent_cycles, max_buy_order_age_hours,
 	rsi_threshold, rsi_period, rsi_timeframe, macd_fast_period, macd_slow_period, macd_signal_period, macd_timeframe,
 	bb_period, bb_multiplier, bb_timeframe, profit_target, trailing_stop_delta, sell_offset,
 	volatility_period, volatility_adjustment, volatility_timeframe,
@@ -35,7 +35,7 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 
 	err := row.Scan(
 		&s.ID, &s.Name, &s.Description, &s.Enabled,
-		&s.AlgorithmName, &s.CronExpression, &s.BuyIntervalSeconds, &s.QuoteAmount, &s.MaxConcurrentCycles,
+		&s.AlgorithmName, &s.CronExpression, &s.BuyIntervalSeconds, &s.QuoteAmount, &s.MaxConcurrentCycles, &s.MaxBuyOrderAgeHours,
 		&rsiThreshold, &rsiPeriod, &s.RSITimeframe, &s.MACDFastPeriod, &s.MACDSlowPeriod,
 		&s.MACDSignalPeriod, &s.MACDTimeframe, &s.BBPeriod, &s.BBMultiplier, &s.BBTimeframe,
 		&s.ProfitTarget, &s.TrailingStopDelta, &s.SellOffset,
@@ -227,7 +227,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
-	concurrentCycles int) error {
+	concurrentCycles, maxBuyOrderAgeHours int) error {
 
 	// Check if strategy exists
 	var count int
@@ -267,8 +267,8 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 			volatility_period, volatility_adjustment, volatility_timeframe,
 			trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
 			dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
-			max_concurrent_cycles
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			max_concurrent_cycles, max_buy_order_age_hours
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, buyIntervalSeconds, quoteAmount,
@@ -279,7 +279,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-		concurrentCycles)
+		concurrentCycles, maxBuyOrderAgeHours)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
 	}
@@ -296,7 +296,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
-	maxConcurrentCycles int) error {
+	maxConcurrentCycles, maxBuyOrderAgeHours int) error {
 
 	// Set defaults for timeframes if empty
 	if rsiTimeframe == "" {
@@ -350,6 +350,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			dynamic_sizing_window_days = ?,
 			dynamic_sizing_full_drawdown = ?,
 			max_concurrent_cycles = ?,
+			max_buy_order_age_hours = ?,
 			updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
 	`
@@ -362,7 +363,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-		maxConcurrentCycles, id)
+		maxConcurrentCycles, maxBuyOrderAgeHours, id)
 
 	return err
 }

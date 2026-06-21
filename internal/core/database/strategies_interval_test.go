@@ -45,7 +45,7 @@ func TestCreateStrategyInterval_RoundTrip(t *testing.T) {
 		nil, nil, "4h",
 		false, nil, nil, "1d",
 		false, nil, nil, nil, nil,
-		1,
+		1, 0,
 	)
 	if err != nil {
 		t.Fatalf("CreateStrategyFromWeb a échoué : %v", err)
@@ -90,7 +90,7 @@ func TestGetLastBuyTime_AndCooldown(t *testing.T) {
 		nil, nil, "4h",
 		false, nil, nil, "1d",
 		false, nil, nil, nil, nil,
-		1,
+		1, 0,
 	); err != nil {
 		t.Fatalf("CreateStrategyFromWeb a échoué : %v", err)
 	}

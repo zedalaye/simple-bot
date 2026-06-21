@@ -61,6 +61,9 @@ func validateStrategyForm(s database.Strategy) error {
 	if s.MaxConcurrentCycles < 0 {
 		return fmt.Errorf("le nombre de cycles simultanés ne peut pas être négatif (0 = illimité, reçu %d)", s.MaxConcurrentCycles)
 	}
+	if s.MaxBuyOrderAgeHours < 0 {
+		return fmt.Errorf("l'âge maximal d'un ordre d'achat ne peut pas être négatif (0 = désactivé, reçu %d)", s.MaxBuyOrderAgeHours)
+	}
 	if s.ProfitTarget <= 0 {
 		return fmt.Errorf("l'objectif de profit doit être positif (reçu %.2f)", s.ProfitTarget)
 	}
@@ -117,6 +120,23 @@ func parseTrigger(c *gin.Context) (string, int) {
 	return strings.TrimSpace(c.PostForm("cron")), 0
 }
 
+// parseBuyOrderAge lit l'âge maximal d'un ordre d'achat (valeur + unité) depuis le
+// formulaire et le convertit en heures. 0 = désactivé.
+func parseBuyOrderAge(c *gin.Context) int {
+	value, _ := strconv.Atoi(c.PostForm("max_buy_order_age_value"))
+	if value <= 0 {
+		return 0
+	}
+	unitHours := 1 // heures par défaut
+	switch c.PostForm("max_buy_order_age_unit") {
+	case "days":
+		unitHours = 24
+	case "weeks":
+		unitHours = 168
+	}
+	return value * unitHours
+}
+
 // Fonctions helper pour les templates
 var templateFuncs = template.FuncMap{
 	"timeAgo": func(t time.Time) string {
@@ -155,6 +175,29 @@ var templateFuncs = template.FuncMap{
 			return seconds / 86400
 		default:
 			return seconds / 3600
+		}
+	},
+	// buyAgeUnit / buyAgeValue : décomposent un âge max d'ordre d'achat (stocké en
+	// heures) en (valeur, unité) pour le round-trip du formulaire. Choisit la plus
+	// grande unité qui divise exactement la durée.
+	"buyAgeUnit": func(hours int) string {
+		switch {
+		case hours > 0 && hours%168 == 0:
+			return "weeks"
+		case hours > 0 && hours%24 == 0:
+			return "days"
+		default:
+			return "hours"
+		}
+	},
+	"buyAgeValue": func(hours int) int {
+		switch {
+		case hours > 0 && hours%168 == 0:
+			return hours / 168
+		case hours > 0 && hours%24 == 0:
+			return hours / 24
+		default:
+			return hours
 		}
 	},
 	// intervalLabel : libellé court FR d'un intervalle (ex: « toutes les 24 h »).
@@ -417,6 +460,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
 		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
 		concurrentCycles, _ := strconv.ParseInt(c.PostForm("concurrent_cycles"), 10, 64)
+		maxBuyOrderAgeHours := parseBuyOrderAge(c)
 
 		// Set defaults if not provided
 		if trailingStopDelta == 0 {
@@ -514,7 +558,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
 			AlgorithmName: algorithm, CronExpression: cron, BuyIntervalSeconds: buyIntervalSeconds, QuoteAmount: quoteAmount,
-			MaxConcurrentCycles: int(concurrentCycles),
+			MaxConcurrentCycles: int(concurrentCycles), MaxBuyOrderAgeHours: maxBuyOrderAgeHours,
 			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
 			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
 			MACDFastPeriod: macdFastPeriod, MACDSlowPeriod: macdSlowPeriod, MACDSignalPeriod: macdSignalPeriod, MACDTimeframe: macdTimeframe,
@@ -537,7 +581,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-			int(concurrentCycles))
+			int(concurrentCycles), maxBuyOrderAgeHours)
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
 			return
@@ -601,6 +645,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		trailingStopDelta, _ := strconv.ParseFloat(c.PostForm("trailing_stop_delta"), 64)
 		sellOffset, _ := strconv.ParseFloat(c.PostForm("sell_offset"), 64)
 		concurrentCycles, _ := strconv.ParseInt(c.PostForm("concurrent_cycles"), 10, 64)
+		maxBuyOrderAgeHours := parseBuyOrderAge(c)
 
 		// Set defaults if not provided
 		if trailingStopDelta == 0 {
@@ -698,7 +743,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
 			AlgorithmName: algorithm, CronExpression: cron, BuyIntervalSeconds: buyIntervalSeconds, QuoteAmount: quoteAmount,
-			MaxConcurrentCycles: int(concurrentCycles),
+			MaxConcurrentCycles: int(concurrentCycles), MaxBuyOrderAgeHours: maxBuyOrderAgeHours,
 			ProfitTarget:        profitTarget, TrailingStopDelta: trailingStopDelta, SellOffset: sellOffset,
 			RSIThreshold: rsiThreshold, RSIPeriod: rsiPeriod, RSITimeframe: rsiTimeframe,
 			MACDFastPeriod: macdFastPeriod, MACDSlowPeriod: macdSlowPeriod, MACDSignalPeriod: macdSignalPeriod, MACDTimeframe: macdTimeframe,
@@ -720,7 +765,7 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-			int(concurrentCycles))
+			int(concurrentCycles), maxBuyOrderAgeHours)
 		if err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())
 			return

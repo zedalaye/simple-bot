@@ -53,6 +53,9 @@ type Strategy struct {
 	BuyIntervalSeconds    int      `json:"buy_interval_seconds"`
 	QuoteAmount           float64  `json:"quote_amount"`
 	MaxConcurrentCycles   int      `json:"max_concurrent_cycles"`
+	// Âge maximal (heures) d'un ordre d'achat en attente avant annulation automatique.
+	// 0 = désactivé (l'ordre reste jusqu'à remplissage ou annulation manuelle).
+	MaxBuyOrderAgeHours   int      `json:"max_buy_order_age_hours"`
 	RSIThreshold          *float64 `json:"rsi_threshold,omitempty"`
 	RSIPeriod             *int     `json:"rsi_period,omitempty"`
 	RSITimeframe          string   `json:"rsi_timeframe"`
@@ -485,6 +488,16 @@ var migrations = []Migration{
 		Name: "add_buy_interval_to_strategies",
 		SQL: `
 			ALTER TABLE strategies ADD COLUMN buy_interval_seconds INTEGER NOT NULL DEFAULT 0;
+		`,
+	},
+	{
+		// Annulation automatique des ordres d'achat en attente trop vieux : âge maximal
+		// (en heures) avant annulation. 0 = désactivé (l'ordre reste jusqu'à remplissage
+		// ou annulation manuelle).
+		ID:   19,
+		Name: "add_max_buy_order_age_to_strategies",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN max_buy_order_age_hours INTEGER NOT NULL DEFAULT 0;
 		`,
 	},
 }
