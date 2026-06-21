@@ -101,7 +101,7 @@
                             </span>
                         {{end}}
                     </td>
-                    <td>{{.CreatedAt.Format "02/01/2006 15:04"}}</td>
+                    <td>{{.CreatedAt.Local.Format "02/01/2006 15:04"}}</td>
                     <td>
                     {{if .SellOrder}}
                         <span class="text-muted">{{.SellOrder.CreatedAt.Sub .CreatedAt | printf "%v"}}</span>

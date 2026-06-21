@@ -76,7 +76,7 @@
                                 </span>
                         {{end}}
                     </td>
-                    <td>{{.CreatedAt.Format "02/01/2006 15:04"}}</td>
+                    <td>{{.CreatedAt.Local.Format "02/01/2006 15:04"}}</td>
                 </tr>
                 {{end}}
                 </tbody>
