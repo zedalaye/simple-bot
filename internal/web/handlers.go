@@ -229,6 +229,11 @@ var templateFuncs = template.FuncMap{
 	//"gt": func(a, b float64) bool {
 	//	return a > b
 	//},
+	// now : instant courant, pour les durées « vivantes » (cycle non encore clôturé)
+	// via formatDuration .Start now.
+	"now": func() time.Time {
+		return time.Now()
+	},
 	"formatDuration": func(start, end time.Time) string {
 		duration := end.Sub(start)
 		if duration < time.Minute {

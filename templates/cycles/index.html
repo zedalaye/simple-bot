@@ -42,7 +42,7 @@
                     <th class="text-end"><i class="bi bi-pie-chart me-1"></i>Quantité</th>
                     <th class="text-end"><i class="bi bi-currency-euro me-1"></i>Profit</th>
                     <th class="text-center"><i class="bi bi-flag me-1"></i>Statut</th>
-                    <th><i class="bi bi-calendar me-1"></i>Créé le</th>
+                    <th><i class="bi bi-calendar me-1"></i>Dates</th>
                     <th><i class="bi bi-clock me-1"></i>Durée</th>
                 </tr>
                 </thead>
@@ -101,12 +101,28 @@
                             </span>
                         {{end}}
                     </td>
-                    <td>{{.CreatedAt.Local.Format "02/01/2006 15:04"}}</td>
+                    <td class="text-nowrap small lh-sm">
+                        <div>
+                            <span class="text-muted d-inline-block" style="width:3.2rem;">créé</span>{{.CreatedAt.Local.Format "02/01 15:04"}}
+                        </div>
+                        {{if eq .BuyOrder.Status "FILLED"}}
+                        <div>
+                            <span class="text-success d-inline-block" style="width:3.2rem;">ouvert</span><span class="fw-semibold">{{.BuyOrder.UpdatedAt.Local.Format "02/01 15:04"}}</span>
+                        </div>
+                        {{end}}
+                        {{if and .SellOrder (eq .SellOrder.Status "FILLED")}}
+                        <div>
+                            <span class="text-info d-inline-block" style="width:3.2rem;">clôt.</span>{{.SellOrder.UpdatedAt.Local.Format "02/01 15:04"}}
+                        </div>
+                        {{end}}
+                    </td>
                     <td>
-                    {{if .SellOrder}}
-                        <span class="text-muted">{{.SellOrder.CreatedAt.Sub .CreatedAt | printf "%v"}}</span>
+                    {{if and .SellOrder (eq .SellOrder.Status "FILLED") (eq .BuyOrder.Status "FILLED")}}
+                        <span class="text-muted">{{formatDuration .BuyOrder.UpdatedAt .SellOrder.UpdatedAt}}</span>
+                    {{else if eq .BuyOrder.Status "FILLED"}}
+                        <span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>{{formatDuration .BuyOrder.UpdatedAt now}}</span>
                     {{else}}
-                        <span class="text-muted">En cours...</span>
+                        <span class="text-muted fst-italic"><i class="bi bi-hourglass me-1"></i>{{formatDuration .BuyOrder.CreatedAt now}}</span>
                     {{end}}
                     </td>
                 </tr>
