@@ -1,10 +1,13 @@
 package logger
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 type LogLevel int
@@ -23,6 +26,31 @@ var (
 	warnLogger   *log.Logger
 	errorLogger  *log.Logger
 )
+
+// Capture de la dernière erreur, pour que le dashboard puisse signaler un bot
+// dysfonctionnel (process vivant mais qui échoue, ex. clé API invalide).
+var (
+	lastErrorMu  sync.Mutex
+	lastErrorMsg string
+	lastErrorAt  time.Time
+	errorCount   int64
+)
+
+func recordError(msg string) {
+	lastErrorMu.Lock()
+	lastErrorMsg = msg
+	lastErrorAt = time.Now()
+	errorCount++
+	lastErrorMu.Unlock()
+}
+
+// LastError retourne le dernier message d'erreur enregistré, son horodatage et
+// le nombre total d'erreurs depuis le démarrage (count == 0 = aucune erreur).
+func LastError() (msg string, at time.Time, count int64) {
+	lastErrorMu.Lock()
+	defer lastErrorMu.Unlock()
+	return lastErrorMsg, lastErrorAt, errorCount
+}
 
 func InitLogger(level string, logFile string) error {
 	// Déterminer le niveau
@@ -102,12 +130,14 @@ func Error(v ...interface{}) {
 	if currentLevel <= ERROR {
 		errorLogger.Println(v...)
 	}
+	recordError(fmt.Sprint(v...))
 }
 
 func Errorf(format string, v ...interface{}) {
 	if currentLevel <= ERROR {
 		errorLogger.Printf(format, v...)
 	}
+	recordError(fmt.Sprintf(format, v...))
 }
 
 // Fatal logs an error and exits

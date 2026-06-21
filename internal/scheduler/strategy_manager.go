@@ -6,7 +6,6 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
-	"bot/internal/telegram"
 	"fmt"
 )
 
@@ -201,20 +200,6 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 		logger.Errorf("Failed to create cycle: %v", err)
 	}
 
-	// ✅ AJOUTER : Notification Telegram pour ordre d'achat
-	message := fmt.Sprintf("🌀 New Cycle on %s [%d]", sm.exchangeName, cycle.ID)
-	message += fmt.Sprintf("\n📊 Strategy: %s", strategy.Name)
-	message += fmt.Sprintf("\n🛒 Buy Order: %s", *order.Id)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", sm.market.FormatAmount(buySignal.Amount), sm.market.GetBaseAsset())
-	message += fmt.Sprintf("\n📉 Buy Price: %s %s", sm.market.FormatPrice(buySignal.LimitPrice), sm.market.GetQuoteAsset())
-	message += fmt.Sprintf("\n🎯 Target: %s %s", sm.market.FormatPrice(buySignal.TargetPrice), sm.market.GetQuoteAsset())
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", buySignal.Amount*buySignal.LimitPrice, sm.market.GetQuoteAsset())
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send Telegram notification: %v", err)
-	}
-
 	logger.Infof("[%s] Buy order created: Order ID=%d, Cycle ID=%d, Strategy=%s",
 		sm.exchangeName, dbOrder.ID, cycle.ID, strategy.Name)
 
@@ -245,20 +230,6 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 	}
 
 	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount - cycle.BuyOrder.Fees
-
-	message := fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", sm.exchangeName, cycle.ID)
-	message += fmt.Sprintf("\n📊 Strategy: %s", strategy.Name)
-	message += fmt.Sprintf("\n🚀 Sell Order: %s", *order.Id)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", sm.market.FormatAmount(cycle.BuyOrder.Amount), sm.market.GetBaseAsset())
-	message += fmt.Sprintf("\n📈 Sell Price: %s %s", sm.market.FormatPrice(sellSignal.LimitPrice), sm.market.GetQuoteAsset())
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", cycle.BuyOrder.Amount*sellSignal.LimitPrice, sm.market.GetQuoteAsset())
-	message += fmt.Sprintf("\n🤑 Expected Profit: %.2f %s (%.2f%%)", expectedProfit, sm.market.GetQuoteAsset(),
-		(expectedProfit/(cycle.BuyOrder.Price*cycle.BuyOrder.Amount))*100)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send Telegram notification: %v", err)
-	}
 
 	logger.Infof("[%s] Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.2f",
 		sm.exchangeName,

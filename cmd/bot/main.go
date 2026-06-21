@@ -5,7 +5,9 @@ import (
 	"bot/internal/bot"
 	"bot/internal/loader"
 	"bot/internal/logger"
+	"bot/internal/telegram"
 	"bot/internal/version"
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -39,15 +41,21 @@ func main() {
 	botAPI := api.NewBotAPI(tradingBot)
 	botAPI.Start()
 
+	// Dashboard Telegram interactif (long-polling sortant, pas d'exposition réseau).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tgDashboard := telegram.StartPolling(ctx, bot.NewTelegramDashboard(tradingBot))
+
 	err = tradingBot.Start(*buyAtLaunch)
 	if err != nil {
 		logger.Fatalf("Échec du démarrage du bot : %v", err)
 	}
 
-	waitForShutdown(tradingBot)
+	waitForShutdown(tradingBot, tgDashboard)
+	cancel()
 }
 
-func waitForShutdown(tradingBot *bot.Bot) {
+func waitForShutdown(tradingBot *bot.Bot, tgDashboard *telegram.Handle) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
@@ -56,6 +64,9 @@ func waitForShutdown(tradingBot *bot.Bot) {
 
 	tradingBot.Stop()
 	time.Sleep(1 * time.Second)
+
+	// Transforme le dashboard Telegram en bannière « arrêté » (arrêt propre).
+	tgDashboard.NotifyStopped()
 
 	tradingBot.ShowStatistics()
 	logger.Infof("[%s] Simple Bot arrêté. À bientôt !", tradingBot.Config.ExchangeName)

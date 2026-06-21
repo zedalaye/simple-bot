@@ -9,10 +9,19 @@ import (
 	"bot/internal/scheduler"
 	"bot/internal/telegram"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+// healthClient sert les pings « dead-man's switch » (timeout court, non bloquant).
+var healthClient = &http.Client{Timeout: 10 * time.Second}
+
+// errorAlertCooldown : délai minimum entre deux notifications Telegram d'erreur,
+// pour éviter le spam quand une même erreur se répète à chaque tick.
+const errorAlertCooldown = 30 * time.Minute
 
 type Exchange interface {
 	GetMarket(pair string) Market
@@ -88,6 +97,16 @@ type Bot struct {
 	algorithmRegistry *algorithms.AlgorithmRegistry
 	strategyScheduler *scheduler.StrategyScheduler
 	done              chan bool
+	// paused suspend le déclenchement de nouvelles stratégies (achats et ventes).
+	// La surveillance des ordres et le suivi du prix max continuent de tourner.
+	paused atomic.Bool
+	// startedAt : heure de démarrage du bot ; lastCheck : horodatage (unix nanos)
+	// du dernier price-check réussi. Servent au heartbeat affiché dans /status.
+	startedAt time.Time
+	lastCheck atomic.Int64
+	// État du throttling des alertes d'erreur (accédé uniquement depuis run()).
+	lastAlertCount int64
+	lastAlertAt    time.Time
 }
 
 func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
@@ -153,6 +172,7 @@ func (b *Bot) initializeMarketPrecision() error {
 func (b *Bot) Start(buyAtLaunch bool) error {
 	logger.Infof("[%s] Starting bot...", b.Config.ExchangeName)
 
+	b.startedAt = time.Now()
 	b.handleOrderCheck()
 	b.handlePriceCheck()
 	b.executeBuyStrategies()
@@ -167,6 +187,94 @@ func (b *Bot) Start(buyAtLaunch bool) error {
 func (b *Bot) Stop() {
 	logger.Infof("[%s] Stopping bot...", b.Config.ExchangeName)
 	close(b.done)
+}
+
+// Pause suspend le déclenchement de nouvelles stratégies (achats périodiques,
+// achats cron via l'arrêt du scheduler, et ventes). La surveillance des ordres
+// en cours et le suivi du prix max continuent de tourner.
+func (b *Bot) Pause() error {
+	if b.paused.Swap(true) {
+		return nil // déjà en pause
+	}
+
+	logger.Infof("[%s] ⏸ Bot mis en pause (achats/ventes suspendus)", b.Config.ExchangeName)
+	if b.strategyScheduler != nil {
+		if err := b.strategyScheduler.Stop(); err != nil {
+			logger.Warnf("[%s] Échec de l'arrêt du scheduler lors de la pause : %v", b.Config.ExchangeName, err)
+		}
+	}
+	return nil
+}
+
+// Resume relance le bot après une pause : recharge et redémarre le scheduler cron
+// (équivalent à un reload des stratégies) et réactive achats/ventes périodiques.
+func (b *Bot) Resume() error {
+	if !b.paused.Swap(false) {
+		return nil // n'était pas en pause
+	}
+
+	logger.Infof("[%s] ▶️ Reprise du bot", b.Config.ExchangeName)
+	return b.ReloadStrategies()
+}
+
+// IsPaused indique si le bot est actuellement en pause.
+func (b *Bot) IsPaused() bool {
+	return b.paused.Load()
+}
+
+// checkErrorAlerts envoie une notification Telegram quand de nouvelles erreurs
+// sont apparues depuis la dernière alerte, au plus une fois par errorAlertCooldown.
+// Capture toute la catégorie « process vivant mais dysfonctionnel » (ordre refusé,
+// clé API invalide…) que le heartbeat/dead-man's switch ne détecte pas.
+func (b *Bot) checkErrorAlerts() {
+	msg, _, count := logger.LastError()
+	if count == 0 || count == b.lastAlertCount {
+		return // aucune erreur, ou aucune nouvelle depuis la dernière alerte
+	}
+	if !b.lastAlertAt.IsZero() && time.Since(b.lastAlertAt) < errorAlertCooldown {
+		return // throttle : on réessaiera après le cooldown (lastAlertCount inchangé)
+	}
+
+	b.lastAlertCount = count
+	b.lastAlertAt = time.Now()
+
+	// Alerte courte : un résumé d'une ligne + renvoi vers /status pour le détail
+	// (la bannière /status porte déjà le message complet, inutile de le dupliquer).
+	text := fmt.Sprintf("⚠️ [%s] Le bot rencontre des erreurs (%d) — ouvre /status\n%s",
+		b.Config.ExchangeName, count, firstLine(msg, 120))
+	if err := telegram.SendMessage(text); err != nil {
+		logger.Errorf("Failed to send error alert to Telegram: %v", err)
+	}
+}
+
+// firstLine retourne la première ligne de s, tronquée à max runes (avec « … »).
+func firstLine(s string, max int) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
+	}
+	return s
+}
+
+// pingHealthcheck notifie le service « dead-man's switch » que le bot est vivant.
+// No-op si HEALTHCHECK_URL n'est pas configurée. Non bloquant, erreurs ignorées
+// (l'absence de ping est justement le signal d'alerte côté service distant).
+func (b *Bot) pingHealthcheck() {
+	url := b.Config.HealthcheckURL
+	if url == "" {
+		return
+	}
+	go func() {
+		resp, err := healthClient.Get(url)
+		if err != nil {
+			logger.Debugf("[%s] Ping healthcheck échoué : %v", b.Config.ExchangeName, err)
+			return
+		}
+		_ = resp.Body.Close()
+	}()
 }
 
 func (b *Bot) run() {
@@ -198,11 +306,12 @@ func (b *Bot) run() {
 			}
 			return
 		case <-checkTicker.C:
-			b.handlePriceCheck()       // Update position max prices + trailing stop
-			b.executeBuyStrategies()   // Achats périodiques (stratégies sans cron)
-			b.handleOrderCheck()       // Check pending orders status
-			b.handleStaleBuyOrders()   // Annule les ordres d'achat en attente trop vieux
+			b.handlePriceCheck()     // Update position max prices + trailing stop
+			b.executeBuyStrategies() // Achats périodiques (stratégies sans cron)
+			b.handleOrderCheck()     // Check pending orders status
+			b.handleStaleBuyOrders() // Annule les ordres d'achat en attente trop vieux
 			b.ShowStatistics()
+			b.checkErrorAlerts() // Alerte Telegram throttlée si nouvelles erreurs
 		}
 	}
 }
@@ -221,6 +330,12 @@ func (b *Bot) handlePriceCheck() {
 
 	currentPrice = b.roundToPrecision(currentPrice, b.market.Precision.Price)
 	logger.Infof("[%s] Current price: %s", b.Config.ExchangeName, b.market.FormatPrice(currentPrice))
+
+	// Price-check réussi (boucle vivante + exchange joignable) : on enregistre le
+	// heartbeat et on ping le dead-man's switch. Un échec plus haut saute ces deux
+	// étapes — c'est précisément ce qui déclenche l'alerte distante.
+	b.lastCheck.Store(time.Now().UnixNano())
+	b.pingHealthcheck()
 
 	// Get all open positions (from all strategies)
 	cycles, err := b.db.GetOpenCycles()
@@ -249,6 +364,11 @@ func (b *Bot) handlePriceCheck() {
 }
 
 func (b *Bot) executeSellStrategies(currentPrice float64) {
+	if b.paused.Load() {
+		logger.Debugf("[%s] En pause : ventes suspendues", b.Config.ExchangeName)
+		return
+	}
+
 	logger.Debugf("[%s] Executing sell strategies for all strategies", b.Config.ExchangeName)
 
 	strategies, err := b.db.GetAllStrategies()
@@ -277,6 +397,11 @@ func (b *Bot) executeSellStrategies(currentPrice float64) {
 // fois un achat posé (cycle créé), on attend l'intervalle avant le prochain.
 // Le mode cron reste piloté par le scheduler.
 func (b *Bot) executeBuyStrategies() {
+	if b.paused.Load() {
+		logger.Debugf("[%s] En pause : achats périodiques suspendus", b.Config.ExchangeName)
+		return
+	}
+
 	strategies, err := b.db.GetAllStrategies()
 	if err != nil {
 		logger.Errorf("[%s] Failed to get strategies for periodic buy: %v", b.Config.ExchangeName, err)
@@ -415,20 +540,6 @@ func (b *Bot) handleCanceledOrder(dbOrder database.Order, order Order) {
 	if err != nil {
 		logger.Errorf("Failed to update order status in database: %v", err)
 		return
-	}
-
-	message := fmt.Sprintf("🚫 [%s] Order Cancelled: %d (%s)", b.Config.ExchangeName, dbOrder.ID, dbOrder.ExternalID)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(dbOrder.Amount), b.market.BaseAsset) // ✅ PAS d'extra \n
-	if dbOrder.Side == database.Buy {
-		message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
-	} else {
-		message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(dbOrder.Price), b.market.QuoteAsset)
-	}
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", dbOrder.Amount*dbOrder.Price, b.market.QuoteAsset)
-
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
 	}
 
 	logger.Infof("[%s] Order %v Cancelled (cancelled manually on exchange)", b.Config.ExchangeName, order.Id)

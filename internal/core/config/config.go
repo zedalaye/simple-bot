@@ -9,13 +9,14 @@ import (
 
 // AppConfig contient tous les paramètres de l'application, lus depuis les variables d'environnement.
 type AppConfig struct {
-	ExchangeName  string
-	TradingPair   string
-	CheckInterval time.Duration
-	DBPath        string
-	LogLevel      string
-	LogFile       string
-	WebPort       string
+	ExchangeName   string
+	TradingPair    string
+	CheckInterval  time.Duration
+	DBPath         string
+	LogLevel       string
+	LogFile        string
+	WebPort        string
+	HealthcheckURL string
 }
 
 // BotConfig contient les paramètres transmis au cœur du bot.
@@ -24,6 +25,9 @@ type BotConfig struct {
 	Pair          string
 	CheckInterval time.Duration
 	WebPort       string
+	// HealthcheckURL : URL « dead-man's switch » pingée à chaque price-check.
+	// Vide = désactivé. Si les pings cessent, le service distant alerte.
+	HealthcheckURL string
 }
 
 // Load lit la configuration depuis les variables d'environnement.
@@ -35,13 +39,14 @@ func Load() AppConfig {
 	}
 
 	return AppConfig{
-		ExchangeName:  getenv("EXCHANGE", "mexc"),
-		TradingPair:   getenv("TRADING_PAIR", "BTC/USDC"),
-		CheckInterval: time.Duration(checkIntervalMins) * time.Minute,
-		DBPath:        getenv("DB_PATH", "db/bot.db"),
-		LogLevel:      strings.ToLower(getenv("LOG_LEVEL", "info")),
-		LogFile:       os.Getenv("LOG_FILE"),
-		WebPort:       getenv("WEB_PORT", ":8080"),
+		ExchangeName:   getenv("EXCHANGE", "mexc"),
+		TradingPair:    getenv("TRADING_PAIR", "BTC/USDC"),
+		CheckInterval:  time.Duration(checkIntervalMins) * time.Minute,
+		DBPath:         getenv("DB_PATH", "db/bot.db"),
+		LogLevel:       strings.ToLower(getenv("LOG_LEVEL", "info")),
+		LogFile:        os.Getenv("LOG_FILE"),
+		WebPort:        getenv("WEB_PORT", ":8080"),
+		HealthcheckURL: os.Getenv("HEALTHCHECK_URL"),
 	}
 }
 
@@ -61,9 +66,10 @@ func (c AppConfig) GetLogFile() string { return c.LogFile }
 // ToBotConfig convertit AppConfig en BotConfig.
 func (c AppConfig) ToBotConfig() BotConfig {
 	return BotConfig{
-		ExchangeName:  c.ExchangeName,
-		Pair:          c.TradingPair,
-		CheckInterval: c.CheckInterval,
-		WebPort:       c.WebPort,
+		ExchangeName:   c.ExchangeName,
+		Pair:           c.TradingPair,
+		CheckInterval:  c.CheckInterval,
+		WebPort:        c.WebPort,
+		HealthcheckURL: c.HealthcheckURL,
 	}
 }
