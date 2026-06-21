@@ -66,6 +66,20 @@ type PnLSnapshot struct {
 	Quote       string
 }
 
+// BalanceLine est un solde d'actif dans la vue /balance.
+type BalanceLine struct {
+	Asset  string
+	Amount string
+	Value  string // valorisation en devise de cotation, ou "" si inconnue
+}
+
+// BalanceSnapshot est l'instantané de la vue /balance.
+type BalanceSnapshot struct {
+	Exchange string
+	Lines    []BalanceLine
+	Total    string // total valorisé, ou "" si rien de valorisable
+}
+
 // Dashboard est la source de données et de contrôle fournie par le bot.
 // L'interface est définie ici pour découpler le package telegram du package bot
 // (qui importe déjà telegram pour les notifications push).
@@ -73,6 +87,7 @@ type Dashboard interface {
 	Status() (StatusSnapshot, error)
 	Cycles() ([]CycleView, error)
 	PnL() (PnLSnapshot, error)
+	Balance() (BalanceSnapshot, error)
 	Pause() error
 	Resume() error
 }
@@ -267,6 +282,8 @@ func (b *dashboardBot) handleCommand(text string) {
 		b.sendView("cycles")
 	case "/pnl":
 		b.sendView("pnl")
+	case "/balance":
+		b.sendView("balance")
 	case "/pause":
 		_ = b.dash.Pause()
 		b.sendView("status")
@@ -332,6 +349,15 @@ func (b *dashboardBot) render(view string) (string, *inlineKeyboard) {
 		kb := backKeyboard()
 		return renderPnL(p), &kb
 
+	case "balance":
+		bal, err := b.dash.Balance()
+		if err != nil {
+			kb := backKeyboard()
+			return "⚠️ Erreur : " + err.Error(), &kb
+		}
+		kb := backKeyboard()
+		return renderBalance(bal), &kb
+
 	default: // "status"
 		s, err := b.dash.Status()
 		if err != nil {
@@ -394,6 +420,25 @@ func renderCycles(cs []CycleView) string {
 	return b.String()
 }
 
+func renderBalance(s BalanceSnapshot) string {
+	if len(s.Lines) == 0 {
+		return "💼 Balance — " + s.Exchange + "\n\nAucun solde."
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "💼 Balance — %s\n", s.Exchange)
+	for _, l := range s.Lines {
+		fmt.Fprintf(&b, "\n%s : %s", l.Asset, l.Amount)
+		if l.Value != "" {
+			fmt.Fprintf(&b, "  (%s)", l.Value)
+		}
+	}
+	if s.Total != "" {
+		fmt.Fprintf(&b, "\n─────────────\nTotal ≈ %s", s.Total)
+	}
+	return b.String()
+}
+
 func renderPnL(p PnLSnapshot) string {
 	var b strings.Builder
 	b.WriteString("💰 PnL réalisé\n\n")
@@ -414,7 +459,7 @@ func mainKeyboard(paused bool) inlineKeyboard {
 	}
 	return inlineKeyboard{InlineKeyboard: [][]inlineButton{
 		{{Text: "🔄 Rafraîchir", CallbackData: "status"}},
-		{{Text: "📈 Cycles", CallbackData: "cycles"}, {Text: "💰 PnL", CallbackData: "pnl"}},
+		{{Text: "📈 Cycles", CallbackData: "cycles"}, {Text: "💰 PnL", CallbackData: "pnl"}, {Text: "💼 Balance", CallbackData: "balance"}},
 		{pauseBtn},
 	}}
 }

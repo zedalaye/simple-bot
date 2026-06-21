@@ -2,6 +2,8 @@ package bot
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"time"
 
 	"bot/internal/logger"
@@ -121,6 +123,72 @@ func (d *telegramDashboard) PnL() (telegram.PnLSnapshot, error) {
 		snap.AvgProfit, _ = stats["average_profit"].(float64)
 	}
 	return snap, nil
+}
+
+func (d *telegramDashboard) Balance() (telegram.BalanceSnapshot, error) {
+	b := d.bot
+
+	balances, base, quote, price, err := b.FetchBalances()
+	if err != nil {
+		return telegram.BalanceSnapshot{}, err
+	}
+
+	snap := telegram.BalanceSnapshot{Exchange: b.Config.ExchangeName}
+
+	// Ordre stable : base, puis quote, puis le reste trié alphabétiquement.
+	assets := make([]string, 0, len(balances))
+	for a := range balances {
+		assets = append(assets, a)
+	}
+	sort.SliceStable(assets, func(i, j int) bool {
+		ri, rj := assetRank(assets[i], base, quote), assetRank(assets[j], base, quote)
+		if ri != rj {
+			return ri < rj
+		}
+		return assets[i] < assets[j]
+	})
+
+	var total float64
+	var hasTotal bool
+	for _, asset := range assets {
+		amount := balances[asset]
+		line := telegram.BalanceLine{Asset: asset}
+		switch asset {
+		case base:
+			line.Amount = b.market.FormatAmount(amount)
+			if price > 0 {
+				v := amount * price
+				line.Value = fmt.Sprintf("≈ %.2f %s", v, quote)
+				total += v
+				hasTotal = true
+			}
+		case quote:
+			line.Amount = fmt.Sprintf("%.2f", amount)
+			total += amount
+			hasTotal = true
+		default:
+			// Autres actifs : pas de prix connu (le bot ne suit que la paire configurée).
+			line.Amount = strconv.FormatFloat(amount, 'f', -1, 64)
+		}
+		snap.Lines = append(snap.Lines, line)
+	}
+
+	if hasTotal {
+		snap.Total = fmt.Sprintf("%.2f %s", total, quote)
+	}
+	return snap, nil
+}
+
+// assetRank ordonne les actifs : base (0), quote (1), reste (2).
+func assetRank(asset, base, quote string) int {
+	switch asset {
+	case base:
+		return 0
+	case quote:
+		return 1
+	default:
+		return 2
+	}
 }
 
 func (d *telegramDashboard) Pause() error  { return d.bot.Pause() }
