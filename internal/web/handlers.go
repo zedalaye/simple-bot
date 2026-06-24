@@ -881,6 +881,20 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 			c.JSON(http.StatusOK, metrics)
 		})
 
+		// Achat manuel : relaie la demande au bot (override hors RSI/cooldown).
+		api.POST("/buy", func(c *gin.Context) {
+			if botClient == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "bot client non configuré"})
+				return
+			}
+			msg, err := botClient.TriggerBuy()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "success", "message": msg})
+		})
+
 		serveAPIOrders := func(c *gin.Context, filter string) {
 			orders, err := db.GetOrders(filter)
 			if err != nil {

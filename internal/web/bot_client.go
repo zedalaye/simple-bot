@@ -114,6 +114,44 @@ func (bc *BotClient) NotifyReload() error {
 	return nil
 }
 
+// TriggerBuy demande au bot un achat manuel immédiat (override : hors condition RSI et
+// hors cooldown). Retourne le résumé de l'ordre posé fourni par le bot.
+func (bc *BotClient) TriggerBuy() (string, error) {
+	if bc.authToken == "" {
+		return "", fmt.Errorf("bot reload token not configured")
+	}
+
+	url := fmt.Sprintf("%s/buy", bc.baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte("{}")))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bc.authToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send buy request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var botResponse BotResponse
+	_ = json.NewDecoder(resp.Body).Decode(&botResponse)
+
+	if resp.StatusCode != http.StatusOK {
+		errorMsg := botResponse.Message
+		if errorMsg == "" {
+			errorMsg = botResponse.Error
+		}
+		if errorMsg == "" {
+			errorMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return "", fmt.Errorf("%s", errorMsg)
+	}
+
+	return botResponse.Message, nil
+}
+
 // RequestCandleCollection demande au bot de collecter des bougies pour une paire/timeframe
 func (bc *BotClient) RequestCandleCollection(pair, timeframe string, since *int64, limit int) (*CollectCandlesResponse, error) {
 	if bc.authToken == "" {

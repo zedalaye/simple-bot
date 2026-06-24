@@ -193,3 +193,6 @@ func assetRank(asset, base, quote string) int {
 
 func (d *telegramDashboard) Pause() error  { return d.bot.Pause() }
 func (d *telegramDashboard) Resume() error { return d.bot.Resume() }
+
+// BuyNow déclenche un achat manuel immédiat et retourne un résumé lisible de l'ordre posé.
+func (d *telegramDashboard) BuyNow() (string, error) { return d.bot.ForceBuy() }

@@ -126,8 +126,34 @@ func (a *RSI_DCA) ShouldBuy(ctx TradingContext, strategy database.Strategy) (Buy
 		}
 	}
 
+	return a.buildBuySignal(ctx, strategy, rsi)
+}
+
+// ForceBuySignal construit un signal d'achat en COURT-CIRCUITANT le filtre RSI et le
+// filtre de tendance : l'opérateur force l'entrée (ex. bouton Telegram « Acheter »).
+// Le RSI reste calculé car il pondère l'offset du prix limite maker (cf. buildBuySignal).
+func (a *RSI_DCA) ForceBuySignal(ctx TradingContext, strategy database.Strategy) (BuySignal, error) {
+	if strategy.RSIThreshold == nil || strategy.RSIPeriod == nil {
+		return BuySignal{}, fmt.Errorf("missing required RSI parameters for RSI_DCA algorithm")
+	}
+
+	rsi, err := ctx.Calculator.CalculateRSI(ctx.Pair, strategy.RSITimeframe, *strategy.RSIPeriod)
+	if err != nil {
+		return BuySignal{}, fmt.Errorf("failed to calculate RSI: %w", err)
+	}
+
+	logger.Infof("[%s] RSI_DCA.ForceBuySignal: achat manuel forcé (RSI=%.2f, filtres ignorés)", ctx.ExchangeName, rsi)
+	return a.buildBuySignal(ctx, strategy, rsi)
+}
+
+// buildBuySignal calcule le signal d'achat (prix limite maker, taille dynamique, cible
+// dynamique) à partir d'un RSI déjà calculé. Partagé par ShouldBuy (après les filtres
+// d'entrée) et ForceBuySignal (achat manuel, sans filtre) pour garantir une tarification
+// identique entre achat automatique et manuel.
+func (a *RSI_DCA) buildBuySignal(ctx TradingContext, strategy database.Strategy, rsi float64) (BuySignal, error) {
 	// Calculate volatility for dynamic profit target
 	var volatility float64 = 2.0 // Default
+	var err error
 	if strategy.VolatilityPeriod != nil && strategy.VolatilityAdjustment != nil {
 		volatility, err = ctx.Calculator.CalculateVolatility(ctx.Pair, strategy.VolatilityTimeframe, *strategy.VolatilityPeriod)
 		if err != nil {

@@ -90,6 +90,8 @@ type Dashboard interface {
 	Balance() (BalanceSnapshot, error)
 	Pause() error
 	Resume() error
+	// BuyNow déclenche un achat manuel immédiat et retourne un résumé de l'ordre posé.
+	BuyNow() (string, error)
 }
 
 // Handle permet de piloter le dashboard depuis l'extérieur après son démarrage
@@ -300,6 +302,9 @@ func (b *dashboardBot) handleCommand(text string) {
 }
 
 func (b *dashboardBot) handleCallback(data string, messageID int) {
+	// Le message édité devient le dashboard courant (pour la bannière d'arrêt).
+	b.lastMessageID.Store(int64(messageID))
+
 	switch data {
 	case "pause":
 		_ = b.dash.Pause()
@@ -307,11 +312,26 @@ func (b *dashboardBot) handleCallback(data string, messageID int) {
 	case "resume":
 		_ = b.dash.Resume()
 		data = "status"
+
+	case "buy":
+		// Étape 1/2 : on demande confirmation (un achat manuel engage de l'argent réel).
+		kb := confirmBuyKeyboard()
+		b.edit(messageID, "🛒 Confirmer un achat manuel ?\n\nUn ordre d'achat maker (taille dynamique) sera posé sous le prix courant, hors condition RSI et hors cooldown.\n⚠️ Argent réel.", &kb)
+		return
+
+	case "buy_confirm":
+		// Étape 2/2 : exécution effective.
+		kb := backKeyboard()
+		msg, err := b.dash.BuyNow()
+		if err != nil {
+			b.edit(messageID, "⚠️ Achat impossible : "+err.Error(), &kb)
+			return
+		}
+		b.edit(messageID, msg, &kb)
+		return
 	}
 
-	// Le message édité devient le dashboard courant (pour la bannière d'arrêt).
-	b.lastMessageID.Store(int64(messageID))
-
+	// "annuler" et tout le reste retombent sur le rendu de vue (status par défaut).
 	text, kb := b.render(data)
 	b.edit(messageID, text, kb)
 }
@@ -464,7 +484,14 @@ func mainKeyboard(paused bool) inlineKeyboard {
 	return inlineKeyboard{InlineKeyboard: [][]inlineButton{
 		{{Text: "🔄 Rafraîchir", CallbackData: "status"}},
 		{{Text: "📈 Cycles", CallbackData: "cycles"}, {Text: "💰 PnL", CallbackData: "pnl"}, {Text: "💼 Balance", CallbackData: "balance"}},
-		{pauseBtn},
+		{{Text: "🛒 Acheter", CallbackData: "buy"}, pauseBtn},
+	}}
+}
+
+// confirmBuyKeyboard : confirmation à deux temps d'un achat manuel (argent réel).
+func confirmBuyKeyboard() inlineKeyboard {
+	return inlineKeyboard{InlineKeyboard: [][]inlineButton{
+		{{Text: "✅ Confirmer l'achat", CallbackData: "buy_confirm"}, {Text: "❌ Annuler", CallbackData: "annuler"}},
 	}}
 }
 

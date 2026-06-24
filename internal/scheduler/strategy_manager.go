@@ -157,6 +157,61 @@ func (sm *StrategyManager) ExecuteBuyStrategy(strategy database.Strategy) error 
 	return nil
 }
 
+// ForcedBuyResult décrit l'ordre d'achat manuel posé, pour le retour à l'appelant
+// (ex. message de confirmation Telegram).
+type ForcedBuyResult struct {
+	Amount      float64
+	LimitPrice  float64
+	TargetPrice float64
+	Reason      string
+}
+
+// ExecuteForcedBuyStrategy pose un achat MANUEL : il réutilise la tarification de
+// l'algorithme (prix limite maker, taille dynamique, cible dynamique) mais court-circuite
+// la condition d'entrée (RSI, filtre de tendance) ET le cooldown périodique — ce dernier
+// est géré côté bot et n'est donc jamais consulté ici. Le plafond de cycles concurrents
+// n'est volontairement PAS appliqué : un achat manuel est un ordre explicite de l'opérateur.
+// L'algorithme doit implémenter algorithms.ForceBuyer, sinon l'achat manuel est refusé.
+func (sm *StrategyManager) ExecuteForcedBuyStrategy(strategy database.Strategy) (ForcedBuyResult, error) {
+	logger.Infof("[%s] Executing FORCED BUY strategy '%s' (%s)", sm.exchangeName, strategy.Name, strategy.AlgorithmName)
+
+	algorithm, tradingContext, err := sm.validateAndPrepareStrategy(strategy)
+	if err != nil {
+		return ForcedBuyResult{}, err
+	}
+
+	forcer, ok := algorithm.(algorithms.ForceBuyer)
+	if !ok {
+		return ForcedBuyResult{}, fmt.Errorf("l'algorithme %s ne supporte pas l'achat manuel", strategy.AlgorithmName)
+	}
+
+	currentPrice, err := sm.exchange.GetPrice(sm.pair)
+	if err != nil {
+		return ForcedBuyResult{}, fmt.Errorf("failed to get current price: %w", err)
+	}
+	tradingContext.CurrentPrice = currentPrice
+
+	buySignal, err := forcer.ForceBuySignal(tradingContext, strategy)
+	if err != nil {
+		return ForcedBuyResult{}, fmt.Errorf("force buy signal failed: %w", err)
+	}
+	if !buySignal.ShouldBuy {
+		return ForcedBuyResult{}, fmt.Errorf("achat manuel impossible : %s", buySignal.Reason)
+	}
+
+	if err := sm.executeBuyOrder(buySignal, strategy); err != nil {
+		return ForcedBuyResult{}, fmt.Errorf("failed to execute forced buy order: %w", err)
+	}
+
+	logger.Infof("[%s] Strategy %s: forced buy order executed successfully", sm.exchangeName, strategy.Name)
+	return ForcedBuyResult{
+		Amount:      buySignal.Amount,
+		LimitPrice:  buySignal.LimitPrice,
+		TargetPrice: buySignal.TargetPrice,
+		Reason:      buySignal.Reason,
+	}, nil
+}
+
 func (sm *StrategyManager) ExecuteSellStrategy(strategy database.Strategy, currentPrice float64) error {
 	// Common validation and setup
 	algorithm, tradingContext, err := sm.validateAndPrepareStrategy(strategy)

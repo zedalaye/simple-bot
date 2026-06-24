@@ -22,6 +22,8 @@ type BotInterface interface {
 	CollectCandles(pair, timeframe string, limit int) (int, int, error) // fetched, saved, error
 	// FetchBalances returns balances (asset → free amount), base currency, quote currency, current price, error
 	FetchBalances() (map[string]float64, string, string, float64, error)
+	// ForceBuy déclenche un achat manuel immédiat et retourne un résumé de l'ordre posé.
+	ForceBuy() (string, error)
 }
 
 type BalanceEntry struct {
@@ -59,6 +61,7 @@ func (api *BotAPI) Start() {
 	http.HandleFunc("/collect/candles", api.handleCollectCandles)
 	http.HandleFunc("/health", api.handleHealth)
 	http.HandleFunc("/balance", api.handleBalance)
+	http.HandleFunc("/buy", api.handleBuy)
 
 	port := os.Getenv("BOT_API_PORT")
 	if port == "" {
@@ -109,6 +112,37 @@ func (api *BotAPI) handleReload(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "strategies reloaded",
 	})
+}
+
+// handleBuy déclenche un achat manuel immédiat (override opérateur : hors condition
+// RSI et hors cooldown). Sert au bouton Telegram « Acheter » et aux tests headless.
+func (api *BotAPI) handleBuy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	if !api.isValidToken(authHeader) {
+		logger.Warnf("[%s] Invalid token for buy request from %s", api.exchangeName, r.RemoteAddr)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	logger.Infof("[%s] Manual buy request authenticated from %s", api.exchangeName, r.RemoteAddr)
+	msg, err := api.bot.ForceBuy()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		logger.Errorf("[%s] Manual buy failed: %v", api.exchangeName, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "buy failed", "message": err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success", "message": msg})
 }
 
 func (api *BotAPI) handleHealth(w http.ResponseWriter, r *http.Request) {

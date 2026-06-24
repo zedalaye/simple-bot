@@ -222,6 +222,49 @@ func (b *Bot) IsPaused() bool {
 	return b.paused.Load()
 }
 
+// ForceBuy déclenche un achat MANUEL immédiat sur la première stratégie activée
+// supportant l'achat forcé (cf. algorithms.ForceBuyer). Il court-circuite la condition
+// d'entrée (RSI) et le cooldown périodique : c'est l'override opérateur du bouton
+// Telegram « Acheter ». L'ordre reste un limite maker sous le marché (mêmes prix/taille
+// que l'achat automatique) ; il peut donc rester en attente jusqu'à ce que le prix le
+// touche. Comme l'ancre du cooldown est le dernier cycle, cet achat repousse aussi le
+// prochain achat automatique. Retourne un résumé lisible pour Telegram.
+func (b *Bot) ForceBuy() (string, error) {
+	strategies, err := b.db.GetAllStrategies()
+	if err != nil {
+		return "", fmt.Errorf("lecture des stratégies : %w", err)
+	}
+
+	var target *database.Strategy
+	for i := range strategies {
+		if strategies[i].Enabled {
+			target = &strategies[i]
+			break
+		}
+	}
+	if target == nil {
+		return "", fmt.Errorf("aucune stratégie activée")
+	}
+
+	res, err := b.strategyScheduler.GetStrategyManager().ExecuteForcedBuyStrategy(*target)
+	if err != nil {
+		return "", err
+	}
+
+	quote := b.market.QuoteAsset
+	cost := res.Amount * res.LimitPrice
+	msg := fmt.Sprintf(
+		"🛒 Achat manuel posé (%s)\nMontant : %s %s @ %s %s (≈ %.2f %s)\nCible de vente : %s %s",
+		target.Name,
+		b.market.FormatAmount(res.Amount), b.market.GetBaseAsset(),
+		b.market.FormatPrice(res.LimitPrice), quote,
+		cost, quote,
+		b.market.FormatPrice(res.TargetPrice), quote,
+	)
+	logger.Infof("[%s] %s", b.Config.ExchangeName, msg)
+	return msg, nil
+}
+
 // checkErrorAlerts envoie une notification Telegram quand de nouvelles erreurs
 // sont apparues depuis la dernière alerte, au plus une fois par errorAlertCooldown.
 // Capture toute la catégorie « process vivant mais dysfonctionnel » (ordre refusé,

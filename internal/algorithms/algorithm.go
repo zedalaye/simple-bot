@@ -52,6 +52,15 @@ type SellSignal struct {
 	Reason     string
 }
 
+// ForceBuyer est une capacité OPTIONNELLE : un algorithme qui l'implémente peut
+// produire un signal d'achat en court-circuitant ses filtres d'entrée (RSI, tendance,
+// etc.). Sert aux achats manuels (ex. bouton Telegram), où l'opérateur force l'entrée.
+// Les filtres de précision/taille/cible restent appliqués — seule la décision d'entrée
+// est forcée. Un algorithme qui ne l'implémente pas refuse simplement l'achat manuel.
+type ForceBuyer interface {
+	ForceBuySignal(ctx TradingContext, strategy database.Strategy) (BuySignal, error)
+}
+
 // Algorithm defines the interface for trading algorithms
 type Algorithm interface {
 	// Algorithm identification

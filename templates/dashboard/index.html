@@ -3,10 +3,18 @@
     <h1 class="text-gradient mb-0">
         <i class="bi bi-speedometer2 me-2"></i>Dashboard
     </h1>
-    <a href="/" class="btn btn-outline-primary">
-        <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
-    </a>
+    <div class="d-flex gap-2">
+        <button id="manual-buy-btn" type="button" class="btn btn-success">
+            <i class="bi bi-cart-plus me-1"></i>Acheter
+        </button>
+        <a href="/" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-clockwise me-1"></i>Actualiser
+        </a>
+    </div>
 </div>
+
+<!-- Résultat d'un achat manuel -->
+<div id="manual-buy-result"></div>
 
 <div class="row g-4 mb-4">
     <div class="col-12">
@@ -123,6 +131,43 @@
 const ALL_TIMEFRAMES = [
   '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M',
 ];
+
+// --- Achat manuel (override : hors condition RSI et hors cooldown) ---
+(function () {
+    const btn = document.getElementById('manual-buy-btn');
+    const result = document.getElementById('manual-buy-result');
+    if (!btn) return;
+
+    function showResult(type, text) {
+        result.innerHTML =
+            '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+            '<i class="bi bi-cart-check me-2"></i>' + text +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    }
+
+    btn.addEventListener('click', async () => {
+        if (!confirm('Confirmer un achat manuel maintenant ?\n\nUn ordre maker (taille dynamique) sera posé sous le prix courant, hors condition RSI et hors cooldown. Argent réel.')) {
+            return;
+        }
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Achat...';
+        try {
+            const response = await fetch('/api/buy', { method: 'POST' });
+            const data = await response.json();
+            if (!response.ok) {
+                showResult('danger', 'Achat impossible : ' + (data.error || ('HTTP ' + response.status)));
+            } else {
+                showResult('success', (data.message || 'Achat posé').replace(/\n/g, '<br>'));
+            }
+        } catch (e) {
+            showResult('danger', 'Erreur réseau : ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+})();
 
 let chart = null;
 let candleSeries = null;
