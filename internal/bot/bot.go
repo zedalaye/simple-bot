@@ -104,6 +104,9 @@ type Bot struct {
 	// du dernier price-check réussi. Servent au heartbeat affiché dans /status.
 	startedAt time.Time
 	lastCheck atomic.Int64
+	// lastPatternCandleTs : timestamp (ms) de la dernière bougie 1h déjà évaluée par le
+	// moniteur de retournement, pour ne notifier qu'une fois par bougie.
+	lastPatternCandleTs atomic.Int64
 	// État du throttling des alertes d'erreur (accédé uniquement depuis run()).
 	lastAlertCount int64
 	lastAlertAt    time.Time
@@ -352,7 +355,8 @@ func (b *Bot) run() {
 			b.handlePriceCheck()     // Update position max prices + trailing stop
 			b.executeBuyStrategies() // Achats périodiques (stratégies sans cron)
 			b.handleOrderCheck()     // Check pending orders status
-			b.handleStaleBuyOrders() // Annule les ordres d'achat en attente trop vieux
+			b.handleStaleBuyOrders()  // Annule les ordres d'achat en attente trop vieux
+			b.checkReversalSignal()   // Notif Telegram si un creux (marteau/étoile 1h) se forme
 			b.ShowStatistics()
 			b.checkErrorAlerts() // Alerte Telegram throttlée si nouvelles erreurs
 		}
