@@ -2,7 +2,7 @@
 
 # Script pour lancer bot + webui pour un exchange donné
 # Usage: ./simple-bot [mexc|hl|all] [action]
-# Actions: up, down, restart, logs, status, backup
+# Actions: up, down, restart, pull, update, logs, status, backup, run
 
 # We need the CUSTOMER_ID and BOT_RELOAD_TOKEN environment variable
 source storage/.env
@@ -29,6 +29,26 @@ stop_exchange() {
 
     echo "=== Arrêt de $ex ==="
     EXCHANGE=${ex} docker compose -p "${project}" down
+}
+
+pull_exchange() {
+    local ex=$1
+    local project="bot-$ex"
+
+    # Même contexte d'env que launch_exchange pour que le compose s'interprète sans warning.
+    local raw_port=$(grep '^WEB_PORT=' storage/$ex/.env 2>/dev/null | cut -d= -f2)
+    local port=${raw_port#:}
+    port=${port:-8080}
+
+    echo "=== Pull de l'image pour $ex ==="
+    EXCHANGE=${ex} WEB_PORT=${port} RELOAD_TOKEN=${BOT_RELOAD_TOKEN} docker compose -p "${project}" pull
+}
+
+# update = pull de la nouvelle image puis up -d (recrée le conteneur si l'image a changé).
+update_exchange() {
+    local ex=$1
+    pull_exchange "$ex"
+    launch_exchange "$ex"
 }
 
 logs_exchange() {
@@ -114,6 +134,27 @@ case $EXCHANGE in
                 status_all
                 exit 0
                 ;;
+            pull)
+                echo "=== Pull ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        pull_exchange "$ex"
+                    fi
+                done
+                exit 0
+                ;;
+            update)
+                echo "=== Update ALL ==="
+                for ex_dir in storage/*; do
+                    if [ -d "$ex_dir" ]; then
+                        ex=$(basename "$ex_dir")
+                        update_exchange "$ex"
+                    fi
+                done
+                status_all
+                exit 0
+                ;;
             status)
                 status_all
                 exit 0
@@ -140,12 +181,15 @@ case $EXCHANGE in
         esac
         ;;
     help|-h|--help)
-        echo "Usage: $0 [<exchange>|all] [up|down|restart|logs|status|backup|run]"
+        echo "Usage: $0 [<exchange>|all] [up|down|restart|pull|update|logs|status|backup|run]"
         echo "Examples:"
         echo "  $0 mexc up      # Lance bot + webui MEXC"
         echo "  $0 hl up        # Lance bot + webui Hyperliquid"
+        echo "  $0 mexc pull    # Récupère la dernière image (sans redémarrer)"
+        echo "  $0 mexc update  # Pull la dernière image PUIS recrée les conteneurs MEXC"
         echo "  $0 all up       # Lance MEXC ET Hyperliquid"
         echo "  $0 all down     # Arrête tout"
+        echo "  $0 all update   # Met à jour tous les exchanges"
         echo "  $0 all status   # Status de tous les containers"
         echo "  $0 all backup   # Backup des bases de données"
         echo "  $0 mexc logs    # Logs MEXC"
@@ -175,6 +219,12 @@ case $ACTION in
         sleep 2
         launch_exchange $EXCHANGE
         ;;
+    pull)
+        pull_exchange $EXCHANGE
+        ;;
+    update)
+        update_exchange $EXCHANGE
+        ;;
     status)
         status_all
         ;;
@@ -196,7 +246,7 @@ case $ACTION in
         ;;
     *)
         echo "Action non reconnue: $ACTION"
-        echo "Actions disponibles: up, down, restart, logs, status, backup"
+        echo "Actions disponibles: up, down, restart, pull, update, logs, status, backup, run"
         exit 1
         ;;
 esac
