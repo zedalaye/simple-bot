@@ -43,6 +43,11 @@ var commands = map[string]func(args []string){
 	"rsi":         rsicli.Main,
 	"volatility":  volatilitycli.Main,
 	"test":        testcli.Main,
+	"version":     func(_ []string) { printVersion() },
+}
+
+func printVersion() {
+	fmt.Printf("simple-bot %s\n", version.Version)
 }
 
 func main() {
@@ -52,9 +57,16 @@ func main() {
 	// sous-commandes réutilisent pour parser leurs propres options via Main(args).
 	fs := flag.NewFlagSet("simple-bot", flag.ExitOnError)
 	root := fs.String("root", ".", "Répertoire racine de l'instance du bot")
+	showVersion := fs.Bool("version", false, "Affiche la version puis quitte")
 	fs.Usage = usage
 	// Parse s'arrête au premier argument non-flag : le nom de la sous-commande.
 	_ = fs.Parse(os.Args[1:])
+
+	// --version est global : il court-circuite le dispatch (comme `version`).
+	if *showVersion {
+		printVersion()
+		return
+	}
 
 	rest := fs.Args()
 	if len(rest) == 0 {
