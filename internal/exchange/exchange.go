@@ -127,15 +127,20 @@ type Exchange struct {
 func NewExchange(exchangeName string) *Exchange {
 	var exchange ccxt.IExchange
 
+	// On appelle les constructeurs concrets (NewMexc, NewHyperliquid) plutôt que la
+	// factory générique ccxt.CreateExchange(string, ...) : celle-ci est un switch de 106
+	// exchanges, tous rendus « atteignables » pour le linker (le string est runtime), ce
+	// qui empêche l'élimination de code mort et embarque les 106 dans le binaire. Les
+	// constructeurs typés ne joignent que l'exchange voulu (~130 Mo → ~35-45 Mo).
 	switch exchangeName {
 	case "mexc":
-		exchange = ccxt.CreateExchange("mexc", map[string]interface{}{
+		exchange = ccxt.NewMexc(map[string]interface{}{
 			"apiKey":          os.Getenv("MEXC_API_KEY"),
 			"secret":          os.Getenv("MEXC_SECRET"),
 			"enableRateLimit": true,
 		})
 	case "hyperliquid":
-		exchange = ccxt.CreateExchange("hyperliquid", map[string]interface{}{
+		exchange = ccxt.NewHyperliquid(map[string]interface{}{
 			"walletAddress": os.Getenv("HL_WALLET_ADDRESS"),
 			"privateKey":    os.Getenv("HL_PRIVATE_KEY"),
 			"options": map[string]interface{}{
