@@ -5,6 +5,7 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
+	"bot/internal/version"
 	"fmt"
 	"html/template"
 	"log"
@@ -139,6 +140,9 @@ func parseBuyOrderAge(c *gin.Context) int {
 
 // Fonctions helper pour les templates
 var templateFuncs = template.FuncMap{
+	// version : exposée à tous les templates (via le layout partagé) pour afficher
+	// la version du binaire (injectée par make release) dans le footer.
+	"version": func() string { return version.Version },
 	"timeAgo": func(t time.Time) string {
 		duration := time.Since(t)
 		if duration < time.Minute {
