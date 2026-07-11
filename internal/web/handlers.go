@@ -2,10 +2,12 @@ package web
 
 import (
 	"bot/internal/algorithms"
+	"bot/internal/chat"
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
 	"bot/internal/version"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -15,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -316,7 +319,7 @@ func makeTitle(exchangeName string, title string) string {
 	return fmt.Sprintf("%s - %s - Simple Bot by PrY", exchangeName, title)
 }
 
-func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, client *BotClient, logFilePath string) {
+func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *database.DB, client *BotClient, logFilePath string) {
 	// Assigner le client bot global
 	botClient = client
 	// Configuration des templates
@@ -846,9 +849,77 @@ func registerHandlers(router *gin.Engine, exchangeName string, db *database.DB, 
 		})
 	})
 
+	// Assistant IA : page de chat conseiller (analyse + backtest via Claude)
+	router.GET("/chat", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "chat_index", gin.H{
+			"title":     makeTitle(exchangeName, "Assistant"),
+			"exchange":  exchangeName,
+			"active":    "chat",
+			"available": chat.Available(),
+			"pair":      tradingPair,
+		})
+	})
+
+	// Agent conseiller : construit une fois si la clé API est présente.
+	var chatAgent *chat.Agent
+	if chat.Available() {
+		chatAgent = chat.NewAgent(db, exchangeName, tradingPair)
+	}
+
 	// API endpoints JSON
 	api := router.Group("/api")
 	{
+		// Assistant IA : flux SSE de la boucle agentique. Le corps POST porte
+		// l'historique de conversation ; la réponse streame les événements
+		// (text / tool / tool_result / done / error).
+		api.POST("/chat", func(c *gin.Context) {
+			if chatAgent == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ANTHROPIC_API_KEY non configurée"})
+				return
+			}
+			var body struct {
+				Messages []struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := c.BindJSON(&body); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if len(body.Messages) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "conversation vide"})
+				return
+			}
+
+			// Historique navigateur (texte brut) -> messages typés de l'API.
+			var history []anthropic.MessageParam
+			for _, m := range body.Messages {
+				block := anthropic.NewTextBlock(m.Content)
+				if m.Role == "assistant" {
+					history = append(history, anthropic.NewAssistantMessage(block))
+				} else {
+					history = append(history, anthropic.NewUserMessage(block))
+				}
+			}
+
+			c.Header("Content-Type", "text/event-stream")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Header("X-Accel-Buffering", "no")
+			fmt.Fprint(c.Writer, ": ok\n\n")
+			c.Writer.Flush()
+
+			// emit sérialise chaque événement en SSE. On JSON-encode la donnée
+			// pour qu'un texte multi-ligne tienne sur une seule ligne data:.
+			emit := func(ev chat.Event) {
+				data, _ := json.Marshal(ev.Data)
+				fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", ev.Kind, data)
+				c.Writer.Flush()
+			}
+			chatAgent.Stream(c.Request.Context(), history, emit)
+		})
+
 		// Logs : chargement initial des N dernières lignes
 		api.GET("/logs", func(c *gin.Context) {
 			if logFilePath == "" {
@@ -1137,7 +1208,7 @@ func securityHeaders() gin.HandlerFunc {
 }
 
 // Fonction d'initialisation du serveur web
-func SetupServer(exchangeName string, db *database.DB, rootDir, logFilePath string) *gin.Engine {
+func SetupServer(exchangeName, tradingPair string, db *database.DB, rootDir, logFilePath string) *gin.Engine {
 	// Mode release pour la production
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -1157,7 +1228,7 @@ func SetupServer(exchangeName string, db *database.DB, rootDir, logFilePath stri
 	client := NewBotClient()
 
 	// Enregistrer les handlers
-	registerHandlers(router, exchangeName, db, client, logFilePath)
+	registerHandlers(router, exchangeName, tradingPair, db, client, logFilePath)
 
 	return router
 }

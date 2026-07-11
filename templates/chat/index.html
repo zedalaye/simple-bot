@@ -1,0 +1,181 @@
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="text-gradient mb-0">
+        <i class="bi bi-stars me-2"></i>Assistant
+    </h1>
+    <span class="badge bg-secondary">{{.pair}}</span>
+</div>
+
+{{if not .available}}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    La variable <code>ANTHROPIC_API_KEY</code> n'est pas configurée. Ajoutez-la dans le
+    <code>.env</code> de l'instance puis redémarrez le webui pour activer l'assistant.
+</div>
+{{else}}
+<div class="card shadow-sm">
+    <div class="card-body p-0 d-flex flex-column" style="height: 72vh;">
+        <div id="chat-log" class="flex-grow-1 overflow-auto p-3"></div>
+        <div class="border-top p-2">
+            <form id="chat-form" class="d-flex gap-2">
+                <input id="chat-input" class="form-control" autocomplete="off"
+                       placeholder="Ex : la stratégie #1 gagnerait-elle à passer le RSI en 1h ?">
+                <button id="chat-send" class="btn btn-primary" type="submit">
+                    <i class="bi bi-send"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .msg { max-width: 90%; padding: .6rem .9rem; border-radius: .75rem; margin-bottom: .6rem; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { background: #0d6efd; color: #fff; margin-left: auto; border-bottom-right-radius: .15rem; }
+    .msg.assistant { background: #f1f3f5; color: #212529; margin-right: auto; border-bottom-left-radius: .15rem; }
+    .tool-badge { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .72rem; color: #6c757d;
+                  background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: .2rem .5rem; margin-bottom: .4rem; display: inline-block; }
+    .tool-badge .spin { display: inline-block; animation: rot 1s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    .usage-line { font-size: .7rem; color: #adb5bd; margin: .1rem 0 .8rem; }
+</style>
+
+<script>
+(function () {
+    const log = document.getElementById('chat-log');
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send');
+
+    // Historique de conversation envoyé à chaque requête (rôle + texte).
+    const history = [];
+
+    function scroll() { log.scrollTop = log.scrollHeight; }
+
+    function addBubble(role, text) {
+        const el = document.createElement('div');
+        el.className = 'msg ' + role;
+        el.textContent = text || '';
+        log.appendChild(el);
+        scroll();
+        return el;
+    }
+
+    function addTool(text) {
+        const el = document.createElement('div');
+        el.className = 'tool-badge';
+        el.innerHTML = '<span class="spin">⚙</span> ' + escapeHtml(text);
+        log.appendChild(el);
+        scroll();
+        return el;
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    }
+
+    // Affiche une ligne discrète coût/tokens (tarifs Opus 4.8 : $5/$25 par M ;
+    // cache lu 0,1x, écrit 1,25x). Rend visible l'effet du prompt caching.
+    function showUsage(raw) {
+        let u;
+        try { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return; }
+        if (!u || (!u.input && !u.output)) return;
+        const cost = (u.input * 5 + u.cache_write * 6.25 + u.cache_read * 0.5 + u.output * 25) / 1e6;
+        const el = document.createElement('div');
+        el.className = 'usage-line';
+        el.textContent = `⚡ ~$${cost.toFixed(4)} · ${u.input} in / ${u.output} out`
+            + (u.cache_read ? ` · ${u.cache_read} lus en cache` : '');
+        log.appendChild(el);
+        scroll();
+    }
+
+    async function send(question) {
+        history.push({ role: 'user', content: question });
+        addBubble('user', question);
+
+        input.value = '';
+        input.disabled = sendBtn.disabled = true;
+
+        let bubble = null;           // bulle assistant courante (créée au 1er texte)
+        let assistantText = '';
+
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: history }),
+            });
+
+            // Lecture manuelle du flux SSE (EventSource ne gère pas le POST).
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                // Un événement SSE est délimité par une ligne vide.
+                let idx;
+                while ((idx = buffer.indexOf('\n\n')) !== -1) {
+                    const chunk = buffer.slice(0, idx);
+                    buffer = buffer.slice(idx + 2);
+                    handleEvent(chunk);
+                }
+            }
+        } catch (err) {
+            addBubble('assistant', '⚠️ Erreur réseau : ' + err.message);
+        }
+
+        function handleEvent(chunk) {
+            let kind = 'message', data = '';
+            for (const line of chunk.split('\n')) {
+                if (line.startsWith('event:')) kind = line.slice(6).trim();
+                else if (line.startsWith('data:')) data += line.slice(5).trim();
+            }
+            if (kind === 'message' || data === '') return; // commentaire / heartbeat
+            let payload;
+            try { payload = JSON.parse(data); } catch { payload = data; }
+
+            switch (kind) {
+                case 'text':
+                    if (!bubble) bubble = addBubble('assistant', '');
+                    assistantText += payload;
+                    bubble.textContent = assistantText;
+                    scroll();
+                    break;
+                case 'tool':
+                    bubble = null; // le prochain texte ouvrira une nouvelle bulle
+                    addTool(payload);
+                    break;
+                case 'tool_result':
+                    // On marque le dernier badge d'outil comme terminé.
+                    const badges = log.querySelectorAll('.tool-badge');
+                    const last = badges[badges.length - 1];
+                    if (last) last.querySelector('.spin')?.classList.remove('spin');
+                    break;
+                case 'usage':
+                    showUsage(payload);
+                    break;
+                case 'error':
+                    addBubble('assistant', '⚠️ ' + payload);
+                    break;
+                case 'done':
+                    break;
+            }
+        }
+
+        if (assistantText) history.push({ role: 'assistant', content: assistantText });
+        input.disabled = sendBtn.disabled = false;
+        input.focus();
+    }
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const q = input.value.trim();
+        if (q) send(q);
+    });
+})();
+</script>
+{{end}}
+{{end}}
