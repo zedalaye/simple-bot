@@ -72,9 +72,9 @@ func TestIsPiercingLine(t *testing.T) {
 func TestIsMorningStar(t *testing.T) {
 	first := mk(12, 12.1, 9.9, 10) // grande rouge, milieu = 11
 	cases := []struct {
-		name             string
-		star, last       OHLCV
-		want             bool
+		name       string
+		star, last OHLCV
+		want       bool
 	}{
 		{"etoile du matin", mk(9.9, 10.0, 9.7, 9.8), mk(9.9, 11.3, 9.8, 11.2), true},
 		// Dernière clôture sous le milieu de la première : reprise insuffisante.

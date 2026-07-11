@@ -49,10 +49,10 @@ type Strategy struct {
 	// Déclenchement des achats : soit une expression cron (heure fixe), soit un
 	// intervalle minimum entre deux achats (mode périodique). Exactement un des
 	// deux est renseigné — cron non vide XOR BuyIntervalSeconds > 0.
-	CronExpression        string   `json:"cron_expression"`
-	BuyIntervalSeconds    int      `json:"buy_interval_seconds"`
-	QuoteAmount           float64  `json:"quote_amount"`
-	MaxConcurrentCycles   int      `json:"max_concurrent_cycles"`
+	CronExpression      string  `json:"cron_expression"`
+	BuyIntervalSeconds  int     `json:"buy_interval_seconds"`
+	QuoteAmount         float64 `json:"quote_amount"`
+	MaxConcurrentCycles int     `json:"max_concurrent_cycles"`
 	// Âge maximal (heures) d'un ordre d'achat en attente avant annulation automatique.
 	// 0 = désactivé (l'ordre reste jusqu'à remplissage ou annulation manuelle).
 	MaxBuyOrderAgeHours   int      `json:"max_buy_order_age_hours"`

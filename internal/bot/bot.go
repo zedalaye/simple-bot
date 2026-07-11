@@ -358,8 +358,8 @@ func (b *Bot) run() {
 			b.handlePriceCheck()     // Update position max prices + trailing stop
 			b.executeBuyStrategies() // Achats périodiques (stratégies sans cron)
 			b.handleOrderCheck()     // Check pending orders status
-			b.handleStaleBuyOrders()  // Annule les ordres d'achat en attente trop vieux
-			b.checkReversalSignal()   // Notif Telegram si un creux (marteau/étoile 1h) se forme
+			b.handleStaleBuyOrders() // Annule les ordres d'achat en attente trop vieux
+			b.checkReversalSignal()  // Notif Telegram si un creux (marteau/étoile 1h) se forme
 			b.ShowStatistics()
 			b.checkErrorAlerts() // Alerte Telegram throttlée si nouvelles erreurs
 		}
