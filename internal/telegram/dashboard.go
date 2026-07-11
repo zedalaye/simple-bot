@@ -30,6 +30,7 @@ import (
 
 // StatusSnapshot est l'instantané affiché par /status.
 type StatusSnapshot struct {
+	Version      string // version du binaire (injectée par make release)
 	Exchange     string
 	Pair         string
 	Price        string // déjà formaté selon la précision du marché
@@ -407,7 +408,7 @@ func renderStatus(s StatusSnapshot) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "📊 simple-bot — %s %s\n", s.Exchange, s.Pair)
+	fmt.Fprintf(&b, "📊 simple-bot %s — %s %s\n", s.Version, s.Exchange, s.Pair)
 	fmt.Fprintf(&b, "%s\n", state)
 	if s.ErrorMsg != "" {
 		fmt.Fprintf(&b, "↳ il y a %s : %s\n", s.ErrorAgo, s.ErrorMsg)

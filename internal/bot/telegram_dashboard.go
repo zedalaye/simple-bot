@@ -8,6 +8,7 @@ import (
 
 	"bot/internal/logger"
 	"bot/internal/telegram"
+	"bot/internal/version"
 )
 
 // errorBannerWindow : au-delà de ce délai, on considère la dernière erreur comme
@@ -30,6 +31,7 @@ func (d *telegramDashboard) Status() (telegram.StatusSnapshot, error) {
 	b := d.bot
 
 	snap := telegram.StatusSnapshot{
+		Version:   version.Version,
 		Exchange:  b.Config.ExchangeName,
 		Pair:      b.Config.Pair,
 		Quote:     b.market.QuoteAsset,
