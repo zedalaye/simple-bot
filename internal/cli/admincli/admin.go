@@ -1,4 +1,5 @@
-package main
+// Package admincli implémente la sous-commande « admin » : stats, cycles, orders, export.
+package admincli
 
 import (
 	"bot/internal/core/database"
@@ -13,21 +14,14 @@ import (
 	"time"
 )
 
-func main() {
-	log.SetOutput(os.Stdout)
-
+// Main est le point d'entrée de la sous-commande « admin ». Le flag --root et le chdir
+// sont gérés en amont par le dispatcher (cmd/simple-bot).
+func Main(args []string) {
 	var (
-		botDir  = flag.String("root", ".", "Répertoire racine de l'instance du bot")
 		command = flag.String("cmd", "stats", "Commande : stats, cycles, orders, export")
 		format  = flag.String("format", "table", "Format de sortie : table, json")
 	)
-	flag.Parse()
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
-	}
+	flag.CommandLine.Parse(args)
 
 	_, db, err := loader.LoadConfig()
 	if err != nil {

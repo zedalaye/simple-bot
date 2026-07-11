@@ -1,4 +1,5 @@
-package main
+// Package ordercli implémente la sous-commande « order » : inspecte un ordre et ses trades.
+package ordercli
 
 import (
 	"bot/internal/exchange"
@@ -7,23 +8,16 @@ import (
 	"encoding/json"
 	"flag"
 	"log"
-	"os"
 )
 
-func main() {
-	log.SetOutput(os.Stdout)
-	botDir := flag.String("root", ".", "Répertoire racine de l'instance du bot")
-	flag.Parse()
+// Main est le point d'entrée de la sous-commande « order ». Le flag --root et le chdir
+// sont gérés en amont par le dispatcher (cmd/simple-bot).
+func Main(args []string) {
+	flag.CommandLine.Parse(args)
 
 	orderId := flag.Arg(0)
 	if orderId == "" {
-		log.Fatalf("Usage: bin/order -root <bot_directory> <order_id>")
-	}
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
+		log.Fatalf("Usage: simple-bot [--root <dir>] order <order_id>")
 	}
 
 	cfg, db, err := loader.LoadConfig()

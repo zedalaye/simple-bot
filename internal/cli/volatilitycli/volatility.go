@@ -1,25 +1,19 @@
-package main
+// Package volatilitycli implémente la sous-commande « volatility ».
+package volatilitycli
 
 import (
 	"bot/internal/loader"
 	"bot/internal/logger"
 	"flag"
 	"log"
-	"os"
 )
 
-func main() {
-	log.SetOutput(os.Stdout)
+// Main est le point d'entrée de la sous-commande « volatility ». Le flag --root et le
+// chdir sont gérés en amont par le dispatcher (cmd/simple-bot).
+func Main(args []string) {
 	log.Printf("=== Bot Volatility ===")
 
-	botDir := flag.String("root", ".", "Répertoire racine de l'instance du bot")
-	flag.Parse()
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
-	}
+	flag.CommandLine.Parse(args)
 
 	bot, err := loader.LoadBot()
 	if err != nil {

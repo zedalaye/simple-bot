@@ -47,8 +47,8 @@ ENV TZ=Europe/Paris
 
 WORKDIR /app
 COPY --from=build /app/templates/ /app/templates/
-COPY --from=build /app/bin/* .
+COPY --from=build /app/bin/simple-bot .
 
-# bin/web provides a WebUI and starts by default on port 8080
+# simple-bot regroupe toutes les commandes ; « web » sert la WebUI sur le port 8080.
 EXPOSE 8080/tcp
-CMD ["./admin"]
+CMD ["./simple-bot", "admin"]

@@ -4,8 +4,7 @@ PLATFORMS ?= linux/amd64 #,linux/arm64
 GIT_TAG := $(shell git describe --tags --always --dirty)
 VERSION  ?= $(GIT_TAG)
 
-.PHONY: build-all \
-        build-bot build-admin build-web build-test build-volatility build-rsi build-order build-backtest \
+.PHONY: build-all build-simple-bot \
         build-image push-image \
         clean \
         run-bot run-admin run-web run-test run-backtest \
@@ -18,33 +17,12 @@ all: build-all
 release: FLAGS = -ldflags "-s -w -X bot/internal/version.Version=$(VERSION)"
 release: build-all
 
-# Construire tous les binaires
-build-all: build-bot build-web build-admin build-test build-volatility build-rsi build-order build-backtest
+# Toutes les commandes (bot, web, admin, backtest, patternscan, order, rsi, volatility,
+# test) sont regroupées dans un binaire unique : le code commun n'est compilé qu'une fois.
+build-all: build-simple-bot
 
-# Construire chaque binaire individuellement
-build-bot:
-	go build -o bin/bot ${FLAGS} ./cmd/bot
-
-build-admin:
-	go build -o bin/admin ${FLAGS} ./cmd/admin
-
-build-web:
-	go build -o bin/web ${FLAGS} ./cmd/web
-
-build-test:
-	go build -o bin/test ./cmd/test
-
-build-volatility:
-	go build -o bin/volatility ./cmd/volatility
-
-build-rsi:
-	go build -o bin/rsi ./cmd/rsi
-
-build-order:
-	go build -o bin/order ./cmd/order
-
-build-backtest:
-	go build -o bin/backtest ${FLAGS} ./cmd/backtest
+build-simple-bot:
+	go build -o bin/simple-bot ${FLAGS} ./cmd/simple-bot
 
 # Construction de l'image docker (précédée des vérifications dépendances + vulnérabilités)
 # deps-check est informatif (liste les MAJ dispo, ne bloque pas) ; deps-verify et vulncheck sont bloquants
@@ -63,22 +41,24 @@ push-image:
 clean:
 	rm -rf bin/
 
-# Lancer les services
+# Lancer les services (--root est un flag GLOBAL, il précède le nom de la sous-commande).
+# Ex. make run-bot ARGS="--root storage/mexc bot --buy-at-launch"
 run-bot:
-	go run ./cmd/bot $(ARGS)
+	go run ./cmd/simple-bot $(ARGS) bot
 
 run-admin:
-	go run ./cmd/admin $(ARGS)
+	go run ./cmd/simple-bot $(ARGS) admin
 
 run-web:
-	go run ./cmd/web $(ARGS)
+	go run ./cmd/simple-bot $(ARGS) web
 
 run-test:
-	DEBUG=true go run ./cmd/test $(ARGS)
+	DEBUG=true go run ./cmd/simple-bot $(ARGS) test
 
-# Backtest : ex. make run-backtest ARGS="--db storage/mexc/db/bot.db --rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400"
+# Backtest : ex. make run-backtest ARGS="--root storage/mexc" puis options : ARGS="--root storage/mexc" \
+#   BTARGS="--rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400"
 run-backtest:
-	go run ./cmd/backtest $(ARGS)
+	go run ./cmd/simple-bot $(ARGS) backtest $(BTARGS)
 
 # Vérifications avant commit
 fmt:

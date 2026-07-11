@@ -1,4 +1,5 @@
-package main
+// Package testcli implémente la sous-commande « test » : suite de tests exchange (ordres réels).
+package testcli
 
 import (
 	"bot/internal/bot"
@@ -7,7 +8,6 @@ import (
 	"bot/internal/logger"
 	"flag"
 	"log"
-	"os"
 	"time"
 )
 
@@ -24,16 +24,10 @@ func logStep(fmt string, v ...any) {
 	}
 }
 
-func main() {
-	log.SetOutput(os.Stdout)
-	botDir := flag.String("root", ".", "Répertoire racine de l'instance du bot")
-	flag.Parse()
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
-	}
+// Main est le point d'entrée de la sous-commande « test ». Le flag --root et le chdir
+// sont gérés en amont par le dispatcher (cmd/simple-bot).
+func Main(args []string) {
+	flag.CommandLine.Parse(args)
 
 	log.Println("=== Bot Test Suite ===")
 

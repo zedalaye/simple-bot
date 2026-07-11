@@ -1,17 +1,33 @@
-# Available Binaries
+# Available Commands
 
-The Simple Trading Bot provides multiple executables for different purposes, from core trading operations to development and administration tools.
+The Simple Trading Bot ships as a **single binary** — `simple-bot` — that bundles every
+command as a subcommand (core trading, administration, development tools). The common code
+is therefore compiled and deployed once, and a single artifact is shipped.
+
+```
+simple-bot [--root DIR] <command> [command options...]
+```
+
+`--root` is a **global** flag handled by the dispatcher: it must come **before** the command
+name. The dispatcher `chdir`s into that instance directory once (so each command reads the
+right `.env`, credentials and database), then delegates. Offline analysis commands
+(`backtest`, `patternscan`) also honour `--root`: they read the instance database resolved
+from `DB_PATH`.
+
+Available commands: `bot`, `web`, `admin`, `backtest`, `patternscan`, `order`, `rsi`,
+`volatility`, `test`.
 
 ## 🏗️ Build Process
 
-All binaries are built from the `cmd/` directory and output to `bin/`:
+The binary is built from `cmd/simple-bot` (each command lives in `internal/cli/<name>cli`)
+and output to `bin/simple-bot`:
 
 ```bash
-# Build all binaries in release mode
+# Build the single binary in release mode
 make release
 
-# Build specific binary
-make build-bot
+# Build the single binary
+make build-simple-bot
 
 # Build with Docker
 make build-image
@@ -19,7 +35,7 @@ make build-image
 
 ## 🤖 Core Trading Binaries
 
-### bot (`cmd/bot/main.go`)
+### bot (`internal/cli/botcli`)
 
 **Purpose**: Main trading engine that executes strategies and monitors markets.
 
@@ -35,10 +51,10 @@ make build-image
 **Usage:**
 ```bash
 # Run for MEXC exchange
-./bin/bot --root storage/mexc
+./bin/simple-bot --root storage/mexc bot
 
 # Run for Hyperliquid
-./bin/bot --root storage/hl
+./bin/simple-bot --root storage/hl bot
 ```
 
 **Configuration:**
@@ -52,7 +68,7 @@ make build-image
 - Order status checker
 - Telegram notification handler
 
-### web (`cmd/web/main.go`)
+### web (`internal/cli/webcli`)
 
 **Purpose**: HTTP server providing REST API and web interface for monitoring and management.
 
@@ -67,10 +83,10 @@ make build-image
 **Usage:**
 ```bash
 # Start web server for MEXC
-./bin/web --root storage/mexc
+./bin/simple-bot --root storage/mexc web
 
 # Custom port
-./bin/web --root storage/mexc --port 8081
+./bin/simple-bot --root storage/mexc web --port 8081
 ```
 
 **API Endpoints:**
@@ -86,7 +102,7 @@ make build-image
 
 ## 🛠️ Administration & Management
 
-### admin (`cmd/admin/main.go`)
+### admin (`internal/cli/admincli`)
 
 **Purpose**: Database administration and inspection tool.
 
@@ -100,17 +116,14 @@ make build-image
 
 **Usage:**
 ```bash
-# Show help
-./bin/admin --help
-
 # List all strategies
-./bin/admin --root storage/mexc --cmd strategies
+./bin/simple-bot --root storage/mexc admin --cmd strategies
 
 # Show recent orders
-./bin/admin --root storage/mexc --cmd orders
+./bin/simple-bot --root storage/mexc admin --cmd orders
 
 # Database statistics
-./bin/admin --root storage/mexc --cmd stats
+./bin/simple-bot --root storage/mexc admin --cmd stats
 ```
 
 **Commands:**
@@ -121,7 +134,7 @@ make build-image
 
 ## 🧪 Testing & Development Tools
 
-### test (`cmd/test/main.go`)
+### test (`internal/cli/testcli`)
 
 **Purpose**: Integration testing
 
@@ -133,10 +146,10 @@ make build-image
 **Usage:**
 ```bash
 # Run integration tests
-./bin/test --root storage/mexc
+./bin/simple-bot --root storage/mexc test
 ```
 
-### rsi (`cmd/rsi/main.go`)
+### rsi (`internal/cli/rsicli`)
 
 **Purpose**: Compute RSI (Relative Strength Index)
 
@@ -146,10 +159,10 @@ make build-image
 **Usage:**
 ```bash
 # Compute the RSI
-./bin/rsi --root storage/mexc
+./bin/simple-bot --root storage/mexc rsi
 ```
 
-### volatility (`cmd/volatility/main.go`)
+### volatility (`internal/cli/volatilitycli`)
 
 **Purpose**: Compute Volatility
 
@@ -159,10 +172,10 @@ make build-image
 **Usage:**
 ```bash
 # Compute the volatility
-./bin/volatility --root storage/mexc
+./bin/simple-bot --root storage/mexc volatility
 ```
 
-### backtest (`cmd/backtest/main.go`)
+### backtest (`internal/cli/backtestcli`)
 
 **Purpose**: Replay an `rsi_dca` strategy over historical candles to evaluate
 and optimise parameters.
@@ -174,16 +187,34 @@ and optimise parameters.
 - No look-ahead: decisions at candle close, orders fill on later candles
 - Parameter grid sweep over RSI timeframe, threshold, profit target and buy
   interval; reports buys/day, cycles/day, capital, inventory, P&L
-- Works directly on an instance database (`--db`), no network access
+- Works on the instance database resolved from `--root` (`DB_PATH`), no network
+  access. The `--pair` defaults to the instance's `TRADING_PAIR`.
 
 **Usage:**
 ```bash
 # Reproduce an existing strategy
-./bin/backtest --db storage/mexc/db/bot.db --strategy-id 1
+./bin/simple-bot --root storage/mexc backtest --strategy-id 1
 
 # Sweep parameters
-./bin/backtest --db storage/mexc/db/bot.db --rsi-tf 15m,1h \
+./bin/simple-bot --root storage/mexc backtest --rsi-tf 15m,1h \
   --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400 --vol-adj 0
+```
+
+### patternscan (`internal/cli/patternscancli`)
+
+**Purpose**: Measure the predictive power of bullish reversal candle patterns over
+the stored history (as-of replay, forward returns vs a random-entry baseline).
+
+**Key Features:**
+- As-of evaluation (no look-ahead), forward returns over configurable horizons
+- Optional context/volume filters and a "confirmations" dissection section
+- Works on the instance database resolved from `--root`; `--pair` defaults to the
+  instance's `TRADING_PAIR`
+
+**Usage:**
+```bash
+# Scan 4h candles of the instance pair
+./bin/simple-bot --root storage/mexc patternscan --tf 4h
 ```
 
 ## 🐳 Docker Integration
@@ -216,10 +247,10 @@ make build-image
 ### Docker Service Mapping
 
 ```
-mexc-bot      → ./bin/bot (MEXC)
-mexc-web      → ./bin/web (MEXC)
-hl-bot        → ./bin/bot (Hyperliquid)
-hl-web        → ./bin/web (Hyperliquid)
+bot-mexc      → /app/simple-bot bot (MEXC)
+webui-mexc    → /app/simple-bot web (MEXC)
+bot-hl        → /app/simple-bot bot (Hyperliquid)
+webui-hl      → /app/simple-bot web (Hyperliquid)
 ```
 
 ## 🔧 Binary Dependencies

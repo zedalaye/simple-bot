@@ -2,7 +2,8 @@
 // stockées en base, en réutilisant le vrai code de décision (algorithms) et la
 // vraie math d'indicateurs (market). Permet de balayer une grille de paramètres
 // pour comparer leur fréquence de cycles, leur capital mobilisé et leur P&L.
-package main
+// Package backtestcli implémente la sous-commande « backtest » (voir en-tête ci-dessous).
+package backtestcli
 
 import (
 	"flag"
@@ -18,18 +19,17 @@ import (
 	"bot/internal/algorithms"
 	"bot/internal/backtest"
 	"bot/internal/core/database"
-	"bot/internal/logger"
+	"bot/internal/loader"
 )
 
-func main() {
+// Main est le point d'entrée de la sous-commande « backtest ». La base analysée est
+// celle de l'instance ciblée par le flag global --root (chdir géré en amont par le
+// dispatcher), lue via loader.LoadOffline().
+func Main(args []string) {
 	log.SetOutput(os.Stderr)
-	// Couper les logs INFO/WARN des algorithmes pendant le backtest (les loggers
-	// sont aussi initialisés -> pas de nil deref sur les rares Error).
-	_ = logger.InitLogger("error", "")
 
 	var (
-		dbPath     = flag.String("db", "storage/mexc/db/bot.db", "Chemin de la base SQLite")
-		pair       = flag.String("pair", "BTC/USDC", "Paire à backtester")
+		pair       = flag.String("pair", "", "Paire à backtester (défaut : TRADING_PAIR de l'instance)")
 		priceTF    = flag.String("price-tf", "15m", "Timeframe du chemin de prix (granularité de simulation)")
 		feePct     = flag.Float64("fee", 0.1, "Frais par côté en %% (0.1 = 0,1 %%)")
 		strategyID = flag.Int("strategy-id", 0, "Partir d'une stratégie existante (0 = config par défaut)")
@@ -53,13 +53,17 @@ func main() {
 		quote      = flag.Float64("quote", 20, "Montant par ordre (quote)")
 		maxCycles  = flag.Int("max-cycles", 0, "Cycles concurrents max (0 = illimité)")
 	)
-	flag.Parse()
+	flag.CommandLine.Parse(args)
 
-	db, err := database.NewDB(*dbPath)
+	cfg, db, err := loader.LoadOffline()
 	if err != nil {
-		log.Fatalf("Ouverture DB %s : %v", *dbPath, err)
+		log.Fatalf("Chargement de l'instance : %v", err)
 	}
 	defer db.Close()
+
+	if *pair == "" {
+		*pair = cfg.TradingPair
+	}
 
 	// Stratégie de base : existante ou défaut.
 	base := defaultStrategy(*rsiPeriod, *volPeriod, *volTF)

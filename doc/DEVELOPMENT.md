@@ -41,20 +41,18 @@ make
 make test
 
 # Verify installation
-./bin/bot --help
+./bin/simple-bot
 ```
 
 ## 🏗️ Project Structure
 
 ```
 simple-trading-bot/
-├── cmd/                    # Executable entry points
-│   ├── bot/               # Main trading bot
-│   ├── web/               # Web interface
-│   ├── admin/             # Admin tools
-│   └── test/              # Testing utilities
+├── cmd/                    # Executable entry point
+│   └── simple-bot/        # Single-binary dispatcher (--root + subcommands)
 │
 ├── internal/              # Private application code
+│   ├── cli/              # Subcommands: botcli, webcli, admincli, backtestcli, ...
 │   ├── bot/              # Bot engine core
 │   ├── scheduler/        # Strategy scheduling
 │   ├── algorithms/       # Trading algorithms
@@ -90,7 +88,7 @@ simple-trading-bot/
 - **Exchange Integration**: Add support for new exchanges in `internal/exchange/`
 - **Web Features**: Extend API or UI in `internal/web/`
 - **Database Changes**: Add migrations in `internal/core/database/migrations/`
-- **Testing Tools**: Enhance testing utilities in `cmd/test/`
+- **Testing Tools**: Enhance testing utilities in `internal/cli/testcli/`
 
 ### 2. Create Feature Branch
 
@@ -302,7 +300,7 @@ sqlite3 storage/mexc/db/bot.db ".backup backup.db"
 export LOG_LEVEL=debug
 
 # Run with profiling
-go run -cpuprofile=cpu.prof ./cmd/bot
+go run -cpuprofile=cpu.prof ./cmd/simple-bot bot
 
 # Analyze profile
 go tool pprof cpu.prof

@@ -39,6 +39,29 @@ func LoadConfig() (config.AppConfig, *database.DB, error) {
 	return cfg, db, nil
 }
 
+// LoadOffline charge l'environnement de l'instance (.env) et ouvre la base en mode
+// silencieux (logger à "error"), pour les outils d'analyse hors-ligne (backtest,
+// patternscan) qui ne touchent pas l'exchange et ne doivent pas polluer stdout.
+func LoadOffline() (config.AppConfig, *database.DB, error) {
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
+	cfg := config.Load()
+
+	// NewDB logge pendant les migrations : initialiser le logger sinon nil deref.
+	if err := logger.InitLogger("error", ""); err != nil {
+		return config.AppConfig{}, nil, fmt.Errorf("logger : %w", err)
+	}
+
+	db, err := database.NewDB(cfg.DBPath)
+	if err != nil {
+		return config.AppConfig{}, nil, fmt.Errorf("base de données : %w", err)
+	}
+
+	return cfg, db, nil
+}
+
 // LoadBot charge la configuration et initialise le bot complet.
 func LoadBot() (*bot.Bot, error) {
 	cfg, db, err := LoadConfig()

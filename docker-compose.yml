@@ -2,7 +2,7 @@ services:
   bot:
     image: zedalaye/simple-bot:latest
     container_name: bot-${EXCHANGE}
-    command: /app/bot
+    command: /app/simple-bot bot
     volumes:
       - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:
@@ -16,7 +16,7 @@ services:
   webui:
     image: zedalaye/simple-bot:latest
     container_name: webui-${EXCHANGE}
-    command: /app/web
+    command: /app/simple-bot web
     volumes:
       - ./storage/${EXCHANGE}/db/:/app/db/
     env_file:

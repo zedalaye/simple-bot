@@ -136,9 +136,15 @@ $ make build-image
 
 (or `make build-image`)
 
-Executables are built into `/bin`
+The executable is built into `/bin`
 
-The main executable is `/bin/bot`
+Everything ships as a **single binary**, `/bin/simple-bot`, that bundles every command as a
+subcommand (`bot`, `web`, `admin`, `backtest`, `patternscan`, ...). `--root` is a global flag
+handled before the command name:
+
+```
+simple-bot [--root DIR] <command> [command options...]
+```
 
 ## Run the bot
 
@@ -168,7 +174,7 @@ MEXC_SECRET=<MEXC API Key "Secret">
 ```
 
 ```bash
-$ ./bin/bot --root storage/mexc
+$ ./bin/simple-bot --root storage/mexc bot
 ```
 
 ### For Hyperliquid
@@ -184,7 +190,7 @@ HL_PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bo
 ```
 
 ```bash
-$ ./bin/bot --root storage/hl
+$ ./bin/simple-bot --root storage/hl bot
 ```
 
 ## Receive notifications on Telegram
@@ -218,25 +224,26 @@ When the `storage/.env.tg` file is available, Telegram notifications are automat
 ## Start the Web UI
 
 ```bash
-$ ./bin/web --root storage/<exchange>
+$ ./bin/simple-bot --root storage/<exchange> web
 ```
 
 ## Backtesting strategies
 
-The `backtest` binary replays an `rsi_dca` strategy over the historical candles
+The `backtest` command replays an `rsi_dca` strategy over the historical candles
 stored in an instance database. It reuses the **real** decision code
 (`internal/algorithms`) and the **real** indicator math (`internal/market`), so
 results stay faithful to production behaviour. Decisions are taken at candle
-close and orders only fill on later candles (no look-ahead bias).
+close and orders only fill on later candles (no look-ahead bias). The database is
+resolved from `--root` (the instance's `DB_PATH`).
 
 ```bash
 # Single run reproducing an existing strategy (#1) on 15m price path
-$ ./bin/backtest --db storage/mexc/db/bot.db --strategy-id 1
+$ ./bin/simple-bot --root storage/mexc backtest --strategy-id 1
 
 # Parameter sweep: RSI timeframe × threshold × profit target × buy interval
-$ make run-backtest ARGS="--db storage/mexc/db/bot.db \
+$ ./bin/simple-bot --root storage/mexc backtest \
     --rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 \
-    --interval 21600,43200,86400 --vol-adj 0"
+    --interval 21600,43200,86400 --vol-adj 0
 ```
 
 Output columns: filled buys/day, closed cycles/day, median cycle duration,

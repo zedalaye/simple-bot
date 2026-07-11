@@ -1,6 +1,8 @@
-package main
+// Package webcli implémente la sous-commande « web » : l'interface web + l'API REST.
+package webcli
 
 import (
+	"bot/internal/cli"
 	"bot/internal/loader"
 	"bot/internal/logger"
 	"bot/internal/version"
@@ -8,30 +10,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 )
 
-func main() {
-	log.SetOutput(os.Stdout)
+// Main est le point d'entrée de la sous-commande « web ». Le flag --root et le chdir
+// sont gérés en amont par le dispatcher ; cli.RootWd fournit le cwd d'origine où
+// vivent templates/ et static/ (racine du dépôt, pas l'instance).
+func Main(args []string) {
 	log.Printf("Starting Simple Bot Web %s", version.Version)
 
-	var (
-		botDir = flag.String("root", ".", "Répertoire racine de l'instance du bot")
-		port   = flag.String("port", "", "Port pour l'interface web (prioritaire sur la variable WEB_PORT)")
-	)
-	flag.Parse()
-
-	rootDir, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("Impossible de déterminer le répertoire courant : %v", err)
-	}
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
-	}
+	port := flag.String("port", "", "Port pour l'interface web (prioritaire sur la variable WEB_PORT)")
+	flag.CommandLine.Parse(args)
 
 	cfg, db, err := loader.LoadConfig()
 	if err != nil {
@@ -52,6 +41,6 @@ func main() {
 		}
 	}
 
-	router := web.SetupServer(cfg.ExchangeName, db, rootDir, cfg.GetLogFile())
+	router := web.SetupServer(cfg.ExchangeName, db, cli.RootWd, cfg.GetLogFile())
 	router.Run(effectivePort)
 }

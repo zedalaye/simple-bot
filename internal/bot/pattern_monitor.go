@@ -15,7 +15,7 @@ import (
 // un signal de creux (marteau / étoile du matin après une baisse) se forme. C'est de
 // la LECTURE SEULE : aucune action de trading n'est déclenchée — l'opérateur décide
 // (ex. bouton « 🛒 Acheter »). Le choix du 1h et des deux patterns vient de l'analyse
-// cmd/patternscan : c'est le seul timeframe où ces formes battent une entrée au hasard
+// la commande patternscan : c'est le seul timeframe où ces formes battent une entrée au hasard
 // sur BTC ; l'avalement/perçante sont trop fréquents/faibles → exclus pour ne pas spammer.
 const (
 	patternTimeframe        = "1h"
@@ -23,11 +23,11 @@ const (
 	patternDeclineLookback  = 6  // baisse préalable exigée (en bougies)
 	patternVolumeLookback   = 20 // fenêtre moyenne pour la confirmation volume
 	patternVolumeMultiplier = 1.5
-	patternRSIOversold      = 35 // seuil RSI(1h) de survente (cf. cmd/patternscan : booste l'edge du marteau)
+	patternRSIOversold      = 35 // seuil RSI(1h) de survente (cf. la commande patternscan : booste l'edge du marteau)
 )
 
 // convictionTag classe la force d'un signal selon le nombre de confirmations réunies
-// (RSI survendu, volume au-dessus de la normale). L'analyse cmd/patternscan montre que
+// (RSI survendu, volume au-dessus de la normale). L'analyse patternscan montre que
 // le marteau passe de ~58 % de réussite à ~68 % (RSI), ~72 % (volume) et ~75 % (les deux).
 func convictionTag(rsiOversold, volConfirmed bool) string {
 	switch {

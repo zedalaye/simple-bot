@@ -3,7 +3,8 @@
 // rejoue les bougies « as-of » (sans regarder le futur), on détecte le signal, puis
 // on mesure le rendement N bougies plus tard. On compare à une BASELINE (entrée sur
 // chaque bougie) : un pattern n'a d'intérêt que s'il bat l'entrée au hasard.
-package main
+// Package patternscancli implémente la sous-commande « patternscan » (voir en-tête ci-dessous).
+package patternscancli
 
 import (
 	"flag"
@@ -17,23 +18,21 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"bot/internal/core/database"
-	"bot/internal/logger"
+	"bot/internal/loader"
 	"bot/internal/market"
 )
 
-func main() {
-	// NewDB logge pendant les migrations : initialiser le logger sinon nil deref.
-	_ = logger.InitLogger("error", "")
-
+// Main est le point d'entrée de la sous-commande « patternscan ». La base analysée est
+// celle de l'instance ciblée par le flag global --root (chdir géré en amont par le
+// dispatcher), lue via loader.LoadOffline().
+func Main(args []string) {
 	var (
-		dbPath        = flag.String("db", "storage/mexc/db/bot.db", "Chemin de la base SQLite")
-		pair          = flag.String("pair", "BTC/USDC", "Paire à analyser")
-		tf            = flag.String("tf", "4h", "Timeframe des bougies à analyser")
-		horizonsStr   = flag.String("horizons", "4,8,24", "Horizons forward en bougies (séparés par virgule)")
-		declineBack   = flag.Int("decline-lookback", 6, "Filtre contexte : n'évalue qu'après une baisse sur N bougies (0 = désactivé)")
-		volMult       = flag.Float64("vol-mult", 0, "Filtre volume : exige volume ≥ mult × moyenne (0 = désactivé)")
-		volLookback   = flag.Int("vol-lookback", 20, "Fenêtre de moyenne du filtre volume")
+		pair        = flag.String("pair", "", "Paire à analyser (défaut : TRADING_PAIR de l'instance)")
+		tf          = flag.String("tf", "4h", "Timeframe des bougies à analyser")
+		horizonsStr = flag.String("horizons", "4,8,24", "Horizons forward en bougies (séparés par virgule)")
+		declineBack = flag.Int("decline-lookback", 6, "Filtre contexte : n'évalue qu'après une baisse sur N bougies (0 = désactivé)")
+		volMult     = flag.Float64("vol-mult", 0, "Filtre volume : exige volume ≥ mult × moyenne (0 = désactivé)")
+		volLookback = flag.Int("vol-lookback", 20, "Fenêtre de moyenne du filtre volume")
 
 		// Section « confirmations » : dissèque un pattern (marteau par défaut) avec divers
 		// signaux de confirmation pour voir lesquels améliorent vraiment l'edge.
@@ -44,7 +43,7 @@ func main() {
 		bbK            = flag.Float64("bb-k", 2.0, "Nombre d'écarts-types Bollinger")
 		divWindow      = flag.Int("div-window", 20, "Fenêtre de recherche de divergence RSI haussière")
 	)
-	flag.Parse()
+	flag.CommandLine.Parse(args)
 
 	horizons := parseInts(*horizonsStr)
 	if len(horizons) == 0 {
@@ -57,11 +56,15 @@ func main() {
 		}
 	}
 
-	db, err := database.NewDB(*dbPath)
+	cfg, db, err := loader.LoadOffline()
 	if err != nil {
-		log.Fatalf("Ouverture DB %s : %v", *dbPath, err)
+		log.Fatalf("Chargement de l'instance : %v", err)
 	}
 	defer db.Close()
+
+	if *pair == "" {
+		*pair = cfg.TradingPair
+	}
 
 	candles, err := db.GetAllCandles(*pair, *tf)
 	if err != nil {
@@ -80,8 +83,8 @@ func main() {
 
 	// Accumulateurs : map pattern -> horizon -> liste des rendements forward.
 	type acc struct {
-		count   int
-		byH     map[int][]float64
+		count int
+		byH   map[int][]float64
 	}
 	stats := map[market.Pattern]*acc{}
 	ensure := func(p market.Pattern) *acc {

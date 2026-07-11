@@ -1,4 +1,5 @@
-package main
+// Package botcli implémente la sous-commande « bot » : le daemon de trading.
+package botcli
 
 import (
 	"bot/internal/api"
@@ -16,21 +17,13 @@ import (
 	"time"
 )
 
-func main() {
-	log.SetOutput(os.Stdout)
+// Main est le point d'entrée de la sous-commande « bot ». Le flag --root et le chdir
+// sont gérés en amont par le dispatcher (cmd/simple-bot).
+func Main(args []string) {
 	log.Printf("Starting Simple Bot %s", version.Version)
 
-	var (
-		botDir      = flag.String("root", ".", "Répertoire racine de l'instance du bot")
-		buyAtLaunch = flag.Bool("buy-at-launch", false, "Immédiatement placer un ordre d'achat au démarrage")
-	)
-	flag.Parse()
-
-	if *botDir != "." {
-		if err := os.Chdir(*botDir); err != nil {
-			log.Fatalf("Impossible de changer de répertoire vers %s : %v", *botDir, err)
-		}
-	}
+	buyAtLaunch := flag.Bool("buy-at-launch", false, "Immédiatement placer un ordre d'achat au démarrage")
+	flag.CommandLine.Parse(args)
 
 	tradingBot, err := loader.LoadBot()
 	if err != nil {
