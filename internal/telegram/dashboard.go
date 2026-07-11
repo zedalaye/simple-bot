@@ -70,7 +70,8 @@ type PnLSnapshot struct {
 type BalanceLine struct {
 	Asset  string
 	Amount string
-	Value  string // valorisation en devise de cotation, ou "" si inconnue
+	Locked string // montant bloqué dans des ordres ouverts, ou "" si aucun
+	Value  string // valorisation en devise de cotation (total, dont bloqué), ou "" si inconnue
 }
 
 // BalanceSnapshot est l'instantané de la vue /balance.
@@ -453,6 +454,9 @@ func renderBalance(s BalanceSnapshot) string {
 	fmt.Fprintf(&b, "💼 Balance — %s\n", s.Exchange)
 	for _, l := range s.Lines {
 		fmt.Fprintf(&b, "\n%s : %s", l.Asset, l.Amount)
+		if l.Locked != "" {
+			fmt.Fprintf(&b, " (dont %s bloqué en ordres)", l.Locked)
+		}
 		if l.Value != "" {
 			fmt.Fprintf(&b, "  (%s)", l.Value)
 		}

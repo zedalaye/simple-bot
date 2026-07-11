@@ -2,6 +2,7 @@ package bot
 
 import (
 	"bot/internal/algorithms"
+	"bot/internal/api"
 	"bot/internal/core/config"
 	"bot/internal/core/database"
 	"bot/internal/logger"
@@ -52,7 +53,9 @@ type Market struct {
 }
 
 type Balance struct {
-	Free float64
+	Free  float64
+	Used  float64 // bloqué dans des ordres ouverts
+	Total float64 // Free + Used
 }
 
 type Order struct {
@@ -850,18 +853,18 @@ func (b *Bot) GetPrice(pair string) (float64, error) {
 	return b.exchange.GetPrice(pair)
 }
 
-// FetchBalances implémente api.BotInterface : retourne les soldes non nuls,
+// FetchBalances implémente api.BotInterface : retourne les soldes non nuls (free/used/total),
 // la devise de base, la devise de cotation et le prix courant de la paire configurée.
-func (b *Bot) FetchBalances() (map[string]float64, string, string, float64, error) {
+func (b *Bot) FetchBalances() (map[string]api.BalanceAmounts, string, string, float64, error) {
 	rawBalances, err := b.exchange.FetchBalance()
 	if err != nil {
 		return nil, "", "", 0, fmt.Errorf("fetch balance: %w", err)
 	}
 
-	balances := make(map[string]float64)
+	balances := make(map[string]api.BalanceAmounts)
 	for asset, bal := range rawBalances {
-		if bal.Free > 0 {
-			balances[asset] = bal.Free
+		if bal.Total > 0 {
+			balances[asset] = api.BalanceAmounts{Free: bal.Free, Used: bal.Used, Total: bal.Total}
 		}
 	}
 

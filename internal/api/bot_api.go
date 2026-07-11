@@ -20,16 +20,25 @@ type BotInterface interface {
 	ExchangeName() string
 	ReloadStrategies() error
 	CollectCandles(pair, timeframe string, limit int) (int, int, error) // fetched, saved, error
-	// FetchBalances returns balances (asset → free amount), base currency, quote currency, current price, error
-	FetchBalances() (map[string]float64, string, string, float64, error)
+	// FetchBalances returns balances (asset → free/used/total amounts), base currency, quote currency, current price, error
+	FetchBalances() (map[string]BalanceAmounts, string, string, float64, error)
 	// ForceBuy déclenche un achat manuel immédiat et retourne un résumé de l'ordre posé.
 	ForceBuy() (string, error)
+}
+
+// BalanceAmounts détaille un solde d'actif : disponible, bloqué en ordres ouverts, et total.
+type BalanceAmounts struct {
+	Free  float64
+	Used  float64
+	Total float64
 }
 
 type BalanceEntry struct {
 	Asset string  `json:"asset"`
 	Free  float64 `json:"free"`
-	Value float64 `json:"value"`
+	Used  float64 `json:"used"`
+	Total float64 `json:"total"`
+	Value float64 `json:"value"` // valorisation du total (free+used)
 }
 
 type BalanceResponse struct {
@@ -256,12 +265,12 @@ func (api *BotAPI) handleBalance(w http.ResponseWriter, r *http.Request) {
 
 	var entries []BalanceEntry
 	totalValue := 0.0
-	for asset, free := range balances {
-		entry := BalanceEntry{Asset: asset, Free: free}
+	for asset, amounts := range balances {
+		entry := BalanceEntry{Asset: asset, Free: amounts.Free, Used: amounts.Used, Total: amounts.Total}
 		if asset == baseAsset && currentPrice > 0 {
-			entry.Value = free * currentPrice
+			entry.Value = amounts.Total * currentPrice
 		} else if asset == quoteAsset {
-			entry.Value = free
+			entry.Value = amounts.Total
 		}
 		totalValue += entry.Value
 		entries = append(entries, entry)

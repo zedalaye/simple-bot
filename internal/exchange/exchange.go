@@ -234,8 +234,15 @@ func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	}
 
 	botBalances := make(map[string]bot.Balance)
-	for key, value := range result.Free {
-		botBalances[key] = bot.Balance{Free: *value}
+	for key, total := range result.Total {
+		bal := bot.Balance{Total: *total}
+		if free, ok := result.Free[key]; ok && free != nil {
+			bal.Free = *free
+		}
+		if used, ok := result.Used[key]; ok && used != nil {
+			bal.Used = *used
+		}
+		botBalances[key] = bal
 	}
 	return botBalances, nil
 }

@@ -151,24 +151,33 @@ func (d *telegramDashboard) Balance() (telegram.BalanceSnapshot, error) {
 	var total float64
 	var hasTotal bool
 	for _, asset := range assets {
-		amount := balances[asset]
+		amounts := balances[asset]
 		line := telegram.BalanceLine{Asset: asset}
 		switch asset {
 		case base:
-			line.Amount = b.market.FormatAmount(amount)
+			line.Amount = b.market.FormatAmount(amounts.Total)
+			if amounts.Used > 0 {
+				line.Locked = b.market.FormatAmount(amounts.Used)
+			}
 			if price > 0 {
-				v := amount * price
+				v := amounts.Total * price
 				line.Value = fmt.Sprintf("≈ %.2f %s", v, quote)
 				total += v
 				hasTotal = true
 			}
 		case quote:
-			line.Amount = fmt.Sprintf("%.2f", amount)
-			total += amount
+			line.Amount = fmt.Sprintf("%.2f", amounts.Total)
+			if amounts.Used > 0 {
+				line.Locked = fmt.Sprintf("%.2f", amounts.Used)
+			}
+			total += amounts.Total
 			hasTotal = true
 		default:
 			// Autres actifs : pas de prix connu (le bot ne suit que la paire configurée).
-			line.Amount = strconv.FormatFloat(amount, 'f', -1, 64)
+			line.Amount = strconv.FormatFloat(amounts.Total, 'f', -1, 64)
+			if amounts.Used > 0 {
+				line.Locked = strconv.FormatFloat(amounts.Used, 'f', -1, 64)
+			}
 		}
 		snap.Lines = append(snap.Lines, line)
 	}

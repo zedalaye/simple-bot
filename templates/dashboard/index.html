@@ -559,9 +559,13 @@ async function refreshBalance() {
 
         let rows = balances.map(b => {
             const valueStr = b.value > 0 ? b.value.toFixed(2) + ' ' + quote : '—';
+            const lockedStr = b.used > 0
+                ? `<span class="text-warning" title="Bloqué dans des ordres ouverts">${b.used.toFixed(8)}</span>`
+                : '—';
             return `<tr>
                 <td><strong>${b.asset}</strong></td>
-                <td class="text-end font-monospace">${b.free.toFixed(8)}</td>
+                <td class="text-end font-monospace">${b.total.toFixed(8)}</td>
+                <td class="text-end font-monospace">${lockedStr}</td>
                 <td class="text-end font-monospace">${valueStr}</td>
             </tr>`;
         }).join('');
@@ -571,7 +575,8 @@ async function refreshBalance() {
                 <thead class="table-light">
                     <tr>
                         <th>Token</th>
-                        <th class="text-end">Montant libre</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">dont bloqué</th>
                         <th class="text-end">Valeur</th>
                     </tr>
                 </thead>
@@ -579,7 +584,7 @@ async function refreshBalance() {
                 <tfoot class="table-light fw-bold">
                     <tr>
                         <td>Total</td>
-                        <td colspan="2" class="text-end font-monospace">${totalValue.toFixed(2)} ${quote}</td>
+                        <td colspan="3" class="text-end font-monospace">${totalValue.toFixed(2)} ${quote}</td>
                     </tr>
                 </tfoot>
             </table>`;

@@ -26,6 +26,8 @@ type BotResponse struct {
 type BalanceEntry struct {
 	Asset string  `json:"asset"`
 	Free  float64 `json:"free"`
+	Used  float64 `json:"used"`
+	Total float64 `json:"total"`
 	Value float64 `json:"value"`
 }
 
