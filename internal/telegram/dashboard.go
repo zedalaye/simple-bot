@@ -169,6 +169,8 @@ type dashboardBot struct {
 
 func (b *dashboardBot) loop(ctx context.Context) {
 	logger.Infof("Dashboard Telegram actif (long-polling)")
+	// Déclare les commandes → active le bouton « Menu » de la barre de saisie.
+	b.setMyCommands()
 	for {
 		if ctx.Err() != nil {
 			logger.Infof("Dashboard Telegram arrêté")
@@ -351,7 +353,7 @@ func parseMessageID(data []byte) int {
 
 func (b *dashboardBot) sendView(view string) {
 	text, kb := b.render(view)
-	b.send(text, kb)
+	b.postDashboard(text, kb)
 }
 
 // render assemble le texte et le clavier d'une vue donnée.
@@ -516,7 +518,10 @@ func refreshKeyboard() inlineKeyboard {
 // APPELS API BAS NIVEAU
 // ===============================
 
-func (b *dashboardBot) send(text string, kb *inlineKeyboard) {
+// send poste un nouveau message et retourne son message_id (0 si échec). Le
+// suivi du dashboard courant (lastMessageID) est laissé à l'appelant : seul
+// postDashboard mémorise l'id, un simple message d'aide ne doit pas l'écraser.
+func (b *dashboardBot) send(text string, kb *inlineKeyboard) int {
 	payload := map[string]any{"chat_id": b.chatID, "text": text}
 	if kb != nil {
 		payload["reply_markup"] = kb
@@ -524,11 +529,26 @@ func (b *dashboardBot) send(text string, kb *inlineKeyboard) {
 	data, err := b.apiCall("sendMessage", payload)
 	if err != nil {
 		logger.Errorf("Telegram sendMessage : %v", err)
-		return
+		return 0
 	}
-	// Mémorise l'id du message envoyé : c'est le dashboard courant.
-	if id := parseMessageID(data); id > 0 {
+	return parseMessageID(data)
+}
+
+// postDashboard poste le dashboard tout en bas de la conversation puis supprime
+// l'exemplaire précédent. Les notifications push (clôtures d'ordres, erreurs)
+// s'insèrent en bas et font remonter le message-dashboard hors de vue ; le
+// re-poster à chaque commande le ramène sous la main, et supprimer l'ancien
+// évite d'empiler des dashboards périmés dans l'historique.
+func (b *dashboardBot) postDashboard(text string, kb *inlineKeyboard) {
+	old := b.lastMessageID.Load()
+	id := b.send(text, kb)
+	if id > 0 {
 		b.lastMessageID.Store(int64(id))
+	}
+	// On supprime l'ancien seulement après avoir posté le nouveau (si l'envoi
+	// échoue, on garde au moins le précédent).
+	if old > 0 && int(old) != id {
+		b.deleteMessage(int(old))
 	}
 }
 
@@ -555,6 +575,33 @@ func (b *dashboardBot) edit(messageID int, text string, kb *inlineKeyboard) {
 
 func (b *dashboardBot) answerCallback(id string) {
 	_, _ = b.apiCall("answerCallbackQuery", map[string]any{"callback_query_id": id})
+}
+
+// deleteMessage supprime un message de la conversation. Utilisé pour retirer
+// l'ancien dashboard une fois qu'un nouveau a été posté plus bas.
+func (b *dashboardBot) deleteMessage(messageID int) {
+	if _, err := b.apiCall("deleteMessage", map[string]any{"chat_id": b.chatID, "message_id": messageID}); err != nil {
+		// Message déjà supprimé ou trop ancien (>48 h) : sans gravité.
+		logger.Debugf("Telegram deleteMessage : %v", err)
+	}
+}
+
+// setMyCommands déclare la liste des commandes du bot. Effet visible : Telegram
+// affiche un bouton « Menu » à gauche de la barre de saisie (toujours au bas de
+// l'écran, jamais emporté par le défilement), qui déroule ces commandes et
+// permet de ré-afficher le dashboard d'un tap.
+func (b *dashboardBot) setMyCommands() {
+	cmds := []map[string]string{
+		{"command": "status", "description": "État du bot"},
+		{"command": "cycles", "description": "Cycles actifs"},
+		{"command": "pnl", "description": "PnL réalisé"},
+		{"command": "balance", "description": "Soldes du compte"},
+		{"command": "pause", "description": "Mettre le bot en pause"},
+		{"command": "resume", "description": "Reprendre le bot"},
+	}
+	if _, err := b.apiCall("setMyCommands", map[string]any{"commands": cmds}); err != nil {
+		logger.Warnf("Telegram setMyCommands : %v", err)
+	}
 }
 
 func (b *dashboardBot) apiCall(method string, payload any) ([]byte, error) {
