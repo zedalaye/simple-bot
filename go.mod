@@ -3,13 +3,13 @@ module bot
 go 1.26.5
 
 require (
-	github.com/ccxt/ccxt/go/v4 v4.5.64 // direct
+	github.com/ccxt/ccxt/go/v4 v4.5.65 // direct
 	github.com/cinar/indicator/v2 v2.1.33 // direct
 	github.com/gin-contrib/multitemplate v1.1.2 // direct
 	github.com/gin-gonic/gin v1.12.0 // direct
 	github.com/go-co-op/gocron/v2 v2.22.0 // direct
 	github.com/joho/godotenv v1.5.1 // direct
-	github.com/mattn/go-sqlite3 v1.14.47 // direct
+	github.com/mattn/go-sqlite3 v1.14.48 // direct
 	github.com/robfig/cron/v3 v3.0.1 // direct
 )
 
@@ -19,10 +19,10 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/NethermindEth/juno v0.16.4 // indirect
 	github.com/NethermindEth/starknet.go v0.17.1 // indirect
-	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20260607022201-88e0521b82d3 // indirect
+	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20260713035539-e6945a76b084 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.6 // indirect
-	github.com/buger/jsonparser v1.1.2 // indirect
+	github.com/buger/jsonparser v1.2.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.2 // indirect
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
@@ -64,8 +64,8 @@ require (
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
-	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
@@ -75,7 +75,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/arch v0.29.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
