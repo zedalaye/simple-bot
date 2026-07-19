@@ -8,7 +8,7 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
-	"bot/internal/telegram"
+	"bot/internal/notify"
 )
 
 // Le moniteur de retournement surveille les BOUGIES 1h et notifie sur Telegram quand
@@ -134,21 +134,27 @@ func (b *Bot) checkReversalSignal() {
 	if volConfirmed {
 		details = append(details, "volume confirmé ✅")
 	}
-	detailLine := ""
-	if len(details) > 0 {
-		detailLine = "\n" + strings.Join(details, "  ·  ")
+	detailLine := strings.Join(details, "  ·  ")
+
+	summary := header
+	if detailLine != "" {
+		summary += "\n" + detailLine
 	}
 
-	msg := fmt.Sprintf(
-		"🔔 [%s] Signal de retournement haussier — %s (1h)\n%s%s\nClôture : %s %s\nCreux possible. /status ou bouton 🛒 Acheter pour agir.",
-		b.Config.ExchangeName, pair,
-		header, detailLine,
-		b.market.FormatPrice(closed.ClosePrice), b.market.QuoteAsset,
-	)
-	if err := telegram.SendMessage(msg); err != nil {
-		logger.Errorf("[%s] Échec notif pattern Telegram : %v", b.Config.ExchangeName, err)
-		return
-	}
+	b.emit(notify.Event{
+		Kind:  notify.KindPattern,
+		Level: notify.LevelInfo,
+		Title: fmt.Sprintf("Signal de retournement haussier — %s (%s)", pair, patternTimeframe),
+		Text:  summary,
+		Fields: map[string]string{
+			"pair":        pair,
+			"timeframe":   patternTimeframe,
+			"header":      header,
+			"details":     detailLine,
+			"close_price": b.market.FormatPrice(closed.ClosePrice),
+			"quote":       b.market.QuoteAsset,
+		},
+	})
 	logger.Infof("[%s] Signal de retournement notifié (%s) sur bougie 1h %s", b.Config.ExchangeName,
 		notifiablePatterns[p], time.UnixMilli(closedTs).UTC().Format("2006-01-02 15:04"))
 }

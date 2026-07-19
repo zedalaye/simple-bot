@@ -6,6 +6,7 @@ import (
 	"bot/internal/bot"
 	"bot/internal/loader"
 	"bot/internal/logger"
+	"bot/internal/notify"
 	"bot/internal/telegram"
 	"bot/internal/version"
 	"context"
@@ -34,10 +35,17 @@ func Main(args []string) {
 	botAPI := api.NewBotAPI(tradingBot)
 	botAPI.Start()
 
+	// Canaux de notification. Multi permet de faire tourner plusieurs canaux en
+	// parallèle (Telegram + relay mobile) pendant une migration.
+	tradingBot.SetNotifier(notify.Multi{
+		telegram.NewNotifier(tradingBot.Config.ExchangeName),
+	})
+
 	// Dashboard Telegram interactif (long-polling sortant, pas d'exposition réseau).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tgDashboard := telegram.StartPolling(ctx, bot.NewTelegramDashboard(tradingBot))
+	dashSource := bot.NewDashboardSource(tradingBot)
+	tgDashboard := telegram.StartPolling(ctx, dashSource)
 
 	err = tradingBot.Start(*buyAtLaunch)
 	if err != nil {

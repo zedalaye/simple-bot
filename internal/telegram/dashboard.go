@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bot/internal/dashboard"
 	"bot/internal/logger"
 )
 
@@ -28,70 +29,13 @@ import (
 // déclenchent un editMessageText qui réécrit le message sur place (status →
 // cycles → pnl), sans spammer la conversation.
 
-// StatusSnapshot est l'instantané affiché par /status.
-type StatusSnapshot struct {
-	Version      string // version du binaire (injectée par make release)
-	Exchange     string
-	Pair         string
-	Price        string // déjà formaté selon la précision du marché
-	RSI          string // formaté, ou "n/a"
-	RSITimeframe string
-	ActiveCycles int
-	OpenCycles   int // cycles dont l'achat est rempli, en attente de vente
-	TotalProfit  float64
-	AvgProfit    float64
-	Quote        string
-	Paused       bool
-	UpdatedAt    time.Time
-	Uptime       string // durée depuis le démarrage, ou "" si inconnu
-	LastCheckAgo string // temps écoulé depuis le dernier price-check, ou "" si aucun
-	ErrorMsg     string // dernière erreur récente, ou "" si aucune
-	ErrorAgo     string // temps écoulé depuis cette erreur
-}
-
-// CycleView est une ligne de la vue /cycles.
-type CycleView struct {
-	ID       int
-	Status   string
-	Amount   string
-	BuyPrice string
-	Target   string
-	Age      string
-}
-
-// PnLSnapshot est l'instantané de la vue /pnl.
-type PnLSnapshot struct {
-	Completed   int
-	TotalProfit float64
-	AvgProfit   float64
-	Quote       string
-}
-
-// BalanceLine est un solde d'actif dans la vue /balance.
-type BalanceLine struct {
-	Asset  string
-	Amount string
-	Locked string // montant bloqué dans des ordres ouverts, ou "" si aucun
-	Value  string // valorisation en devise de cotation (total, dont bloqué), ou "" si inconnue
-}
-
-// BalanceSnapshot est l'instantané de la vue /balance.
-type BalanceSnapshot struct {
-	Exchange string
-	Lines    []BalanceLine
-	Total    string // total valorisé, ou "" si rien de valorisable
-}
-
-// Dashboard est la source de données et de contrôle fournie par le bot.
-// L'interface est définie ici pour découpler le package telegram du package bot
-// (qui importe déjà telegram pour les notifications push).
+// Dashboard est la source de données et de contrôle du dashboard Telegram.
+//
+// Elle étend dashboard.Source (lecture + pause/reprise, partagée avec les autres
+// consommateurs) de l'achat manuel, qui reste volontairement propre à Telegram :
+// le canal est local et confirmé à deux temps, contrairement au relay distant.
 type Dashboard interface {
-	Status() (StatusSnapshot, error)
-	Cycles() ([]CycleView, error)
-	PnL() (PnLSnapshot, error)
-	Balance() (BalanceSnapshot, error)
-	Pause() error
-	Resume() error
+	dashboard.Source
 	// BuyNow déclenche un achat manuel immédiat et retourne un résumé de l'ordre posé.
 	BuyNow() (string, error)
 }
@@ -400,7 +344,7 @@ func (b *dashboardBot) render(view string) (string, *inlineKeyboard) {
 // RENDU DES VUES
 // ===============================
 
-func renderStatus(s StatusSnapshot) string {
+func renderStatus(s dashboard.StatusSnapshot) string {
 	state := "🟢 Actif"
 	switch {
 	case s.Paused:
@@ -434,7 +378,7 @@ func renderStatus(s StatusSnapshot) string {
 	return b.String()
 }
 
-func renderCycles(cs []CycleView) string {
+func renderCycles(cs []dashboard.CycleView) string {
 	if len(cs) == 0 {
 		return "📈 Cycles actifs\n\nAucun cycle actif."
 	}
@@ -448,7 +392,7 @@ func renderCycles(cs []CycleView) string {
 	return b.String()
 }
 
-func renderBalance(s BalanceSnapshot) string {
+func renderBalance(s dashboard.BalanceSnapshot) string {
 	if len(s.Lines) == 0 {
 		return "💼 Balance — " + s.Exchange + "\n\nAucun solde."
 	}
@@ -470,7 +414,7 @@ func renderBalance(s BalanceSnapshot) string {
 	return b.String()
 }
 
-func renderPnL(p PnLSnapshot) string {
+func renderPnL(p dashboard.PnLSnapshot) string {
 	var b strings.Builder
 	b.WriteString("💰 PnL réalisé\n\n")
 	fmt.Fprintf(&b, "Cycles terminés : %d\n", p.Completed)

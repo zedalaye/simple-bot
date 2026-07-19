@@ -7,8 +7,8 @@ import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
 	"bot/internal/market"
+	"bot/internal/notify"
 	"bot/internal/scheduler"
-	"bot/internal/telegram"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -20,8 +20,8 @@ import (
 // healthClient sert les pings « dead-man's switch » (timeout court, non bloquant).
 var healthClient = &http.Client{Timeout: 10 * time.Second}
 
-// errorAlertCooldown : délai minimum entre deux notifications Telegram d'erreur,
-// pour éviter le spam quand une même erreur se répète à chaque tick.
+// errorAlertCooldown : délai minimum entre deux notifications d'erreur, pour
+// éviter le spam quand une même erreur se répète à chaque tick.
 const errorAlertCooldown = 30 * time.Minute
 
 type Exchange interface {
@@ -113,6 +113,27 @@ type Bot struct {
 	// État du throttling des alertes d'erreur (accédé uniquement depuis run()).
 	lastAlertCount int64
 	lastAlertAt    time.Time
+	// notifier diffuse les événements (achat/vente rempli, pattern, erreurs) vers
+	// les canaux configurés. Jamais nil : Nop par défaut, injecté par SetNotifier.
+	notifier notify.Notifier
+}
+
+// SetNotifier branche le ou les canaux de notification. Appelé au démarrage du
+// daemon ; sans appel, le bot ne notifie rien (utile pour les outils offline).
+func (b *Bot) SetNotifier(n notify.Notifier) {
+	if n != nil {
+		b.notifier = n
+	}
+}
+
+// emit diffuse un événement sans jamais interrompre le trading : un canal en
+// échec est logué, rien de plus.
+func (b *Bot) emit(e notify.Event) {
+	e.At = time.Now()
+	if err := b.notifier.Notify(e); err != nil {
+		logger.Errorf("[%s] Échec de diffusion de la notification (%s) : %v",
+			b.Config.ExchangeName, e.Kind, err)
+	}
 }
 
 func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, error) {
@@ -121,6 +142,7 @@ func NewBot(config config.BotConfig, db *database.DB, exchange Exchange) (*Bot, 
 		db:       db,
 		exchange: exchange,
 		done:     make(chan bool),
+		notifier: notify.Nop(),
 	}
 
 	if err := bot.initializeMarketPrecision(); err != nil {
@@ -287,13 +309,17 @@ func (b *Bot) checkErrorAlerts() {
 	b.lastAlertCount = count
 	b.lastAlertAt = time.Now()
 
-	// Alerte courte : un résumé d'une ligne + renvoi vers /status pour le détail
-	// (la bannière /status porte déjà le message complet, inutile de le dupliquer).
-	text := fmt.Sprintf("⚠️ [%s] Le bot rencontre des erreurs (%d) — ouvre /status\n%s",
-		b.Config.ExchangeName, count, firstLine(msg, 120))
-	if err := telegram.SendMessage(text); err != nil {
-		logger.Errorf("Failed to send error alert to Telegram: %v", err)
-	}
+	// Alerte courte : un résumé d'une ligne, le détail complet restant consultable
+	// dans la vue status (inutile de le dupliquer).
+	b.emit(notify.Event{
+		Kind:  notify.KindError,
+		Level: notify.LevelError,
+		Title: fmt.Sprintf("Le bot rencontre des erreurs (%d)", count),
+		Text:  firstLine(msg, 120),
+		Fields: map[string]string{
+			"count": strconv.FormatInt(count, 10),
+		},
+	})
 }
 
 // firstLine retourne la première ligne de s, tronquée à max runes (avec « … »).
@@ -601,17 +627,26 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to get cycle from buy order %v: %v", dbOrder.ID, err)
 	}
 
-	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] UPDATE", b.Config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\n✅ Buy Order Filled: %s", *order.Id)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
-	message += fmt.Sprintf("\n📉 Buy Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
+	quantity := b.market.FormatAmount(*order.Amount)
+	price := b.market.FormatPrice(*order.Price)
+	value := fmt.Sprintf("%.2f", *order.Amount**order.Price)
 
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
-	}
+	b.emit(notify.Event{
+		Kind:  notify.KindBuyFilled,
+		Level: notify.LevelInfo,
+		Title: fmt.Sprintf("Achat rempli — cycle #%d", dbCycle.ID),
+		Text: fmt.Sprintf("%s %s @ %s %s (≈ %s %s)",
+			quantity, b.market.BaseAsset, price, b.market.QuoteAsset, value, b.market.QuoteAsset),
+		Fields: map[string]string{
+			"cycle_id": strconv.Itoa(dbCycle.ID),
+			"order_id": *order.Id,
+			"quantity": quantity,
+			"base":     b.market.BaseAsset,
+			"price":    price,
+			"quote":    b.market.QuoteAsset,
+			"value":    value,
+		},
+	})
 
 	logger.Infof("[%s] Buy Order Filled: %s %s at %s %s (ID=%v)",
 		b.Config.ExchangeName,
@@ -639,22 +674,33 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 		logger.Errorf("Failed to get cycle from sell order %v: %v", dbOrder.ID, err)
 	}
 
-	message := ""
-	message += fmt.Sprintf("🌀 Cycle on %s [%d] COMPLETE", b.Config.ExchangeName, dbCycle.ID)
-	message += fmt.Sprintf("\n✅ Sell Order Filled: %s", *order.Id)
-	message += fmt.Sprintf("\n💰 Quantity: %s %s", b.market.FormatAmount(*order.Amount), b.market.BaseAsset)
-	message += fmt.Sprintf("\n📈 Sell Price: %s %s", b.market.FormatPrice(*order.Price), b.market.QuoteAsset)
-	message += fmt.Sprintf("\n💲 Value: %.2f %s", *order.Amount**order.Price, b.market.QuoteAsset)
-
 	buyValue := dbCycle.BuyOrder.Price * dbCycle.BuyOrder.Amount
 	win := *dbCycle.Profit
 	winPercent := (win / buyValue) * 100
-	message += fmt.Sprintf("\n🤑 Profit: %.2f %s (%+.1f%%)", win, b.market.QuoteAsset, winPercent)
 
-	err = telegram.SendMessage(message)
-	if err != nil {
-		logger.Errorf("Failed to send notification to Telegram: %v", err)
-	}
+	quantity := b.market.FormatAmount(*order.Amount)
+	price := b.market.FormatPrice(*order.Price)
+	value := fmt.Sprintf("%.2f", *order.Amount**order.Price)
+	profit := fmt.Sprintf("%.2f", win)
+	profitPct := fmt.Sprintf("%+.1f", winPercent)
+
+	b.emit(notify.Event{
+		Kind:  notify.KindSellFilled,
+		Level: notify.LevelInfo,
+		Title: fmt.Sprintf("Vente remplie — cycle #%d", dbCycle.ID),
+		Text:  fmt.Sprintf("Profit : %s %s (%s%%)", profit, b.market.QuoteAsset, profitPct),
+		Fields: map[string]string{
+			"cycle_id":   strconv.Itoa(dbCycle.ID),
+			"order_id":   *order.Id,
+			"quantity":   quantity,
+			"base":       b.market.BaseAsset,
+			"price":      price,
+			"quote":      b.market.QuoteAsset,
+			"value":      value,
+			"profit":     profit,
+			"profit_pct": profitPct,
+		},
+	})
 
 	logger.Infof("[%s] Sell Order Filled: %s %s at %s %s (ID=%s)",
 		b.Config.ExchangeName,

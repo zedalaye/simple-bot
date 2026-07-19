@@ -6,8 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"bot/internal/core/database"
+	"bot/internal/dashboard"
 	"bot/internal/logger"
-	"bot/internal/telegram"
 	"bot/internal/version"
 )
 
@@ -15,22 +16,24 @@ import (
 // périmée et on ne l'affiche plus dans /status (évite d'alarmer sur du résolu).
 const errorBannerWindow = 15 * time.Minute
 
-// telegramDashboard adapte le Bot à l'interface telegram.Dashboard : il ne fait
-// que lire l'état (prix, RSI, cycles, PnL) et exposer le contrôle pause/reprise.
+// DashboardSource adapte le Bot à l'interface dashboard.Source : il ne fait que
+// lire l'état (prix, RSI, cycles, PnL) et exposer le contrôle pause/reprise.
 // Aucune logique métier ici — uniquement de la collecte et de la mise en forme.
-type telegramDashboard struct {
+//
+// Il implémente aussi telegram.Dashboard via BuyNow, réservé au canal Telegram.
+type DashboardSource struct {
 	bot *Bot
 }
 
-// NewTelegramDashboard construit la source de données du dashboard Telegram.
-func NewTelegramDashboard(b *Bot) telegram.Dashboard {
-	return &telegramDashboard{bot: b}
+// NewDashboardSource construit la source de données des interfaces de supervision.
+func NewDashboardSource(b *Bot) *DashboardSource {
+	return &DashboardSource{bot: b}
 }
 
-func (d *telegramDashboard) Status() (telegram.StatusSnapshot, error) {
+func (d *DashboardSource) Status() (dashboard.StatusSnapshot, error) {
 	b := d.bot
 
-	snap := telegram.StatusSnapshot{
+	snap := dashboard.StatusSnapshot{
 		Version:   version.Version,
 		Exchange:  b.Config.ExchangeName,
 		Pair:      b.Config.Pair,
@@ -76,6 +79,11 @@ func (d *telegramDashboard) Status() (telegram.StatusSnapshot, error) {
 		snap.OpenCycles = len(open)
 	}
 
+	// Ordres encore ouverts : seul le total nous intéresse, d'où LIMIT 0.
+	if _, total, err := b.db.GetOrdersWithPagination(database.Pending, 0, 0); err == nil {
+		snap.OpenOrders = total
+	}
+
 	// Heartbeat : uptime et fraîcheur du dernier price-check réussi.
 	if !b.startedAt.IsZero() {
 		snap.Uptime = time.Since(b.startedAt).Round(time.Second).String()
@@ -93,7 +101,7 @@ func (d *telegramDashboard) Status() (telegram.StatusSnapshot, error) {
 	return snap, nil
 }
 
-func (d *telegramDashboard) Cycles() ([]telegram.CycleView, error) {
+func (d *DashboardSource) Cycles() ([]dashboard.CycleView, error) {
 	b := d.bot
 
 	cycles, err := b.db.GetCycles("active")
@@ -101,9 +109,9 @@ func (d *telegramDashboard) Cycles() ([]telegram.CycleView, error) {
 		return nil, err
 	}
 
-	views := make([]telegram.CycleView, 0, len(cycles))
+	views := make([]dashboard.CycleView, 0, len(cycles))
 	for _, c := range cycles {
-		views = append(views, telegram.CycleView{
+		views = append(views, dashboard.CycleView{
 			ID:       c.ID,
 			Status:   string(c.Status),
 			Amount:   b.market.FormatAmount(c.BuyOrder.Amount),
@@ -115,10 +123,10 @@ func (d *telegramDashboard) Cycles() ([]telegram.CycleView, error) {
 	return views, nil
 }
 
-func (d *telegramDashboard) PnL() (telegram.PnLSnapshot, error) {
+func (d *DashboardSource) PnL() (dashboard.PnLSnapshot, error) {
 	b := d.bot
 
-	snap := telegram.PnLSnapshot{Quote: b.market.QuoteAsset}
+	snap := dashboard.PnLSnapshot{Quote: b.market.QuoteAsset}
 	if stats, err := b.db.GetStats(); err == nil {
 		snap.Completed, _ = stats["completed_cycles_count"].(int)
 		snap.TotalProfit, _ = stats["total_profit"].(float64)
@@ -127,15 +135,15 @@ func (d *telegramDashboard) PnL() (telegram.PnLSnapshot, error) {
 	return snap, nil
 }
 
-func (d *telegramDashboard) Balance() (telegram.BalanceSnapshot, error) {
+func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 	b := d.bot
 
 	balances, base, quote, price, err := b.FetchBalances()
 	if err != nil {
-		return telegram.BalanceSnapshot{}, err
+		return dashboard.BalanceSnapshot{}, err
 	}
 
-	snap := telegram.BalanceSnapshot{Exchange: b.Config.ExchangeName}
+	snap := dashboard.BalanceSnapshot{Exchange: b.Config.ExchangeName}
 
 	// Ordre stable : base, puis quote, puis le reste trié alphabétiquement.
 	assets := make([]string, 0, len(balances))
@@ -154,7 +162,7 @@ func (d *telegramDashboard) Balance() (telegram.BalanceSnapshot, error) {
 	var hasTotal bool
 	for _, asset := range assets {
 		amounts := balances[asset]
-		line := telegram.BalanceLine{Asset: asset}
+		line := dashboard.BalanceLine{Asset: asset}
 		switch asset {
 		case base:
 			line.Amount = b.market.FormatAmount(amounts.Total)
@@ -202,8 +210,9 @@ func assetRank(asset, base, quote string) int {
 	}
 }
 
-func (d *telegramDashboard) Pause() error  { return d.bot.Pause() }
-func (d *telegramDashboard) Resume() error { return d.bot.Resume() }
+func (d *DashboardSource) Pause() error  { return d.bot.Pause() }
+func (d *DashboardSource) Resume() error { return d.bot.Resume() }
 
 // BuyNow déclenche un achat manuel immédiat et retourne un résumé lisible de l'ordre posé.
-func (d *telegramDashboard) BuyNow() (string, error) { return d.bot.ForceBuy() }
+// Réservé au dashboard Telegram : il ne fait pas partie de dashboard.Source.
+func (d *DashboardSource) BuyNow() (string, error) { return d.bot.ForceBuy() }
