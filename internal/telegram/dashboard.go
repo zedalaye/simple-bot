@@ -368,10 +368,10 @@ func renderStatus(s dashboard.StatusSnapshot) string {
 	fmt.Fprintf(&b, "PnL réalisé : %+.2f %s   (moy. %+.2f)\n", s.TotalProfit, s.Quote, s.AvgProfit)
 
 	b.WriteString("\n")
-	if s.LastCheckAgo != "" {
+	if s.LastCheckAgo > 0 {
 		fmt.Fprintf(&b, "💓 Dernier check : il y a %s\n", s.LastCheckAgo)
 	}
-	if s.Uptime != "" {
+	if s.Uptime > 0 {
 		fmt.Fprintf(&b, "⏳ Uptime : %s\n", s.Uptime)
 	}
 	fmt.Fprintf(&b, "⏱ %s", s.UpdatedAt.Format("15:04:05"))
@@ -409,7 +409,7 @@ func renderBalance(s dashboard.BalanceSnapshot) string {
 		}
 	}
 	if s.Total != "" {
-		fmt.Fprintf(&b, "\n─────────────\nTotal ≈ %s", s.Total)
+		fmt.Fprintf(&b, "\n─────────────\nTotal ≈ %s %s", s.Total, s.Quote)
 	}
 	return b.String()
 }

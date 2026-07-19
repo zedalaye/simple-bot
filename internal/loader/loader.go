@@ -64,9 +64,17 @@ func LoadOffline() (config.AppConfig, *database.DB, error) {
 
 // LoadBot charge la configuration et initialise le bot complet.
 func LoadBot() (*bot.Bot, error) {
+	tradingBot, _, err := LoadBotWithConfig()
+	return tradingBot, err
+}
+
+// LoadBotWithConfig fait le même travail que LoadBot mais rend aussi la
+// configuration applicative, dont le daemon a besoin pour monter les services
+// périphériques (relay de notifications) que le bot lui-même ignore.
+func LoadBotWithConfig() (*bot.Bot, config.AppConfig, error) {
 	cfg, db, err := LoadConfig()
 	if err != nil {
-		return nil, err
+		return nil, config.AppConfig{}, err
 	}
 
 	exchg := exchange.NewExchange(cfg.ExchangeName)
@@ -74,9 +82,9 @@ func LoadBot() (*bot.Bot, error) {
 
 	tradingBot, err := bot.NewBot(cfg.ToBotConfig(), db, exchg)
 	if err != nil {
-		return nil, fmt.Errorf("création du bot : %w", err)
+		return nil, config.AppConfig{}, fmt.Errorf("création du bot : %w", err)
 	}
 	logger.Infof("[%s] ✓ Bot initialisé", cfg.ExchangeName)
 
-	return tradingBot, nil
+	return tradingBot, cfg, nil
 }

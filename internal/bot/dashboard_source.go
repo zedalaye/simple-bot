@@ -86,16 +86,16 @@ func (d *DashboardSource) Status() (dashboard.StatusSnapshot, error) {
 
 	// Heartbeat : uptime et fraîcheur du dernier price-check réussi.
 	if !b.startedAt.IsZero() {
-		snap.Uptime = time.Since(b.startedAt).Round(time.Second).String()
+		snap.Uptime = time.Since(b.startedAt).Round(time.Second)
 	}
 	if last := b.lastCheck.Load(); last > 0 {
-		snap.LastCheckAgo = time.Since(time.Unix(0, last)).Round(time.Second).String()
+		snap.LastCheckAgo = time.Since(time.Unix(0, last)).Round(time.Second)
 	}
 
 	// Bannière d'erreur : uniquement si une erreur récente a été enregistrée.
 	if msg, at, count := logger.LastError(); count > 0 && time.Since(at) < errorBannerWindow {
 		snap.ErrorMsg = msg
-		snap.ErrorAgo = time.Since(at).Round(time.Second).String()
+		snap.ErrorAgo = time.Since(at).Round(time.Second)
 	}
 
 	return snap, nil
@@ -143,7 +143,7 @@ func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 		return dashboard.BalanceSnapshot{}, err
 	}
 
-	snap := dashboard.BalanceSnapshot{Exchange: b.Config.ExchangeName}
+	snap := dashboard.BalanceSnapshot{Exchange: b.Config.ExchangeName, Quote: quote}
 
 	// Ordre stable : base, puis quote, puis le reste trié alphabétiquement.
 	assets := make([]string, 0, len(balances))
@@ -158,7 +158,7 @@ func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 		return assets[i] < assets[j]
 	})
 
-	var total float64
+	var total, locked float64
 	var hasTotal bool
 	for _, asset := range assets {
 		amounts := balances[asset]
@@ -174,6 +174,8 @@ func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 				line.Value = fmt.Sprintf("≈ %.2f %s", v, quote)
 				total += v
 				hasTotal = true
+				// Le bloqué n'est valorisable que si l'on connaît le prix.
+				locked += amounts.Used * price
 			}
 		case quote:
 			line.Amount = fmt.Sprintf("%.2f", amounts.Total)
@@ -181,6 +183,7 @@ func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 				line.Locked = fmt.Sprintf("%.2f", amounts.Used)
 			}
 			total += amounts.Total
+			locked += amounts.Used
 			hasTotal = true
 		default:
 			// Autres actifs : pas de prix connu (le bot ne suit que la paire configurée).
@@ -193,7 +196,10 @@ func (d *DashboardSource) Balance() (dashboard.BalanceSnapshot, error) {
 	}
 
 	if hasTotal {
-		snap.Total = fmt.Sprintf("%.2f %s", total, quote)
+		snap.Total = fmt.Sprintf("%.2f", total)
+	}
+	if locked > 0 {
+		snap.Locked = fmt.Sprintf("%.2f", locked)
 	}
 	return snap, nil
 }

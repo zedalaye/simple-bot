@@ -25,10 +25,12 @@ type StatusSnapshot struct {
 	Quote        string
 	Paused       bool
 	UpdatedAt    time.Time
-	Uptime       string // durée depuis le démarrage, ou "" si inconnu
-	LastCheckAgo string // temps écoulé depuis le dernier price-check, ou "" si aucun
-	ErrorMsg     string // dernière erreur récente, ou "" si aucune
-	ErrorAgo     string // temps écoulé depuis cette erreur
+	// Durées brutes plutôt que pré-formatées : le relay les sérialise en secondes,
+	// Telegram les met en forme. Zéro signifie « inconnu » dans les trois cas.
+	Uptime       time.Duration // depuis le démarrage
+	LastCheckAgo time.Duration // depuis le dernier price-check réussi
+	ErrorMsg     string        // dernière erreur récente, ou "" si aucune
+	ErrorAgo     time.Duration // depuis cette erreur
 }
 
 // CycleView est une ligne de la vue des cycles actifs.
@@ -58,10 +60,15 @@ type BalanceLine struct {
 }
 
 // BalanceSnapshot est l'instantané du portefeuille.
+//
+// Total et TotalLocked sont formatés sans devise (« 1240.55 ») : chaque canal y
+// accole Quote lui-même.
 type BalanceSnapshot struct {
 	Exchange string
+	Quote    string // devise de valorisation
 	Lines    []BalanceLine
 	Total    string // total valorisé, ou "" si rien de valorisable
+	Locked   string // part bloquée dans des ordres ouverts, ou "" si aucune
 }
 
 // Source est la source de données et de contrôle fournie par le bot.

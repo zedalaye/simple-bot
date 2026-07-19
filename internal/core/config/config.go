@@ -17,6 +17,13 @@ type AppConfig struct {
 	LogFile        string
 	WebPort        string
 	HealthcheckURL string
+
+	// Relay de notifications mobile. RelayURL vide = désactivé.
+	RelayURL             string
+	RelayToken           string
+	RelayInstance        string
+	RelayInterval        time.Duration
+	RelayBalanceInterval time.Duration
 }
 
 // BotConfig contient les paramètres transmis au cœur du bot.
@@ -38,8 +45,10 @@ func Load() AppConfig {
 		checkIntervalMins = 5
 	}
 
+	exchange := getenv("EXCHANGE", "mexc")
+
 	return AppConfig{
-		ExchangeName:   getenv("EXCHANGE", "mexc"),
+		ExchangeName:   exchange,
 		TradingPair:    getenv("TRADING_PAIR", "BTC/USDC"),
 		CheckInterval:  time.Duration(checkIntervalMins) * time.Minute,
 		DBPath:         getenv("DB_PATH", "db/bot.db"),
@@ -47,6 +56,16 @@ func Load() AppConfig {
 		LogFile:        os.Getenv("LOG_FILE"),
 		WebPort:        getenv("WEB_PORT", ":8080"),
 		HealthcheckURL: os.Getenv("HEALTHCHECK_URL"),
+
+		RelayURL:   os.Getenv("RELAY_URL"),
+		RelayToken: os.Getenv("RELAY_TOKEN"),
+		// L'instance identifie ce bot auprès d'un relay qui peut en servir
+		// plusieurs ; par défaut le nom de l'exchange suffit.
+		RelayInstance: getenv("RELAY_INSTANCE", exchange),
+		RelayInterval: time.Duration(getenvInt("RELAY_INTERVAL_MINUTES", 1)) * time.Minute,
+		// La valorisation du portefeuille interroge l'exchange : espacée davantage
+		// que le reste du snapshot pour ne pas saturer les rate limits.
+		RelayBalanceInterval: time.Duration(getenvInt("RELAY_BALANCE_INTERVAL_MINUTES", 15)) * time.Minute,
 	}
 }
 
@@ -55,6 +74,16 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getenvInt lit un entier strictement positif, en retombant sur fallback si la
+// variable est absente, illisible ou nulle.
+func getenvInt(key string, fallback int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 // GetLogLevel retourne le niveau de log configuré.

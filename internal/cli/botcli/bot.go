@@ -7,6 +7,7 @@ import (
 	"bot/internal/loader"
 	"bot/internal/logger"
 	"bot/internal/notify"
+	"bot/internal/relay"
 	"bot/internal/telegram"
 	"bot/internal/version"
 	"context"
@@ -26,7 +27,7 @@ func Main(args []string) {
 	buyAtLaunch := flag.Bool("buy-at-launch", false, "Immédiatement placer un ordre d'achat au démarrage")
 	flag.CommandLine.Parse(args)
 
-	tradingBot, err := loader.LoadBot()
+	tradingBot, cfg, err := loader.LoadBotWithConfig()
 	if err != nil {
 		log.Fatalf("Échec du chargement du bot : %v", err)
 	}
@@ -35,16 +36,37 @@ func Main(args []string) {
 	botAPI := api.NewBotAPI(tradingBot)
 	botAPI.Start()
 
-	// Canaux de notification. Multi permet de faire tourner plusieurs canaux en
-	// parallèle (Telegram + relay mobile) pendant une migration.
-	tradingBot.SetNotifier(notify.Multi{
-		telegram.NewNotifier(tradingBot.Config.ExchangeName),
-	})
-
-	// Dashboard Telegram interactif (long-polling sortant, pas d'exposition réseau).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	dashSource := bot.NewDashboardSource(tradingBot)
+
+	// Canaux de notification. Multi les fait cohabiter : pendant la migration
+	// vers le relay mobile, Telegram continue de recevoir les mêmes événements,
+	// et la panne d'un canal n'en fait pas taire un autre.
+	channels := notify.Multi{
+		telegram.NewNotifier(tradingBot.Config.ExchangeName),
+	}
+
+	// Relay de notifications mobile (sortant uniquement, comme Telegram).
+	relayCfg := relay.Config{
+		URL:             cfg.RelayURL,
+		Token:           cfg.RelayToken,
+		Instance:        cfg.RelayInstance,
+		Interval:        cfg.RelayInterval,
+		BalanceInterval: cfg.RelayBalanceInterval,
+	}
+	if relayCfg.Enabled() {
+		relayClient := relay.New(relayCfg, dashSource)
+		relayClient.Start(ctx)
+		channels = append(channels, relayClient)
+		logger.Infof("✓ Relay mobile actif (%s, instance %s, snapshot %v)",
+			relayCfg.URL, relayCfg.Instance, relayCfg.Interval)
+	}
+
+	tradingBot.SetNotifier(channels)
+
+	// Dashboard Telegram interactif (long-polling sortant, pas d'exposition réseau).
 	tgDashboard := telegram.StartPolling(ctx, dashSource)
 
 	err = tradingBot.Start(*buyAtLaunch)
