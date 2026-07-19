@@ -3,26 +3,51 @@
 # À déployer sur l'hôte public, PAS sur la machine du bot : c'est justement leur
 # séparation qui permet au bot de rester injoignable depuis internet.
 #
-# Le relay ne reçoit aucune clé d'exchange. Les deux jetons ci-dessous sont ses
-# seuls secrets :
+# Ce fichier suit le contrat Docker Compose de Hatchbox :
+#   - le conteneur web se publie sur 127.0.0.1:${PORT}, où PORT est injecté par
+#     Hatchbox ; son Caddy s'occupe du TLS (indispensable, le Web Push refuse le
+#     HTTP) et transmet le trafic ici ;
+#   - le projet est nommé, sans quoi Compose ne saurait pas quoi arrêter ;
+#   - aucun process à déclarer côté Hatchbox, seulement un script de build :
+#
+#       docker compose -f docker-compose.relay.yml down || true
+#       docker compose -f docker-compose.relay.yml up -d --build
+#
+#     (le -f est nécessaire : docker-compose.yml, à la racine, est celui du bot)
+#
+# Le relay ne reçoit aucune clé d'exchange. Ses seuls secrets, à renseigner dans
+# les variables d'environnement de l'application Hatchbox :
 #   RELAY_INGEST_TOKEN — présenté par le bot (= RELAY_TOKEN dans son .env)
 #   RELAY_API_TOKEN    — présenté par l'application mobile
-#
-# Placer un reverse proxy TLS devant (Caddy, Traefik…) : le Web Push exige HTTPS.
+#   VAPID_*            — identité du relay auprès du service de push
+#                        (générer la paire avec « relay -genvapid »)
+
+name: simple-bot-relay
 
 services:
   relay:
-    image: zedalaye/simple-bot-relay:latest
-    container_name: simple-bot-relay
+    # Construit sur place depuis le dépôt déployé par Hatchbox. Sans CGO ni ccxt,
+    # la compilation est rapide et l'image finale ne contient que le binaire.
+    # Alternative : commenter build et utiliser image: zedalaye/simple-bot-relay:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.relay
+    image: simple-bot-relay:local
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9000:9000"
+      # PORT est fourni par Hatchbox ; 9000 est le port d'écoute du relay.
+      - "127.0.0.1:${PORT:-9000}:9000"
     environment:
       RELAY_ADDR: ":9000"
       RELAY_INGEST_TOKEN: "${RELAY_INGEST_TOKEN:?RELAY_INGEST_TOKEN est requis}"
       RELAY_API_TOKEN: "${RELAY_API_TOKEN:?RELAY_API_TOKEN est requis}"
+      VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
+      VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
+      # Contact exigé par la spécification VAPID : le service de push s'en sert
+      # pour joindre l'exploitant en cas d'abus.
+      VAPID_SUBSCRIBER: "${VAPID_SUBSCRIBER:-mailto:pierre.y@gmail.com}"
       # Silence toléré avant de déclarer le bot muet. Doit rester nettement
       # supérieur à RELAY_INTERVAL_MINUTES côté bot, pour absorber les ticks
       # manqués sans fausse alerte.
-      RELAY_SILENCE_MINUTES: "5"
-      LOG_LEVEL: "info"
+      RELAY_SILENCE_MINUTES: "${RELAY_SILENCE_MINUTES:-5}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
