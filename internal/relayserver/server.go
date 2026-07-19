@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,12 +40,17 @@ type Config struct {
 	IngestToken string // jeton présenté par le bot
 	APIToken    string // jeton présenté par l'application mobile
 	Silence     time.Duration
+	Push        PushConfig
+	// Assets sert l'application de supervision à la racine. Nil = API seule
+	// (les tests n'ont pas besoin du front).
+	Assets fs.FS
 }
 
 // Server expose les endpoints du relay.
 type Server struct {
-	cfg   Config
-	store *Store
+	cfg    Config
+	store  *Store
+	pusher *Pusher
 
 	mu      sync.Mutex
 	silent  map[string]bool // instances déjà signalées muettes (anti-répétition)
@@ -58,9 +64,22 @@ func New(cfg Config, store *Store) *Server {
 	return &Server{
 		cfg:     cfg,
 		store:   store,
+		pusher:  NewPusher(cfg.Push, store),
 		silent:  make(map[string]bool),
 		nowFunc: time.Now,
 	}
+}
+
+// recordEvent enregistre un événement et le pousse vers les téléphones abonnés.
+//
+// Tous les événements passent par ici — ceux du bot comme ceux que le relay
+// produit lui-même — pour qu'aucun ne puisse être stocké sans être notifié.
+func (s *Server) recordEvent(e contract.Event) StoredEvent {
+	stored := s.store.AppendEvent(e)
+	// En arrière-plan : le bot attend la réponse de l'ingestion, il n'a pas à
+	// patienter le temps que le service de push réponde.
+	go s.pusher.Broadcast(e)
+	return stored
 }
 
 // Handler construit le routeur du relay.
@@ -75,10 +94,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", s.api(s.handleState))
 	mux.HandleFunc("GET /api/events", s.api(s.handleEvents))
 	mux.HandleFunc("POST /api/commands", s.api(s.handleCommand))
+	mux.HandleFunc("GET /api/push/key", s.api(s.handlePushKey))
+	mux.HandleFunc("POST /api/push/subscribe", s.api(s.handlePushSubscribe))
+	mux.HandleFunc("POST /api/push/unsubscribe", s.api(s.handlePushUnsubscribe))
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
 	})
+
+	// L'application est servie sans authentification : elle ne contient aucune
+	// donnée, et réclame le jeton d'API au premier écran pour obtenir quoi que
+	// ce soit. Les motifs ci-dessus étant plus spécifiques, ils gagnent.
+	if s.cfg.Assets != nil {
+		mux.Handle("GET /", http.FileServerFS(s.cfg.Assets))
+	}
 
 	return mux
 }
@@ -119,7 +148,7 @@ func (s *Server) checkSilence() {
 
 		switch {
 		case isSilent && !alreadyAlerted:
-			s.store.AppendEvent(contract.Event{
+			s.recordEvent(contract.Event{
 				Instance: instance,
 				At:       s.nowFunc().UTC(),
 				Kind:     contract.KindBotSilent,
@@ -130,7 +159,7 @@ func (s *Server) checkSilence() {
 			logger.Errorf("relay: instance %s muette depuis %v", instance, silentFor.Round(time.Second))
 
 		case !isSilent && alreadyAlerted:
-			s.store.AppendEvent(contract.Event{
+			s.recordEvent(contract.Event{
 				Instance: instance,
 				At:       s.nowFunc().UTC(),
 				Kind:     contract.KindBotSilent,
@@ -175,8 +204,7 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stored := s.store.AppendEvent(e)
-	// TODO(push) : c'est ici que partira la notification Web Push vers la PWA.
+	stored := s.recordEvent(e)
 	writeJSON(w, http.StatusAccepted, map[string]int64{"seq": stored.Seq})
 }
 

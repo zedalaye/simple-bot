@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#1a1a19"/>
+  <!-- Chandeliers : deux baissiers, un haussier, la reprise après le creux. -->
+  <g stroke-linecap="round" fill="none">
+    <g stroke="#8f8e85" stroke-width="26">
+      <path d="M140 168v176"/>
+      <path d="M232 216v168"/>
+    </g>
+    <g stroke="#0ca30c" stroke-width="26">
+      <path d="M324 152v208"/>
+    </g>
+  </g>
+  <rect x="118" y="212" width="44" height="96" rx="10" fill="#d03b3b"/>
+  <rect x="210" y="256" width="44" height="84" rx="10" fill="#d03b3b"/>
+  <rect x="302" y="188" width="44" height="132" rx="10" fill="#0ca30c"/>
+  <!-- Flèche de reprise -->
+  <path d="M372 232L424 180M424 180h-46M424 180v46" stroke="#3987e5" stroke-width="26"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

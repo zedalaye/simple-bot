@@ -9,6 +9,8 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -17,12 +19,23 @@ import (
 	"syscall"
 	"time"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
+
 	"bot/internal/logger"
 	"bot/internal/relayserver"
 	"bot/internal/version"
+	relayui "bot/web/relay"
 )
 
 func main() {
+	genVAPID := flag.Bool("genvapid", false, "Génère une paire de clés VAPID et quitte")
+	flag.Parse()
+
+	if *genVAPID {
+		printVAPIDKeys()
+		return
+	}
+
 	log.Printf("Starting Simple Bot Relay %s", version.Version)
 
 	if err := logger.InitLogger(getenv("LOG_LEVEL", "info"), os.Getenv("LOG_FILE")); err != nil {
@@ -34,6 +47,12 @@ func main() {
 		IngestToken: os.Getenv("RELAY_INGEST_TOKEN"),
 		APIToken:    os.Getenv("RELAY_API_TOKEN"),
 		Silence:     time.Duration(getenvInt("RELAY_SILENCE_MINUTES", 5)) * time.Minute,
+		Assets:      relayui.FS(),
+		Push: relayserver.PushConfig{
+			PublicKey:  os.Getenv("VAPID_PUBLIC_KEY"),
+			PrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
+			Subscriber: getenv("VAPID_SUBSCRIBER", "mailto:admin@example.com"),
+		},
 	}
 
 	// Sans jeton, la surface correspondante refuse tout. Autant le dire au
@@ -43,6 +62,10 @@ func main() {
 	}
 	if cfg.APIToken == "" {
 		logger.Error("RELAY_API_TOKEN non défini : l'API mobile refusera toutes les requêtes")
+	}
+	if !cfg.Push.Enabled() {
+		logger.Error("VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY non définies : aucune " +
+			"notification ne sera poussée (générer une paire avec « relay -genvapid »)")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -80,6 +103,17 @@ func main() {
 		logger.Errorf("Arrêt non gracieux : %v", err)
 	}
 	logger.Info("Relay arrêté. À bientôt !")
+}
+
+// printVAPIDKeys génère la paire d'identification du relay auprès des services
+// de push. Elle doit rester stable : la clé publique est scellée dans chaque
+// abonnement, en changer invalide tous ceux déjà enregistrés.
+func printVAPIDKeys() {
+	private, public, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		log.Fatalf("Génération des clés VAPID impossible : %v", err)
+	}
+	fmt.Printf("VAPID_PUBLIC_KEY=%s\nVAPID_PRIVATE_KEY=%s\n", public, private)
 }
 
 func getenv(key, fallback string) string {

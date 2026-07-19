@@ -42,6 +42,21 @@ type CommandState struct {
 // Pending indique que la commande n'a pas encore été acquittée.
 func (c *CommandState) Pending() bool { return c.AckedAt == nil }
 
+// Subscription est un abonnement Web Push, tel que le navigateur le produit.
+// Les clés servent au chiffrement de bout en bout : le service de push relaie
+// une charge utile qu'il ne peut pas lire.
+type Subscription struct {
+	Endpoint  string    `json:"endpoint"`
+	Keys      PushKeys  `json:"keys"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// PushKeys porte les clés publiées par le navigateur à l'abonnement.
+type PushKeys struct {
+	Auth   string `json:"auth"`
+	P256dh string `json:"p256dh"`
+}
+
 type instanceState struct {
 	snapshot   *contract.Snapshot
 	receivedAt time.Time
@@ -61,10 +76,48 @@ type instanceState struct {
 type Store struct {
 	mu        sync.Mutex
 	instances map[string]*instanceState
+	// Les abonnements push sont globaux : on s'abonne depuis un téléphone, pas
+	// pour une instance en particulier.
+	subscriptions map[string]Subscription // indexés par endpoint
 }
 
 func NewStore() *Store {
-	return &Store{instances: make(map[string]*instanceState)}
+	return &Store{
+		instances:     make(map[string]*instanceState),
+		subscriptions: make(map[string]Subscription),
+	}
+}
+
+// AddSubscription enregistre un abonnement push. L'endpoint sert de clé : se
+// réabonner depuis le même navigateur remplace l'entrée au lieu de la dupliquer.
+func (s *Store) AddSubscription(sub Subscription) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if sub.CreatedAt.IsZero() {
+		sub.CreatedAt = time.Now()
+	}
+	s.subscriptions[sub.Endpoint] = sub
+}
+
+// RemoveSubscription oublie un abonnement, sur désinscription volontaire ou
+// parce que le service de push l'a déclaré périmé.
+func (s *Store) RemoveSubscription(endpoint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.subscriptions, endpoint)
+}
+
+// Subscriptions retourne les abonnements actifs.
+func (s *Store) Subscriptions() []Subscription {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]Subscription, 0, len(s.subscriptions))
+	for _, sub := range s.subscriptions {
+		out = append(out, sub)
+	}
+	return out
 }
 
 func (s *Store) get(instance string) *instanceState {

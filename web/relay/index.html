@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a19">
+<title>simple-bot</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<style>
+  /* Palette : surfaces et encres neutres, couleurs réservées aux états.
+     Le mode sombre est choisi pas à pas, pas obtenu par inversion. */
+  :root {
+    --surface-0: #f4f4f2;   /* fond de page */
+    --surface-1: #fcfcfb;   /* cartes */
+    --border:    #e0dfda;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #7a7873;
+    --good:     #0ca30c;
+    --warning:  #fab219;
+    --critical: #d03b3b;
+    --accent:   #2a78d6;
+  }
+  /* Le sombre est composé pas à pas depuis la même palette, pas obtenu en
+     inversant le clair. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --border:    #33322e;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8e85;
+      --good:     #0ca30c;
+      --warning:  #fab219;
+      --critical: #d03b3b;
+      --accent:   #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--surface-0);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px calc(12px);
+    padding-top: calc(12px + env(safe-area-inset-top));
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .meta { font-size: 13px; color: var(--text-muted); margin-left: auto; }
+  main { padding: 16px; max-width: 640px; margin: 0 auto; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  /* Bandeau d'état : la couleur ne porte jamais seule le sens — elle est
+     toujours accompagnée d'une icône et d'un libellé. */
+  .status { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .status .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .status.good     .dot { background: var(--good); }
+  .status.warning  .dot { background: var(--warning); }
+  .status.critical .dot { background: var(--critical); }
+  .status .sub { margin-left: auto; font-weight: 400; font-size: 13px; color: var(--text-muted); }
+
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { font-size: 13px; color: var(--text-secondary); }
+  .tile .value { font-size: 24px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .unit  { font-size: 14px; font-weight: 400; color: var(--text-muted); }
+  .tile .note  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .tile.wide { grid-column: 1 / -1; }
+
+  dl.rows { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
+  dl.rows dt { color: var(--text-secondary); }
+  dl.rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+  button {
+    font: inherit; font-weight: 500;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+    padding: 12px 16px; min-height: 44px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .55; cursor: default; }
+  .actions { display: flex; gap: 8px; }
+  .actions button { flex: 1; }
+
+  /* Journal des notifications : le niveau est signalé par une barre latérale
+     ET par une icône, pour ne pas dépendre de la couleur. */
+  .event { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .event:last-child { border-bottom: 0; }
+  .event .icon { font-size: 18px; line-height: 1.3; flex: none; width: 24px; text-align: center; }
+  .event .title { font-weight: 600; font-size: 15px; }
+  .event .text { color: var(--text-secondary); font-size: 14px; white-space: pre-wrap; }
+  .event .when { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .event.error .title { color: var(--critical); }
+
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; background: var(--surface-1);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; border: 0; border-radius: 0; background: none;
+    color: var(--text-muted); font-size: 13px; padding: 10px 0 12px;
+  }
+  nav button[aria-current="page"] { color: var(--accent); font-weight: 600; }
+  nav button .ico { display: block; font-size: 18px; }
+
+  .empty { color: var(--text-muted); text-align: center; padding: 24px 0; }
+  .banner { border-left: 3px solid var(--critical); padding-left: 12px; }
+  label { display: block; font-size: 14px; color: var(--text-secondary); margin-bottom: 6px; }
+  input[type=password], input[type=text] {
+    width: 100%; font: inherit; padding: 12px; min-height: 44px;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-0); color: var(--text-primary);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>simple-bot</h1>
+  <span class="meta" id="header-meta"></span>
+</header>
+
+<main>
+  <!-- Écran de connexion : le jeton d'API tient lieu d'authentification. -->
+  <section id="view-login" class="hidden">
+    <div class="card">
+      <label for="token">Jeton d'accès au relay</label>
+      <input type="password" id="token" autocomplete="current-password" inputmode="text">
+      <p style="color:var(--text-muted);font-size:13px">
+        Le jeton reste sur cet appareil. Il correspond à <code>RELAY_API_TOKEN</code>.
+      </p>
+      <button class="primary" id="login" style="width:100%">Se connecter</button>
+      <p id="login-error" class="hidden" style="color:var(--critical);font-size:14px"></p>
+    </div>
+  </section>
+
+  <!-- Vue état -->
+  <section id="view-state" class="hidden">
+    <div class="card" id="status-card"></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="card">
+      <dl class="rows" id="details"></dl>
+    </div>
+    <div class="card">
+      <div class="actions">
+        <button id="toggle-pause">Mettre en pause</button>
+        <button id="push-toggle">Activer les notifications</button>
+      </div>
+      <p id="action-note" style="color:var(--text-muted);font-size:13px;margin:10px 0 0"></p>
+    </div>
+  </section>
+
+  <!-- Vue notifications -->
+  <section id="view-events" class="hidden">
+    <div class="card" id="events"></div>
+  </section>
+</main>
+
+<nav id="nav" class="hidden">
+  <button data-view="state" aria-current="page"><span class="ico">📊</span>État</button>
+  <button data-view="events"><span class="ico">🔔</span>Notifications</button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>
