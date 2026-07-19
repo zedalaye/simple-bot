@@ -33,6 +33,9 @@ services:
       context: .
       dockerfile: Dockerfile.relay
     image: simple-bot-relay:local
+    # L'image n'existe dans aucun registre : sans cela, Compose tente un pull
+    # et journalise un « pull access denied » avant de se rabattre sur le build.
+    pull_policy: build
     restart: unless-stopped
     ports:
       # PORT est fourni par Hatchbox ; 9000 est le port d'écoute du relay.

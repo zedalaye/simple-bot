@@ -13,6 +13,11 @@
 ## Builder environment
 FROM --platform=$BUILDPLATFORM golang:alpine AS build
 
+# golang:alpine ne fournit pas /usr/share/zoneinfo : sur Alpine la base de
+# fuseaux vit dans le paquet tzdata. Sans lui, l'image finale — qui n'a aucun
+# système de fichiers à elle — ne pourrait pas résoudre TZ.
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 COPY go.mod go.sum ./
 
