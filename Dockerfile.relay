@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+#
+# Image du relay de notifications mobile — distincte de celle du bot.
+#
+# Le bot a besoin de CGO (SQLite) et embarque ccxt, d'où une image lourde et une
+# cross-compilation qui réclame une chaîne C complète. Le relay, lui, ne dépend
+# que de la bibliothèque standard : CGO_ENABLED=0, cross-compilation native, et
+# une image finale qui ne contient que le binaire.
+#
+# Cette image ne contient aucun code de trading et ne reçoit aucune clé
+# d'exchange : elle ne manipule que ce que le bot lui pousse.
+
+## Builder environment
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
+
+WORKDIR /app
+COPY go.mod go.sum ./
+
+# Cache mount du module cache : évite de re-télécharger les dépendances à chaque build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . ./
+
+ARG VERSION=dev
+ARG TARGETOS
+ARG TARGETARCH
+
+# Sans CGO, GOOS/GOARCH suffisent à produire un binaire statique pour la cible.
+ENV CGO_ENABLED=0
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags "-s -w -X bot/internal/version.Version=${VERSION}" \
+        -o /out/relay ./cmd/relay
+
+## Run environment : le binaire, et rien d'autre.
+FROM scratch
+
+# Les certificats servent aux appels sortants vers le service de push (FCM).
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+ENV TZ=Europe/Paris
+
+COPY --from=build /out/relay /relay
+
+# Aucun utilisateur n'existe dans une image scratch : on force un UID non root.
+USER 65534:65534
+
+EXPOSE 9000/tcp
+ENTRYPOINT ["/relay"]

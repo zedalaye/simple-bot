@@ -12,6 +12,7 @@ import (
 	"bot/internal/dashboard"
 	"bot/internal/logger"
 	"bot/internal/notify"
+	"bot/internal/relay/contract"
 )
 
 // TestMain initialise le logger (le relay journalise ses échecs) au niveau error
@@ -98,7 +99,7 @@ type testServer struct {
 	events    []map[string]any
 	authSeen  []string
 	// reply est consulté à chaque snapshot pour décider des commandes à renvoyer.
-	reply func(callNum int) snapshotReply
+	reply func(callNum int) contract.SnapshotReply
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -243,11 +244,11 @@ func TestCommandPauseExecutedAndAcked(t *testing.T) {
 	src := newFakeSource()
 	c := newTestClient(ts, src)
 
-	ts.reply = func(n int) snapshotReply {
+	ts.reply = func(n int) contract.SnapshotReply {
 		if n == 1 {
-			return snapshotReply{Commands: []command{{ID: "c_1", Action: "pause"}}}
+			return contract.SnapshotReply{Commands: []contract.Command{{ID: "c_1", Action: "pause"}}}
 		}
-		return snapshotReply{}
+		return contract.SnapshotReply{}
 	}
 
 	c.sendSnapshot(false) // reçoit et exécute la commande
@@ -274,14 +275,14 @@ func TestCommandOutsideWhitelistRefused(t *testing.T) {
 	src := newFakeSource()
 	c := newTestClient(ts, src)
 
-	ts.reply = func(n int) snapshotReply {
+	ts.reply = func(n int) contract.SnapshotReply {
 		if n == 1 {
-			return snapshotReply{Commands: []command{
+			return contract.SnapshotReply{Commands: []contract.Command{
 				{ID: "c_evil", Action: "buy"},
 				{ID: "c_evil2", Action: "BuyNow"},
 			}}
 		}
-		return snapshotReply{}
+		return contract.SnapshotReply{}
 	}
 
 	c.sendSnapshot(false)
@@ -313,11 +314,11 @@ func TestCommandIsIdempotent(t *testing.T) {
 	src := newFakeSource()
 	c := newTestClient(ts, src)
 
-	ts.reply = func(n int) snapshotReply {
+	ts.reply = func(n int) contract.SnapshotReply {
 		if n <= 2 {
-			return snapshotReply{Commands: []command{{ID: "c_1", Action: "pause"}}}
+			return contract.SnapshotReply{Commands: []contract.Command{{ID: "c_1", Action: "pause"}}}
 		}
-		return snapshotReply{}
+		return contract.SnapshotReply{}
 	}
 
 	c.sendSnapshot(false)
@@ -418,7 +419,7 @@ func TestAcksSurviveFailedSnapshot(t *testing.T) {
 	c := New(Config{URL: srv.URL, Instance: "mexc"}, src)
 	c.retryBackoff = 0
 
-	c.sendSnapshot(false) // exécute resume, met l'ack en file
+	c.sendSnapshot(false) // exécute resume, met l’ack en file
 
 	mu.Lock()
 	fail = true

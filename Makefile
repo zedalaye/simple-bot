@@ -1,11 +1,13 @@
 DOCKER_IMAGE ?= zedalaye/simple-bot
+RELAY_IMAGE  ?= zedalaye/simple-bot-relay
 PLATFORMS ?= linux/amd64 #,linux/arm64
 
 GIT_TAG := $(shell git describe --tags --always --dirty)
 VERSION  ?= $(GIT_TAG)
 
-.PHONY: build-all build-simple-bot \
+.PHONY: build-all build-simple-bot build-relay \
         build-image push-image \
+        build-relay-image push-relay-image \
         clean \
         run-bot run-admin run-web run-test run-backtest \
         fmt vet check vulncheck \
@@ -19,10 +21,16 @@ release: build-all
 
 # Toutes les commandes (bot, web, admin, backtest, patternscan, order, rsi, volatility,
 # test) sont regroupées dans un binaire unique : le code commun n'est compilé qu'une fois.
-build-all: build-simple-bot
+build-all: build-simple-bot build-relay
 
 build-simple-bot:
 	go build -o bin/simple-bot ${FLAGS} ./cmd/simple-bot
+
+# Le relay se déploie sur un hôte public, séparément du bot. Il ne dépend que de
+# la bibliothèque standard : pas de CGO, donc un binaire statique (~6 Mo contre
+# ~57 Mo pour le bot, qui embarque ccxt et SQLite).
+build-relay:
+	CGO_ENABLED=0 go build -o bin/relay ${FLAGS} ./cmd/relay
 
 # Construction de l'image docker (précédée des vérifications dépendances + vulnérabilités)
 # deps-check est informatif (liste les MAJ dispo, ne bloque pas) ; deps-verify et vulncheck sont bloquants
@@ -36,6 +44,19 @@ build-image: deps-check deps-verify vulncheck
 push-image:
 	docker push ${DOCKER_IMAGE}:$(VERSION)
 	docker push ${DOCKER_IMAGE}:latest
+
+# Image du relay : Dockerfile distinct, sans CGO ni ccxt (voir Dockerfile.relay).
+build-relay-image: deps-verify vulncheck
+	docker build --pull --platform ${PLATFORMS} \
+		--build-arg VERSION=$(VERSION) \
+		-f Dockerfile.relay \
+		-t ${RELAY_IMAGE}:$(VERSION) \
+		-t ${RELAY_IMAGE}:latest \
+		.
+
+push-relay-image:
+	docker push ${RELAY_IMAGE}:$(VERSION)
+	docker push ${RELAY_IMAGE}:latest
 
 # Nettoyer les binaires
 clean:

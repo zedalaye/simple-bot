@@ -31,6 +31,7 @@ import (
 	"bot/internal/dashboard"
 	"bot/internal/logger"
 	"bot/internal/notify"
+	"bot/internal/relay/contract"
 )
 
 // eventAttempts : nombre d'envois tentés pour une notification. Contrairement au
@@ -65,7 +66,7 @@ type Client struct {
 	retryBackoff time.Duration
 
 	mu       sync.Mutex
-	acks     []ack           // acquittements à joindre au prochain snapshot
+	acks     []contract.Ack  // acquittements à joindre au prochain snapshot
 	executed map[string]bool // commandes déjà exécutées (idempotence)
 	order    []string        // ordre d'insertion, pour purger executed
 }
@@ -92,7 +93,7 @@ func (c *Client) Notify(e notify.Event) error {
 		at = time.Now()
 	}
 
-	payload := eventPayload{
+	payload := contract.Event{
 		Instance: c.cfg.Instance,
 		At:       at.UTC(),
 		Kind:     string(e.Kind),
@@ -158,7 +159,7 @@ func (c *Client) sendSnapshot(withBalance bool) bool {
 		return false
 	}
 
-	payload := snapshotPayload{
+	payload := contract.Snapshot{
 		Instance:      c.cfg.Instance,
 		Version:       status.Version,
 		At:            time.Now().UTC(),
@@ -178,7 +179,7 @@ func (c *Client) sendSnapshot(withBalance bool) bool {
 	}
 
 	if status.ErrorMsg != "" {
-		payload.Error = &errorPayload{
+		payload.Error = &contract.ErrorInfo{
 			Message: status.ErrorMsg,
 			AgoS:    int64(status.ErrorAgo.Seconds()),
 		}
@@ -194,7 +195,7 @@ func (c *Client) sendSnapshot(withBalance bool) bool {
 		}
 	}
 
-	var reply snapshotReply
+	var reply contract.SnapshotReply
 	if err := c.post("/ingest/snapshot", payload, &reply); err != nil {
 		// Les acks n'ont pas été transmis : on les remet en file pour le prochain tick.
 		c.restoreAcks(payload.Acks)
@@ -206,14 +207,14 @@ func (c *Client) sendSnapshot(withBalance bool) bool {
 	return true
 }
 
-func buildPortfolio(bal dashboard.BalanceSnapshot) *portfolioPayload {
-	p := &portfolioPayload{
+func buildPortfolio(bal dashboard.BalanceSnapshot) *contract.Portfolio {
+	p := &contract.Portfolio{
 		Total:  bal.Total,
 		Locked: bal.Locked,
 		Quote:  bal.Quote,
 	}
 	for _, l := range bal.Lines {
-		p.Lines = append(p.Lines, linePayload{
+		p.Lines = append(p.Lines, contract.BalanceLine{
 			Asset:  l.Asset,
 			Amount: l.Amount,
 			Locked: l.Locked,
@@ -232,7 +233,7 @@ func buildPortfolio(bal dashboard.BalanceSnapshot) *portfolioPayload {
 // Seules pause et resume sont acceptées. Cette liste blanche est la garantie
 // qu'un relay compromis ne peut pas déclencher d'opération engageant de
 // l'argent : le bot n'a tout simplement aucun code pour l'exécuter.
-func (c *Client) runCommands(cmds []command) {
+func (c *Client) runCommands(cmds []contract.Command) {
 	for _, cmd := range cmds {
 		if cmd.ID == "" {
 			logger.Errorf("relay: commande sans identifiant ignorée (action=%q)", cmd.Action)
@@ -242,15 +243,15 @@ func (c *Client) runCommands(cmds []command) {
 		// Idempotence : un ack perdu fait renvoyer la commande au tick suivant.
 		// On la réacquitte sans la rejouer.
 		if c.alreadyExecuted(cmd.ID) {
-			c.addAck(ack{ID: cmd.ID, OK: true})
+			c.addAck(contract.Ack{ID: cmd.ID, OK: true})
 			continue
 		}
 
 		var err error
 		switch cmd.Action {
-		case "pause":
+		case contract.ActionPause:
 			err = c.src.Pause()
-		case "resume":
+		case contract.ActionResume:
 			err = c.src.Resume()
 		default:
 			err = fmt.Errorf("action non autorisée : %q", cmd.Action)
@@ -259,7 +260,7 @@ func (c *Client) runCommands(cmds []command) {
 
 		c.markExecuted(cmd.ID)
 
-		a := ack{ID: cmd.ID, OK: err == nil}
+		a := contract.Ack{ID: cmd.ID, OK: err == nil}
 		if err != nil {
 			a.Error = err.Error()
 		} else {
@@ -291,14 +292,14 @@ func (c *Client) markExecuted(id string) {
 	}
 }
 
-func (c *Client) addAck(a ack) {
+func (c *Client) addAck(a contract.Ack) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.acks = append(c.acks, a)
 }
 
 // takeAcks retire et retourne les acquittements en attente.
-func (c *Client) takeAcks() []ack {
+func (c *Client) takeAcks() []contract.Ack {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	acks := c.acks
@@ -307,7 +308,7 @@ func (c *Client) takeAcks() []ack {
 }
 
 // restoreAcks remet en file des acquittements dont l'envoi a échoué.
-func (c *Client) restoreAcks(acks []ack) {
+func (c *Client) restoreAcks(acks []contract.Ack) {
 	if len(acks) == 0 {
 		return
 	}

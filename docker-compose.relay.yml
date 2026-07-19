@@ -1,0 +1,28 @@
+# Déploiement du relay de notifications mobile.
+#
+# À déployer sur l'hôte public, PAS sur la machine du bot : c'est justement leur
+# séparation qui permet au bot de rester injoignable depuis internet.
+#
+# Le relay ne reçoit aucune clé d'exchange. Les deux jetons ci-dessous sont ses
+# seuls secrets :
+#   RELAY_INGEST_TOKEN — présenté par le bot (= RELAY_TOKEN dans son .env)
+#   RELAY_API_TOKEN    — présenté par l'application mobile
+#
+# Placer un reverse proxy TLS devant (Caddy, Traefik…) : le Web Push exige HTTPS.
+
+services:
+  relay:
+    image: zedalaye/simple-bot-relay:latest
+    container_name: simple-bot-relay
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      RELAY_ADDR: ":9000"
+      RELAY_INGEST_TOKEN: "${RELAY_INGEST_TOKEN:?RELAY_INGEST_TOKEN est requis}"
+      RELAY_API_TOKEN: "${RELAY_API_TOKEN:?RELAY_API_TOKEN est requis}"
+      # Silence toléré avant de déclarer le bot muet. Doit rester nettement
+      # supérieur à RELAY_INTERVAL_MINUTES côté bot, pour absorber les ticks
+      # manqués sans fausse alerte.
+      RELAY_SILENCE_MINUTES: "5"
+      LOG_LEVEL: "info"
