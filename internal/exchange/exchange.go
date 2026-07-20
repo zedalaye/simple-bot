@@ -12,10 +12,11 @@ import (
 	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
-const (
-	maxRetries     = 5
-	baseRetryDelay = 1000 * time.Millisecond
-)
+const maxRetries = 5
+
+// baseRetryDelay est une var (et non une const) pour que les tests puissent la
+// réduire et éviter de dormir réellement pendant plusieurs secondes.
+var baseRetryDelay = 1000 * time.Millisecond
 
 // Timeframes supportés universellement
 var SupportedTimeframes = []string{"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"}
@@ -86,8 +87,50 @@ func cleanCCXTError(err error) error {
 	return err
 }
 
-// retryWithBackoff exécute une fonction avec retry et backoff exponentiel
-func retryWithBackoff(operation func() error) error {
+// transientNetworkSignatures : signatures brutes d'erreurs réseau passagères, au
+// cas où l'erreur ne serait pas typée *ccxt.Error (remontée directe du transport HTTP).
+var transientNetworkSignatures = []string{
+	"connection reset by peer",
+	"context deadline exceeded",
+	"Client.Timeout exceeded",
+	"connection refused",
+	"i/o timeout",
+	"TLS handshake timeout",
+	"no such host",
+	"EOF",
+}
+
+// isTransientNetworkError repère les erreurs réseau passagères (connexion coupée,
+// timeout, edge MEXC momentanément indisponible, throttle) qui méritent un retry. On
+// les distingue des erreurs métier (fonds insuffisants, ordre invalide…) qui, elles,
+// ne se résoudront pas en réessayant.
+func isTransientNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if ccxtErr, ok := err.(*ccxt.Error); ok {
+		switch ccxtErr.Type {
+		case ccxt.NetworkErrorErrType, ccxt.RequestTimeoutErrType,
+			ccxt.ExchangeNotAvailableErrType, ccxt.DDoSProtectionErrType,
+			ccxt.RateLimitExceededErrType:
+			return true
+		}
+	}
+	msg := err.Error()
+	for _, sig := range transientNetworkSignatures {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+// retry exécute operation avec backoff exponentiel. Les erreurs de timestamp sont
+// toujours réessayées. Les erreurs réseau transitoires ne le sont que si retryNetwork
+// est vrai : on l'active pour les appels idempotents (lectures), mais PAS pour les
+// placements d'ordre, où un « connection reset » survenu après exécution côté MEXC
+// ferait passer un retry pour un doublon d'ordre.
+func retry(operation func() error, retryNetwork bool) error {
 	var lastError error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -98,8 +141,8 @@ func retryWithBackoff(operation func() error) error {
 
 		lastError = err
 
-		// Si ce n'est pas une erreur de timestamp, ne pas réessayer
-		if !isTimestampError(err) {
+		retryable := isTimestampError(err) || (retryNetwork && isTransientNetworkError(err))
+		if !retryable {
 			return cleanCCXTError(err)
 		}
 
@@ -117,6 +160,19 @@ func retryWithBackoff(operation func() error) error {
 	}
 
 	return cleanCCXTError(lastError)
+}
+
+// retryWithBackoff : chemin conservateur (timestamp uniquement), pour les opérations
+// qui modifient l'état (placement/annulation d'ordre) où rejouer un échec réseau
+// ambigu risquerait de dupliquer l'action.
+func retryWithBackoff(operation func() error) error {
+	return retry(operation, false)
+}
+
+// retryIdempotent : pour les appels en lecture seule (prix, solde, bougies, ordres,
+// trades). Sûrs à rejouer, donc on absorbe aussi les blips réseau transitoires.
+func retryIdempotent(operation func() error) error {
+	return retry(operation, true)
 }
 
 type Exchange struct {
@@ -138,6 +194,10 @@ func NewExchange(exchangeName string) *Exchange {
 			"apiKey":          os.Getenv("MEXC_API_KEY"),
 			"secret":          os.Getenv("MEXC_SECRET"),
 			"enableRateLimit": true,
+			// L'edge MEXC (Akamai) sert parfois des réponses lentes ; on laisse
+			// 20 s avant de couper, plutôt que le défaut ccxt (~10 s) qui les
+			// transforme en « context deadline exceeded ».
+			"timeout": 20000,
 		})
 	case "hyperliquid":
 		exchange = ccxt.NewHyperliquid(map[string]interface{}{
@@ -166,7 +226,7 @@ func NewExchange(exchangeName string) *Exchange {
 
 func (e *Exchange) GetPrice(pair string) (float64, error) {
 	var result ccxt.Ticker
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		ticker, tickerErr := e.FetchTicker(pair)
 		if tickerErr == nil {
 			result = ticker
@@ -227,7 +287,7 @@ func (e *Exchange) GetMarketsList() []bot.Market {
 
 func (e *Exchange) FetchBalance() (map[string]bot.Balance, error) {
 	var result ccxt.Balances
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		balances, balanceErr := e.IExchange.FetchBalance()
 		if balanceErr == nil {
 			result = balances
@@ -264,7 +324,7 @@ func withFetchOHLCVOptions(timeframe string, since *int64, limit int64) ccxt.Fet
 
 func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]bot.Candle, error) {
 	var result []ccxt.OHLCV
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		ohlcv, ohlcvErr := e.IExchange.FetchOHLCV(pair,
 			withFetchOHLCVOptions(timeframe, since, limit),
 		)
@@ -314,7 +374,7 @@ func withFetchMyTradeOptions(pair string, since *int64, until *int64, limit int6
 func (e *Exchange) FetchMyTrades(pair string, since *int64, until *int64, limit int64) ([]bot.Trade, error) {
 	var result []ccxt.Trade
 	// e.IExchange.SetVerbose(true)
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		trades, tradeErr := e.IExchange.FetchMyTrades(withFetchMyTradeOptions(pair, since, until, limit))
 		if tradeErr == nil {
 			result = trades
@@ -337,7 +397,7 @@ func (e *Exchange) FetchMyTrades(pair string, since *int64, until *int64, limit 
 func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	var result ccxt.Order
 	// e.IExchange.SetVerbose(true)
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		order, orderErr := e.IExchange.FetchOrder(id, ccxt.WithFetchOrderSymbol(symbol))
 		if orderErr == nil {
 			result = order
@@ -363,7 +423,7 @@ func withFetchMyTradeForOrderOptions(pair string, orderId string) ccxt.FetchMyTr
 func (e *Exchange) FetchTradesForOrder(id string, symbol string) ([]bot.Trade, error) {
 	var result []ccxt.Trade
 	// e.IExchange.SetVerbose(true)
-	err := retryWithBackoff(func() error {
+	err := retryIdempotent(func() error {
 		trade, tradeErr := e.IExchange.FetchMyTrades(withFetchMyTradeForOrderOptions(symbol, id))
 		if tradeErr == nil {
 			result = trade
