@@ -43,9 +43,13 @@ func (d *DashboardSource) Status() (dashboard.StatusSnapshot, error) {
 		RSI:       "n/a",
 	}
 
-	// Prix courant
+	// Prix courant. En cas d'échec (après retries), on garde "n/a" mais on retient
+	// la cause : sur mobile, un prix absent sans explication est indistinguable d'un
+	// souci de config ou de credentials.
+	var priceErr error
 	if price, err := b.exchange.GetPrice(b.Config.Pair); err != nil {
 		snap.Price = "n/a"
+		priceErr = err
 	} else {
 		snap.Price = b.market.FormatPrice(b.roundToPrecision(price, b.market.Precision.Price))
 	}
@@ -92,10 +96,15 @@ func (d *DashboardSource) Status() (dashboard.StatusSnapshot, error) {
 		snap.LastCheckAgo = time.Since(time.Unix(0, last)).Round(time.Second)
 	}
 
-	// Bannière d'erreur : uniquement si une erreur récente a été enregistrée.
+	// Bannière d'erreur : la dernière erreur loggée récemment prime (elle couvre
+	// stratégie, soldes, etc.) ; à défaut, on expose l'échec de récupération du prix,
+	// qui explique le "n/a" affiché.
 	if msg, at, count := logger.LastError(); count > 0 && time.Since(at) < errorBannerWindow {
 		snap.ErrorMsg = msg
 		snap.ErrorAgo = time.Since(at).Round(time.Second)
+	} else if priceErr != nil {
+		snap.ErrorMsg = fmt.Sprintf("Prix indisponible : %v", priceErr)
+		snap.ErrorAgo = 0
 	}
 
 	return snap, nil
