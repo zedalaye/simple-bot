@@ -1,0 +1,2 @@
+docker compose -f docker-compose.relay.yml down || true
+docker compose -f docker-compose.relay.yml up -d
