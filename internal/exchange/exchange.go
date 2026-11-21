@@ -466,8 +466,9 @@ func toBotMarket(market ccxt.MarketInterface) bot.Market {
 	amountPrecision := 0.000001
 	amountDecimals := 6
 
-	if market.Info != nil {
-		if precision, ok := market.Info["precision"].(map[string]interface{}); ok {
+	// Depuis ccxt 4.5.9x, Info est typé `any` (payload brut de l'exchange)
+	if info, ok := market.Info.(map[string]interface{}); ok {
+		if precision, ok := info["precision"].(map[string]interface{}); ok {
 			if pp, ok := precision["price"].(float64); ok {
 				pricePrecision = pp
 				priceDecimals = -int(math.Log10(pricePrecision))
@@ -524,8 +525,8 @@ func toBotCandle(ohlcv ccxt.OHLCV) bot.Candle {
 func toBotTrade(trade ccxt.Trade) bot.Trade {
 
 	var feeToken *string = nil
-	if trade.Info != nil {
-		if fee, ok := trade.Info["fee"].(map[string]interface{}); ok {
+	if info, ok := trade.Info.(map[string]interface{}); ok {
+		if fee, ok := info["fee"].(map[string]interface{}); ok {
 			if ft, ok := fee["currency"].(string); ok {
 				feeToken = &ft
 			}
