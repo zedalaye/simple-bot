@@ -1,5 +1,5 @@
 // Commande simple-bot : binaire unique regroupant toutes les sous-commandes du projet
-// (bot, web, admin, backtest, patternscan, order, rsi, volatility, test). Le code commun
+// (bot, web, admin, backtest, backfill, patternscan, order, rsi, volatility, test). Le code commun
 // n'est ainsi compilé et déployé qu'une seule fois. Chaque sous-commande vit dans un
 // package internal/cli/<nom>cli exposant Main(args []string).
 //
@@ -21,6 +21,7 @@ import (
 
 	"bot/internal/cli"
 	"bot/internal/cli/admincli"
+	"bot/internal/cli/backfillcli"
 	"bot/internal/cli/backtestcli"
 	"bot/internal/cli/botcli"
 	"bot/internal/cli/ordercli"
@@ -38,6 +39,7 @@ var commands = map[string]func(args []string){
 	"web":         webcli.Main,
 	"admin":       admincli.Main,
 	"backtest":    backtestcli.Main,
+	"backfill":    backfillcli.Main,
 	"patternscan": patternscancli.Main,
 	"order":       ordercli.Main,
 	"rsi":         rsicli.Main,
