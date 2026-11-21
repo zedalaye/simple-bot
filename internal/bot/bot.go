@@ -197,7 +197,7 @@ func (b *Bot) initializeMarketPrecision() error {
 	logger.Infof("[%s] Fetching market data...", b.Config.ExchangeName)
 	b.market = b.exchange.GetMarket(b.Config.Pair)
 	logger.Infof("[%s] Base Asset: %s, Quote Asset: %s", b.Config.ExchangeName, b.market.BaseAsset, b.market.QuoteAsset)
-	logger.Infof("[%s] Market precision: price=%f, amount=%f", b.Config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
+	logger.Infof("[%s] Market precision: price=%g, amount=%g", b.Config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
 	b.market.MakerFee = b.resolveMakerFee()
 	return nil
 }
