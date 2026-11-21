@@ -278,7 +278,7 @@ storage/{exchange}/
 - `OKX_SECRET` - OKX API secret
 - `OKX_PASSPHRASE` - Passphrase chosen when creating the API key
 - `OKX_DEMO` - `true` for demo trading (demo API keys), empty for real trading
-- `MAKER_FEE_PCT` - Force the maker fee in % (e.g. `0.08`); empty = read from the account
+- `MAKER_FEE_PCT` - Force the maker fee in % (e.g. `0.1`); empty = read from the account
 
 **Telegram (Optional):**
 - `TELEGRAM_BOT_TOKEN` - Bot token from BotFather

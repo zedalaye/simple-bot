@@ -177,7 +177,7 @@ OKX_API_KEY=<OKX API Key for this bot>
 OKX_SECRET=<OKX API Key "Secret">
 OKX_PASSPHRASE=<Passphrase chosen when creating the key>
 # OKX_DEMO=true                # Demo trading (fake money, needs demo API keys)
-# MAKER_FEE_PCT=0.08           # Force the maker fee (default: read from the account)
+# MAKER_FEE_PCT=0.1            # Force the maker fee (default: read from the account)
 ```
 
 Deposits land in the OKX *Funding* account: transfer the quote currency (USDC) to the

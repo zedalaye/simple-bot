@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -121,4 +122,43 @@ func TestDecimalsOf(t *testing.T) {
 			t.Errorf("decimalsOf(%g) = %d, attendu %d", c.step, got, c.want)
 		}
 	}
+}
+
+// TestOKXTimestampHeaderIsADate protège le blocage de ccxt en 4.5.78 (cf. go.mod).
+// ccxt convertit les en-têtes signés avec fmt.Sprintf("%v", v) avant l'envoi
+// (exchange_req.go). À partir de 4.5.79, OK-ACCESS-TIMESTAMP est un *string : la
+// conversion produit une adresse mémoire et OKX refuse toute requête authentifiée
+// (code 50112). Si ce test échoue après une montée de version de ccxt, ne pas
+// déployer. Si ccxt corrige la sérialisation en amont, adapter ce test en conséquence.
+func TestOKXTimestampHeaderIsADate(t *testing.T) {
+	ex := ccxt.NewMyokx(map[string]interface{}{"apiKey": "k", "secret": "s", "password": "p"})
+	// L'API privée se désigne par "private" (≤ 4.5.78) ou []string{"private"}
+	// (≥ 4.5.79), et Sign renvoie any ou map[string]any : on essaie les deux formes.
+	var headers map[string]any
+	for _, api := range []any{"private", []string{"private"}} {
+		if h := signedHeaders(ex, api); h != nil {
+			headers = h
+			break
+		}
+	}
+	if headers == nil {
+		t.Fatal("aucun en-tête signé : l'API Sign de ccxt a changé, adapter ce test")
+	}
+	got := fmt.Sprintf("%v", headers["OK-ACCESS-TIMESTAMP"]) // même conversion que ccxt
+	if _, err := time.Parse("2006-01-02T15:04:05.000Z", got); err != nil {
+		t.Fatalf("OK-ACCESS-TIMESTAMP sérialisé en %q, pas une date ISO 8601 : OKX refusera l'authentification", got)
+	}
+}
+
+// signedHeaders signe une requête privée OKX avec la forme d'API donnée ; nil si
+// cette version de ccxt ne l'accepte pas (elle panique alors sur le type d'argument).
+func signedHeaders(ex *ccxt.Myokx, api any) (headers map[string]any) {
+	defer func() {
+		if recover() != nil {
+			headers = nil
+		}
+	}()
+	req, _ := any(ex.Sign("account/trade-fee", api, "GET", map[string]any{"instType": "SPOT"})).(map[string]any)
+	headers, _ = req["headers"].(map[string]any)
+	return headers
 }
