@@ -31,7 +31,7 @@ func Main(args []string) {
 	var (
 		pair       = flag.String("pair", "", "Paire à backtester (défaut : TRADING_PAIR de l'instance)")
 		priceTF    = flag.String("price-tf", "15m", "Timeframe du chemin de prix (granularité de simulation)")
-		feePct     = flag.Float64("fee", 0.1, "Frais par côté en %% (0.1 = 0,1 %%)")
+		feePct     = flag.Float64("fee", 0.08, "Frais maker par côté en %% (0.08 = 0,08 %%, tarif OKX standard) ; relève aussi les cibles")
 		strategyID = flag.Int("strategy-id", 0, "Partir d'une stratégie existante (0 = config par défaut)")
 		fromStr    = flag.String("from", "", "Début (YYYY-MM-DD), optionnel")
 		toStr      = flag.String("to", "", "Fin (YYYY-MM-DD), optionnel")

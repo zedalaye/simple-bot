@@ -20,21 +20,18 @@ cd simple-trading-bot
 make
 
 # Update configuration 
-# -> storage/mexc/.env (copy from .env.example)
-# -> storage/hl/.env (copy from .env.example)
+# -> storage/okx/.env (copy from .env.example)
 # -> storage/.env
 # -> storage/.env.tg
 
 # Run with Docker (recommended)
-./simple-bot mexc up    # For MEXC exchange
-./simple-bot hl up      # For Hyperliquid exchange
+./simple-bot okx up     # For the OKX instance
 ```
 
 ### Configuration
 Create exchange-specific directories under `storage/` (copy `.env.example` as a starting point):
 ```
-storage/mexc/.env          # MEXC config + API keys
-storage/hl/.env            # Hyperliquid config + wallet credentials
+storage/okx/.env           # OKX config + API keys
 storage/.env               # Common secrets (BOT_RELOAD_TOKEN, CUSTOMER_ID)
 storage/.env.tg            # Common Telegram notifications using BotFather instance
 ```
@@ -54,7 +51,7 @@ storage/.env.tg            # Common Telegram notifications using BotFather insta
 
 ## 🎯 Key Features
 
-- **Multi-Exchange Support**: MEXC and Hyperliquid exchanges
+- **Exchange**: OKX spot (European MiCA entity) through CCXT, fee-aware (net profit targets, post-only orders, real fees recorded)
 - **Strategy-Based Trading**: Cron-scheduled strategies with algorithm registry
 - **Decoupled Buy/Sell Logic**: Independent execution timing for buy and sell operations
 - **Market Data Caching**: Efficient candle storage with indicator calculations

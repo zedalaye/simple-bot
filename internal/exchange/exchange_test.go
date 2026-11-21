@@ -27,7 +27,7 @@ func TestIsTransientNetworkError(t *testing.T) {
 		{"ccxt AuthenticationError", &ccxt.Error{Type: ccxt.AuthenticationErrorErrType, Message: "bad key"}, false},
 
 		// Signatures brutes de la stdlib (erreur non typée ccxt).
-		{"raw connection reset", errors.New(`Get "https://api.mexc.com": read: connection reset by peer`), true},
+		{"raw connection reset", errors.New(`Get "https://eea.okx.com": read: connection reset by peer`), true},
 		{"raw context deadline", errors.New("context deadline exceeded (Client.Timeout exceeded while awaiting headers)"), true},
 		{"raw i/o timeout", errors.New("dial tcp: i/o timeout"), true},
 		{"raw EOF", errors.New("unexpected EOF"), true},
@@ -106,5 +106,19 @@ func TestRetryIdempotentNeReessaiePasLeMetier(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("attendu 1 seule tentative (erreur métier), got %d", calls)
+	}
+}
+
+func TestDecimalsOf(t *testing.T) {
+	cases := []struct {
+		step float64
+		want int
+	}{
+		{0.1, 1}, {0.01, 2}, {0.00000001, 8}, {1, 0}, {10, 0}, {0.5, 1},
+	}
+	for _, c := range cases {
+		if got := decimalsOf(c.step); got != c.want {
+			t.Errorf("decimalsOf(%g) = %d, attendu %d", c.step, got, c.want)
+		}
 	}
 }

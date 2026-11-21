@@ -47,7 +47,7 @@ const executedHistory = 256
 type Config struct {
 	URL             string        // base du relay, ex. https://relay.example.com
 	Token           string        // jeton porté en Bearer sur chaque requête
-	Instance        string        // identifiant de l'instance (ex. « mexc »)
+	Instance        string        // identifiant de l'instance (ex. « okx »)
 	Interval        time.Duration // cadence des snapshots
 	BalanceInterval time.Duration // cadence de la valorisation du portefeuille
 }

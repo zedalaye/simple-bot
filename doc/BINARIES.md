@@ -50,11 +50,8 @@ make build-image
 
 **Usage:**
 ```bash
-# Run for MEXC exchange
-./bin/simple-bot --root storage/mexc bot
-
-# Run for Hyperliquid
-./bin/simple-bot --root storage/hl bot
+# Run for the OKX instance
+./bin/simple-bot --root storage/okx bot
 ```
 
 **Configuration:**
@@ -82,11 +79,11 @@ make build-image
 
 **Usage:**
 ```bash
-# Start web server for MEXC
-./bin/simple-bot --root storage/mexc web
+# Start web server for OKX
+./bin/simple-bot --root storage/okx web
 
 # Custom port
-./bin/simple-bot --root storage/mexc web --port 8081
+./bin/simple-bot --root storage/okx web --port 8081
 ```
 
 **API Endpoints:**
@@ -117,13 +114,13 @@ make build-image
 **Usage:**
 ```bash
 # List all strategies
-./bin/simple-bot --root storage/mexc admin --cmd strategies
+./bin/simple-bot --root storage/okx admin --cmd strategies
 
 # Show recent orders
-./bin/simple-bot --root storage/mexc admin --cmd orders
+./bin/simple-bot --root storage/okx admin --cmd orders
 
 # Database statistics
-./bin/simple-bot --root storage/mexc admin --cmd stats
+./bin/simple-bot --root storage/okx admin --cmd stats
 ```
 
 **Commands:**
@@ -146,7 +143,7 @@ make build-image
 **Usage:**
 ```bash
 # Run integration tests
-./bin/simple-bot --root storage/mexc test
+./bin/simple-bot --root storage/okx test
 ```
 
 ### rsi (`internal/cli/rsicli`)
@@ -159,7 +156,7 @@ make build-image
 **Usage:**
 ```bash
 # Compute the RSI
-./bin/simple-bot --root storage/mexc rsi
+./bin/simple-bot --root storage/okx rsi
 ```
 
 ### volatility (`internal/cli/volatilitycli`)
@@ -172,7 +169,7 @@ make build-image
 **Usage:**
 ```bash
 # Compute the volatility
-./bin/simple-bot --root storage/mexc volatility
+./bin/simple-bot --root storage/okx volatility
 ```
 
 ### backtest (`internal/cli/backtestcli`)
@@ -193,10 +190,10 @@ and optimise parameters.
 **Usage:**
 ```bash
 # Reproduce an existing strategy
-./bin/simple-bot --root storage/mexc backtest --strategy-id 1
+./bin/simple-bot --root storage/okx backtest --strategy-id 1
 
 # Sweep parameters
-./bin/simple-bot --root storage/mexc backtest --rsi-tf 15m,1h \
+./bin/simple-bot --root storage/okx backtest --rsi-tf 15m,1h \
   --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400 --vol-adj 0
 ```
 
@@ -214,7 +211,7 @@ the stored history (as-of replay, forward returns vs a random-entry baseline).
 **Usage:**
 ```bash
 # Scan 4h candles of the instance pair
-./bin/simple-bot --root storage/mexc patternscan --tf 4h
+./bin/simple-bot --root storage/okx patternscan --tf 4h
 ```
 
 ## 🐳 Docker Integration
@@ -225,17 +222,14 @@ All binaries are available through Docker Compose with multi-exchange support:
 # Build all images
 make build-image
 
-# Run MEXC bot and web interface
-./simple-bot mexc up
+# Run OKX bot and web interface
+./simple-bot okx up
 
-# Run Hyperliquid services
-./simple-bot hl up
-
-# Run all exchanges
+# Run all instances
 ./simple-bot all up
 
 # View logs
-./simple-bot mexc logs
+./simple-bot okx logs
 
 # Stop services
 ./simple-bot all down
@@ -247,10 +241,8 @@ make build-image
 ### Docker Service Mapping
 
 ```
-bot-mexc      → /app/simple-bot bot (MEXC)
-webui-mexc    → /app/simple-bot web (MEXC)
-bot-hl        → /app/simple-bot bot (Hyperliquid)
-webui-hl      → /app/simple-bot web (Hyperliquid)
+bot-okx       → /app/simple-bot bot (OKX)
+webui-okx     → /app/simple-bot web (OKX)
 ```
 
 ## 🔧 Binary Dependencies
@@ -281,13 +273,12 @@ storage/{exchange}/
 - `CUSTOMER_ID` - Your Cryptomancien Premium Customer Id
 - `BOT_RELOAD_TOKEN` - API authentication token
 
-**MEXC:**
-- `API_KEY` - MEXC API key
-- `SECRET` - MEXC API secret
-
-**Hyperliquid:**
-- `WALLET_ADDRESS` - Arbitrum wallet address
-- `PRIVATE_KEY` - Trading wallet private key
+**OKX** (European account, my.okx.com):
+- `OKX_API_KEY` - OKX API key (Trade permission only, no withdrawal)
+- `OKX_SECRET` - OKX API secret
+- `OKX_PASSPHRASE` - Passphrase chosen when creating the API key
+- `OKX_DEMO` - `true` for demo trading (demo API keys), empty for real trading
+- `MAKER_FEE_PCT` - Force the maker fee in % (e.g. `0.08`); empty = read from the account
 
 **Telegram (Optional):**
 - `TELEGRAM_BOT_TOKEN` - Bot token from BotFather

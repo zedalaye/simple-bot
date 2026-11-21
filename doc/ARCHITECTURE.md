@@ -8,8 +8,8 @@ The Simple Trading Bot is a modular, multi-exchange trading system designed for 
 ┌─────────────────┐    ┌───────────────────┐    ┌─────────────────┐
 │   Exchanges     │◄──►│  Trading Bot      │◄──►│   Database      │
 │                 │    │                   │    │                 │
-│ • MEXC          │    │ • Strategy Engine │    │ • SQLite        │
-│ • Hyperliquid   │    │ • Price Monitor   │    │ • Migrations    │
+│ • OKX (EEA)     │    │ • Strategy Engine │    │ • SQLite        │
+│                 │    │ • Price Monitor   │    │ • Migrations    │
 │ • CCXT Unified  │    │ • Order Manager   │    │ • Market Data   │
 └─────────────────┘    └───────────────────┘    └─────────────────┘
                                 ▲
@@ -184,16 +184,12 @@ candles       # Market data cache (OHLCV)
 
 ## 🔧 Configuration Architecture
 
-### Multi-Exchange Support
+### Multi-Instance Support
 
 ```
 storage/
-├── mexc/           # MEXC exchange instance
+├── okx/            # OKX exchange instance
 │   ├── .env        # All config + API credentials (see .env.example)
-│   └── db/bot.db   # SQLite database
-│
-├── hl/             # Hyperliquid exchange instance
-│   ├── .env        # All config + wallet credentials (see .env.example)
 │   └── db/bot.db   # SQLite database
 │
 ├── .env            # Common secrets and credentials
@@ -225,10 +221,8 @@ Strategies are defined with flexible JSON configuration:
 
 ```yaml
 services:
-  mexc-bot:      # MEXC trading instance
-  mexc-web:      # MEXC web interface
-  hl-bot:        # Hyperliquid trading instance
-  hl-web:        # Hyperliquid web interface
+  bot:           # Trading instance (bot-<instance>)
+  webui:         # Web interface (webui-<instance>)
 ```
 
 ### Process Architecture

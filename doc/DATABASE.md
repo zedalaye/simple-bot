@@ -308,7 +308,7 @@ SELECT name, sql FROM sqlite_master WHERE type='table';
 ./simple-bot all backup
 
 # Manual backup
-sqlite3 storage/mexc/db/bot.db ".backup backup.db"
+sqlite3 storage/okx/db/bot.db ".backup backup.db"
 ```
 
 ### Performance Monitoring

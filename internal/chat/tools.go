@@ -20,7 +20,7 @@ import (
 )
 
 // precision utilisée pour l'arrondi des ordres simulés (identique à la commande
-// backtest). MEXC/USDT : pas de prix 0,01, pas de quantité 1e-6.
+// backtest) : pas de prix 0,01, pas de quantité 1e-6 (valeurs génériques).
 var precision = algorithms.MarketPrecision{Price: 0.01, Amount: 0.000001}
 
 // toolDefs déclare le catalogue d'outils exposés à Claude. Chaque entrée est un
@@ -164,15 +164,15 @@ func (a *Agent) toolListStrategies() (string, bool) {
 		return fmt.Sprintf("erreur DB : %v", err), true
 	}
 	type row struct {
-		ID                 int     `json:"id"`
-		Name               string  `json:"name"`
-		Algorithm          string  `json:"algorithm"`
-		Enabled            bool    `json:"enabled"`
-		RSITimeframe       string  `json:"rsi_timeframe,omitempty"`
+		ID                 int      `json:"id"`
+		Name               string   `json:"name"`
+		Algorithm          string   `json:"algorithm"`
+		Enabled            bool     `json:"enabled"`
+		RSITimeframe       string   `json:"rsi_timeframe,omitempty"`
 		RSIThreshold       *float64 `json:"rsi_threshold,omitempty"`
-		ProfitTarget       float64 `json:"profit_target"`
-		BuyIntervalSeconds int     `json:"buy_interval_seconds"`
-		MaxConcurrent      int     `json:"max_concurrent_cycles"`
+		ProfitTarget       float64  `json:"profit_target"`
+		BuyIntervalSeconds int      `json:"buy_interval_seconds"`
+		MaxConcurrent      int      `json:"max_concurrent_cycles"`
 	}
 	out := make([]row, 0, len(strategies))
 	for _, s := range strategies {

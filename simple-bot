@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Script pour lancer bot + webui pour un exchange donné
-# Usage: ./simple-bot [mexc|hl|all] [action]
+# Usage: ./simple-bot [<instance>|all] [action]   (instance = dossier de storage/, ex. okx)
 # Actions: up, down, restart, pull, update, logs, status, backup, run
 
 # We need the CUSTOMER_ID and BOT_RELOAD_TOKEN environment variable
 source storage/.env
 
-EXCHANGE=${1:-mexc}
+EXCHANGE=${1:-okx}
 ACTION=${2:-up}
 
 launch_exchange() {
@@ -170,12 +170,12 @@ case $EXCHANGE in
                 exit 0
                 ;;
             logs)
-                echo "Utilisez: $0 <exchange> logs  (e.g. $0 mexc logs)"
+                echo "Utilisez: $0 <exchange> logs  (e.g. $0 okx logs)"
                 exit 1
                 ;;
             run)
                 echo "=== Run Command ALL ==="
-                echo "Utilisez: $0 <exchange> run <command> <args>  (e.g. $0 mexc run admin stats)"
+                echo "Utilisez: $0 <exchange> run <command> <args>  (e.g. $0 okx run admin stats)"
                 exit 1
                 ;;
         esac
@@ -183,17 +183,16 @@ case $EXCHANGE in
     help|-h|--help)
         echo "Usage: $0 [<exchange>|all] [up|down|restart|pull|update|logs|status|backup|run]"
         echo "Examples:"
-        echo "  $0 mexc up      # Lance bot + webui MEXC"
-        echo "  $0 hl up        # Lance bot + webui Hyperliquid"
-        echo "  $0 mexc pull    # Récupère la dernière image (sans redémarrer)"
-        echo "  $0 mexc update  # Pull la dernière image PUIS recrée les conteneurs MEXC"
-        echo "  $0 all up       # Lance MEXC ET Hyperliquid"
+        echo "  $0 okx up       # Lance bot + webui OKX"
+        echo "  $0 okx pull     # Récupère la dernière image (sans redémarrer)"
+        echo "  $0 okx update   # Pull la dernière image PUIS recrée les conteneurs OKX"
+        echo "  $0 all up       # Lance toutes les instances de storage/"
         echo "  $0 all down     # Arrête tout"
         echo "  $0 all update   # Met à jour tous les exchanges"
         echo "  $0 all status   # Status de tous les containers"
         echo "  $0 all backup   # Backup des bases de données"
-        echo "  $0 mexc logs    # Logs MEXC"
-        echo "  $0 mexc run     # Lance une commande MEXC"
+        echo "  $0 okx logs     # Logs OKX"
+        echo "  $0 okx run      # Lance une commande OKX"
         exit 1
         ;;
 esac

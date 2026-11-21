@@ -36,6 +36,7 @@ type StrategyMarket interface {
 	GetBaseAsset() string
 	GetQuoteAsset() string
 	GetPrecision() algorithms.MarketPrecision
+	GetMakerFee() float64
 }
 
 // StrategyManager orchestrates the execution of trading strategies
@@ -86,6 +87,7 @@ func (sm *StrategyManager) validateAndPrepareStrategy(strategy database.Strategy
 		CurrentPrice: 0,
 		Calculator:   sm.calculator,
 		Precision:    sm.market.GetPrecision(),
+		MakerFee:     sm.market.GetMakerFee(),
 	}
 
 	return algorithm, tradingContext, nil
@@ -262,11 +264,15 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 }
 
 func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cycle database.CycleEnhanced, strategy database.Strategy) error {
-	logger.Infof("[%s] Executing sell order for strategy %s: Cycle=%d, Amount=%.4f, Price=%.4f",
-		sm.exchangeName, strategy.Name, cycle.ID, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
+	// On revend la quantité réellement détenue (nette des frais d'achat prélevés en
+	// base), arrondie au pas inférieur pour ne jamais dépasser le solde du cycle.
+	amount := algorithms.RoundAmountDown(cycle.BuyOrder.Amount, sm.market.GetPrecision())
+
+	logger.Infof("[%s] Executing sell order for strategy %s: Cycle=%d, Amount=%s, Price=%.4f",
+		sm.exchangeName, strategy.Name, cycle.ID, sm.market.FormatAmount(amount), sellSignal.LimitPrice)
 
 	// Place order on exchange
-	order, err := sm.exchange.PlaceLimitSellOrder(sm.pair, cycle.BuyOrder.Amount, sellSignal.LimitPrice)
+	order, err := sm.exchange.PlaceLimitSellOrder(sm.pair, amount, sellSignal.LimitPrice)
 	if err != nil {
 		return fmt.Errorf("failed to place sell order on exchange: %w", err)
 	}
@@ -284,7 +290,8 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 		return fmt.Errorf("failed to associate sell order with cycle: %w", err)
 	}
 
-	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount - cycle.BuyOrder.Fees
+	expectedSellFees := sellSignal.LimitPrice * amount * sm.market.GetMakerFee()
+	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*amount - cycle.BuyOrder.Fees - expectedSellFees
 
 	logger.Infof("[%s] Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.2f",
 		sm.exchangeName,

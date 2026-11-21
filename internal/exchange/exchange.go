@@ -2,7 +2,6 @@ package exchange
 
 import (
 	"bot/internal/bot"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -21,37 +20,12 @@ var baseRetryDelay = 1000 * time.Millisecond
 // Timeframes supportés universellement
 var SupportedTimeframes = []string{"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"}
 
-// MexcErrorResponse représente la structure d'erreur JSON de MEXC
-type MexcErrorResponse struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-}
-
 // isTimestampError vérifie si l'erreur est liée à un problème de timestamp/nonce
+// (horloge locale décalée). ccxt range le code OKX 50102 « Timestamp request
+// expired » dans InvalidNonce : la requête a été rejetée sans effet, on peut rejouer.
 func isTimestampError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Méthode idiomatique Go : vérifier le type d'erreur CCXT
-	if ccxtError, ok := err.(*ccxt.Error); ok {
-		// Vérifier si c'est une erreur InvalidNonce
-		if ccxtError.Type == ccxt.InvalidNonceErrType {
-			// Pour les erreurs InvalidNonce, parser le JSON pour vérifier le code spécifique
-			if ccxtError.Message != "" {
-				var mexcErr MexcErrorResponse
-				if err := json.Unmarshal([]byte(ccxtError.Message), &mexcErr); err == nil {
-					// Code 700003 = "Timestamp for this request is outside of the recvWindow"
-					return mexcErr.Code == 700003
-				}
-			}
-			// Si on ne peut pas parser le JSON mais que c'est InvalidNonce,
-			// on considère que c'est probablement un problème de timestamp
-			return true
-		}
-	}
-
-	return false
+	ccxtError, ok := err.(*ccxt.Error)
+	return ok && ccxtError.Type == ccxt.InvalidNonceErrType
 }
 
 // callSafe exécute fn en capturant les panics CCXT et en les convertissant en erreurs Go
@@ -101,7 +75,7 @@ var transientNetworkSignatures = []string{
 }
 
 // isTransientNetworkError repère les erreurs réseau passagères (connexion coupée,
-// timeout, edge MEXC momentanément indisponible, throttle) qui méritent un retry. On
+// timeout, API momentanément indisponible, throttle) qui méritent un retry. On
 // les distingue des erreurs métier (fonds insuffisants, ordre invalide…) qui, elles,
 // ne se résoudront pas en réessayant.
 func isTransientNetworkError(err error) bool {
@@ -128,7 +102,7 @@ func isTransientNetworkError(err error) bool {
 // retry exécute operation avec backoff exponentiel. Les erreurs de timestamp sont
 // toujours réessayées. Les erreurs réseau transitoires ne le sont que si retryNetwork
 // est vrai : on l'active pour les appels idempotents (lectures), mais PAS pour les
-// placements d'ordre, où un « connection reset » survenu après exécution côté MEXC
+// placements d'ordre, où un « connection reset » survenu après exécution côté exchange
 // ferait passer un retry pour un doublon d'ordre.
 func retry(operation func() error, retryNetwork bool) error {
 	var lastError error
@@ -180,43 +154,43 @@ type Exchange struct {
 	name string
 }
 
+// NewExchange instancie l'exchange demandé. Retourne nil si l'exchange n'est pas
+// supporté : seul « okx » l'est (marché spot, compte européen).
 func NewExchange(exchangeName string) *Exchange {
 	var exchange ccxt.IExchange
 
-	// On appelle les constructeurs concrets (NewMexc, NewHyperliquid) plutôt que la
-	// factory générique ccxt.CreateExchange(string, ...) : celle-ci est un switch de 106
-	// exchanges, tous rendus « atteignables » pour le linker (le string est runtime), ce
-	// qui empêche l'élimination de code mort et embarque les 106 dans le binaire. Les
-	// constructeurs typés ne joignent que l'exchange voulu (~130 Mo → ~35-45 Mo).
+	// On appelle les constructeurs concrets (NewMyokx) plutôt que la factory générique
+	// ccxt.CreateExchange(string, ...) : celle-ci est un switch de 106 exchanges, tous
+	// rendus « atteignables » pour le linker (le string est runtime), ce qui empêche
+	// l'élimination de code mort et embarque les 106 dans le binaire. Les constructeurs
+	// typés ne joignent que l'exchange voulu (~130 Mo → ~35-45 Mo).
 	switch exchangeName {
-	case "mexc":
-		exchange = ccxt.NewMexc(map[string]interface{}{
-			"apiKey":          os.Getenv("MEXC_API_KEY"),
-			"secret":          os.Getenv("MEXC_SECRET"),
+	case "okx":
+		// MyOKX = OKX Europe (entité MiCA) : même API que OKX, servie par eea.okx.com.
+		// Les comptes européens (my.okx.com) n'existent que là : une clé API créée
+		// sur my.okx.com est refusée par l'API globale www.okx.com.
+		exchange = ccxt.NewMyokx(map[string]interface{}{
+			"apiKey": os.Getenv("OKX_API_KEY"),
+			"secret": os.Getenv("OKX_SECRET"),
+			// Passphrase choisie à la création de la clé API (spécifique à OKX)
+			"password":        os.Getenv("OKX_PASSPHRASE"),
 			"enableRateLimit": true,
-			// L'edge MEXC (Akamai) sert parfois des réponses lentes ; on laisse
-			// 20 s avant de couper, plutôt que le défaut ccxt (~10 s) qui les
-			// transforme en « context deadline exceeded ».
-			"timeout": 20000,
-		})
-	case "hyperliquid":
-		exchange = ccxt.NewHyperliquid(map[string]interface{}{
-			"walletAddress": os.Getenv("HL_WALLET_ADDRESS"),
-			"privateKey":    os.Getenv("HL_PRIVATE_KEY"),
 			"options": map[string]interface{}{
-				"defaultType":   "spot",
-				"defaultMarket": "spot",
+				"defaultType": "spot",
+				// Spot uniquement : inutile de charger les swaps au démarrage
 				"fetchMarkets": map[string]interface{}{
-					"types": []string{"spot"}, // without "swap" and "hip3"
+					"types": []interface{}{"spot"},
 				},
 			},
 		})
-		exchange.SetSandboxMode(os.Getenv("HL_NETWORK") == "testnet")
+		// Mode « demo trading » d'OKX (argent fictif) : nécessite des clés API
+		// créées depuis l'interface de démo.
+		exchange.SetSandboxMode(os.Getenv("OKX_DEMO") == "true")
+	default:
+		return nil
 	}
 
-	if exchange != nil {
-		exchange.LoadMarkets()
-	}
+	exchange.LoadMarkets()
 
 	return &Exchange{
 		IExchange: exchange,
@@ -239,10 +213,40 @@ func (e *Exchange) GetPrice(pair string) (float64, error) {
 	return *result.Last, nil
 }
 
+// postOnlyParams force les ordres limite en « post-only » : ils ne peuvent
+// s'exécuter qu'en maker (frais réduits). Un ordre qui croiserait immédiatement le
+// carnet est annulé par l'exchange au lieu d'être exécuté en taker ; le bot le voit
+// passer « canceled » au check suivant (achat abandonné, ou vente re-tentée au
+// prochain signal puisque le cycle redevient éligible).
+func postOnlyParams() map[string]interface{} {
+	return map[string]interface{}{"postOnly": true}
+}
+
+// FetchMakerFee renvoie le taux de frais maker réel du compte pour la paire
+// (fraction : 0.0008 = 0,08 %), qui dépend du palier VIP.
+func (e *Exchange) FetchMakerFee(pair string) (float64, error) {
+	var result ccxt.TradingFeeInterface
+	err := retryIdempotent(func() error {
+		fee, feeErr := e.IExchange.FetchTradingFee(pair)
+		if feeErr == nil {
+			result = fee
+		}
+		return feeErr
+	})
+	if err != nil {
+		return 0, err
+	}
+	if result.Maker == nil {
+		return 0, fmt.Errorf("frais maker absents de la réponse pour %s", pair)
+	}
+	return *result.Maker, nil
+}
+
 func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64) (bot.Order, error) {
 	var result ccxt.Order
 	err := retryWithBackoff(func() error {
-		order, orderErr := e.CreateLimitBuyOrder(pair, amount, price)
+		order, orderErr := e.CreateLimitBuyOrder(pair, amount, price,
+			ccxt.WithCreateLimitBuyOrderParams(postOnlyParams()))
 		if orderErr == nil {
 			result = order
 		}
@@ -258,7 +262,8 @@ func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64
 func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float64) (bot.Order, error) {
 	var result ccxt.Order
 	err := retryWithBackoff(func() error {
-		order, orderErr := e.CreateLimitSellOrder(pair, amount, price)
+		order, orderErr := e.CreateLimitSellOrder(pair, amount, price,
+			ccxt.WithCreateLimitSellOrderParams(postOnlyParams()))
 		if orderErr == nil {
 			result = order
 		}
@@ -412,19 +417,11 @@ func (e *Exchange) FetchOrder(id string, symbol string) (bot.Order, error) {
 	return toBotOrder(result), nil
 }
 
-func withFetchMyTradeForOrderOptions(pair string, orderId string) ccxt.FetchMyTradesOptions {
-	return func(opts *ccxt.FetchMyTradesOptionsStruct) {
-		opts.Symbol = &pair
-		opts.Params = &map[string]interface{}{}
-		(*opts.Params)["orderId"] = orderId
-	}
-}
-
 func (e *Exchange) FetchTradesForOrder(id string, symbol string) ([]bot.Trade, error) {
 	var result []ccxt.Trade
 	// e.IExchange.SetVerbose(true)
 	err := retryIdempotent(func() error {
-		trade, tradeErr := e.IExchange.FetchMyTrades(withFetchMyTradeForOrderOptions(symbol, id))
+		trade, tradeErr := e.IExchange.FetchOrderTrades(id, ccxt.WithFetchOrderTradesSymbol(symbol))
 		if tradeErr == nil {
 			result = trade
 		}
@@ -467,18 +464,15 @@ func toBotMarket(market ccxt.MarketInterface) bot.Market {
 	amountDecimals := 6
 
 	// Depuis ccxt 4.5.9x, Info est typé `any` (payload brut de l'exchange)
-	if info, ok := market.Info.(map[string]interface{}); ok {
-		if precision, ok := info["precision"].(map[string]interface{}); ok {
-			if pp, ok := precision["price"].(float64); ok {
-				pricePrecision = pp
-				priceDecimals = -int(math.Log10(pricePrecision))
-			}
-			if ap, ok := precision["amount"].(float64); ok {
-				amountPrecision = ap
-				amountDecimals = -int(math.Log10(amountPrecision))
-			}
-		}
-
+	// Précision unifiée ccxt. OKX est en mode TICK_SIZE : les valeurs sont
+	// directement les pas de cotation (tickSz) et de quantité (lotSz).
+	if pp := market.Precision.Price; pp != nil && *pp > 0 {
+		pricePrecision = *pp
+		priceDecimals = decimalsOf(pricePrecision)
+	}
+	if ap := market.Precision.Amount; ap != nil && *ap > 0 {
+		amountPrecision = *ap
+		amountDecimals = decimalsOf(amountPrecision)
 	}
 
 	return bot.Market{
@@ -499,6 +493,15 @@ func toBotMarket(market ccxt.MarketInterface) bot.Market {
 			AmountDecimals: amountDecimals,
 		},
 	}
+}
+
+// decimalsOf : nombre de décimales d'un pas (0.1 → 1, 0.00000001 → 8, 1 → 0).
+func decimalsOf(step float64) int {
+	d := int(math.Ceil(-math.Log10(step) - 1e-9))
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 func toBotOrder(order ccxt.Order) bot.Order {
@@ -523,16 +526,6 @@ func toBotCandle(ohlcv ccxt.OHLCV) bot.Candle {
 }
 
 func toBotTrade(trade ccxt.Trade) bot.Trade {
-
-	var feeToken *string = nil
-	if info, ok := trade.Info.(map[string]interface{}); ok {
-		if fee, ok := info["fee"].(map[string]interface{}); ok {
-			if ft, ok := fee["currency"].(string); ok {
-				feeToken = &ft
-			}
-		}
-	}
-
 	return bot.Trade{
 		Id:           trade.Id,
 		Timestamp:    trade.Timestamp,
@@ -545,6 +538,6 @@ func toBotTrade(trade ccxt.Trade) bot.Trade {
 		Amount:       trade.Amount,
 		Cost:         trade.Cost,
 		Fee:          trade.Fee.Cost,
-		FeeToken:     feeToken,
+		FeeToken:     trade.Fee.Currency,
 	}
 }

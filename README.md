@@ -3,9 +3,14 @@
 This is a rewrite from [The Cryptomancien Bot Spot](https://github.com/cryptomancien/bot-spot) using [CCXT](https://github.com/ccxt/ccxt)
 
 The original bot was tied to the MEXC exchange and the BTC/USDC trading pair.
-This rewrite enables the bot to use all exchanges available through CCXT and is able to trade all pairs made available by the exchange.
+This rewrite goes through CCXT and is able to trade any spot pair made available by the exchange.
 
-For now, MEXC anf Hyperliquid have been tested.
+The bot currently runs on [OKX](https://my.okx.com) (European, MiCA-licensed entity), spot only.
+MEXC and Hyperliquid were supported in the past and have been removed.
+
+Trading fees are taken into account: sell targets are raised by the maker round trip
+(2 × maker fee) so that `profit_target` stays a *net* margin, orders are posted as
+post-only (maker), and the real fees of every fill are recorded.
 
 This bot also uses a SQLite 3 database to store positions and track orders.
 
@@ -85,11 +90,7 @@ Make sure [docker](https://www.docker.com/get-started/) is installed with the `d
 For each exchange you want to use, create a directory structure within the `storage` folder:
 
 ```
-/storage/mexc   # For the MEXC Exchange
-  /db/bot.db    # Will be created if it does not exist
-  .env          # All config + credentials (copy from .env.example)
-
-/storage/hl     # For the Hyperliquid Exchange
+/storage/okx    # For the OKX Exchange
   /db/bot.db    # Will be created if it does not exist
   .env          # All config + credentials (copy from .env.example)
 
@@ -101,7 +102,7 @@ For each exchange you want to use, create a directory structure within the `stor
 Copy [`.env.example`](.env.example) to `storage/<exchange>/.env` and fill in the values.
 
 ```bash
-$ ./simple-bot [*mexc*|hl|all] up
+$ ./simple-bot [*okx*|all] up
 ```
 
 The syntax is :
@@ -110,14 +111,13 @@ The syntax is :
 $ ./simple-bot -h
 Usage: ./simple-bot [<exchange>|all] [up|down|restart|logs|status|backup|run]
 Examples:
-  ./simple-bot mexc up      # Lance bot + webui MEXC
-  ./simple-bot hl up        # Lance bot + webui Hyperliquid
-  ./simple-bot all up       # Lance MEXC ET Hyperliquid
+  ./simple-bot okx up       # Lance bot + webui OKX
+  ./simple-bot all up       # Lance toutes les instances de storage/
   ./simple-bot all down     # Arrête tout
   ./simple-bot all status   # Status de tous les containers
   ./simple-bot all backup   # Backup des bases de données
-  ./simple-bot mexc logs    # Logs MEXC
-  ./simple-bot mexc run     # Lance une commande MEXC
+  ./simple-bot okx logs     # Logs OKX
+  ./simple-bot okx run      # Lance une commande OKX
 ```
 
 ## Build the bot manually
@@ -162,35 +162,29 @@ BOT_RELOAD_TOKEN=888067c25c6d1f97a48f5e8e4820546e9a449a1a
 
 Put it in `storage/.env` to share it across instances, or in each instance's `.env`.
 
-### For MEXC
+### For OKX
 
-Create `storage/mexc/.env` (from `.env.example`) with at minimum:
+Create an API key on [my.okx.com](https://my.okx.com) (European accounts: the API is
+served by `eea.okx.com`) with the **Trade** permission only (no withdrawal), ideally
+restricted to the server's IP.
 
-```env
-EXCHANGE=mexc
-TRADING_PAIR=BTC/USDC
-MEXC_API_KEY=<MEXC API Key for this bot>
-MEXC_SECRET=<MEXC API Key "Secret">
-```
-
-```bash
-$ ./bin/simple-bot --root storage/mexc bot
-```
-
-### For Hyperliquid
-
-Create `storage/hl/.env` (from `.env.example`) with at minimum:
+Create `storage/okx/.env` (from `.env.example`) with at minimum:
 
 ```env
-EXCHANGE=hyperliquid
-TRADING_PAIR=BTC/USDC
-HL_WALLET_ADDRESS=<Your Wallet Address on Arbitrum Blockchain>
-HL_PRIVATE_KEY=<The Hyperliquid Private Key of an API Key you create for this bot>
-# HL_NETWORK=testnet  # Uncomment for testnet
+EXCHANGE=okx
+TRADING_PAIR=BTC/USDC          # No USDT in the EU (MiCA): use USDC or EUR pairs
+OKX_API_KEY=<OKX API Key for this bot>
+OKX_SECRET=<OKX API Key "Secret">
+OKX_PASSPHRASE=<Passphrase chosen when creating the key>
+# OKX_DEMO=true                # Demo trading (fake money, needs demo API keys)
+# MAKER_FEE_PCT=0.08           # Force the maker fee (default: read from the account)
 ```
 
+Deposits land in the OKX *Funding* account: transfer the quote currency (USDC) to the
+*Trading* account, which is the one the bot uses.
+
 ```bash
-$ ./bin/simple-bot --root storage/hl bot
+$ ./bin/simple-bot --root storage/okx bot
 ```
 
 ## Receive notifications on Telegram
@@ -238,10 +232,10 @@ resolved from `--root` (the instance's `DB_PATH`).
 
 ```bash
 # Single run reproducing an existing strategy (#1) on 15m price path
-$ ./bin/simple-bot --root storage/mexc backtest --strategy-id 1
+$ ./bin/simple-bot --root storage/okx backtest --strategy-id 1
 
 # Parameter sweep: RSI timeframe × threshold × profit target × buy interval
-$ ./bin/simple-bot --root storage/mexc backtest \
+$ ./bin/simple-bot --root storage/okx backtest \
     --rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 \
     --interval 21600,43200,86400 --vol-adj 0
 ```

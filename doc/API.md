@@ -138,7 +138,7 @@ Retrieve orders with optional filtering.
   "orders": [
     {
       "id": 123,
-      "external_id": "mexc_order_12345",
+      "external_id": "2961871234567890123",
       "side": "buy",
       "amount": 0.001,
       "price": 45000.00,
@@ -303,7 +303,7 @@ Get current market price for the configured trading pair.
 **Response:**
 ```json
 {
-  "exchange": "mexc",
+  "exchange": "okx",
   "pair": "BTC/USDC",
   "price": 45123.45,
   "timestamp": "2024-01-20T16:30:00Z"
@@ -323,7 +323,7 @@ Retrieve historical candle data.
 **Response:**
 ```json
 {
-  "exchange": "mexc",
+  "exchange": "okx",
   "pair": "BTC/USDC",
   "timeframe": "5m",
   "candles": [

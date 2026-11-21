@@ -215,7 +215,9 @@ func (a *RSI_DCA) buildBuySignal(ctx TradingContext, strategy database.Strategy,
 	limitPrice = RoundPrice(limitPrice, ctx.Precision)
 
 	// PRÉ-CALCULER le prix cible ici ! Plus besoin de le recalculer constamment
-	targetPrice := limitPrice * (1.0 + dynamicProfitPercent)
+	// Les frais s'ajoutent APRÈS l'ajustement de volatilité et le plancher : même une
+	// cible abaissée au minimum reste au-dessus du coût de l'aller-retour.
+	targetPrice := limitPrice * (1.0 + WithRoundTripFees(dynamicProfitPercent, ctx.MakerFee))
 	targetPrice = RoundPrice(targetPrice, ctx.Precision)
 
 	// Montant par ordre : fixe (QuoteAmount) ou dynamique selon la profondeur de baisse
@@ -226,8 +228,8 @@ func (a *RSI_DCA) buildBuySignal(ctx TradingContext, strategy database.Strategy,
 	baseAmount := quoteAmount / limitPrice
 	baseAmount = RoundAmount(baseAmount, ctx.Precision)
 
-	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%%, TargetPrice=%.4f",
-		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100.0, targetPrice)
+	logger.Infof("[%s] RSI_DCA.ShouldBuy: BUY signal - RSI=%.2f, Volatility=%.2f%%, TargetProfit=%.2f%% (+%.2f%% frais), TargetPrice=%.4f",
+		ctx.ExchangeName, rsi, volatility, dynamicProfitPercent*100.0, 2*ctx.MakerFee*100.0, targetPrice)
 
 	return BuySignal{
 		ShouldBuy:   true,

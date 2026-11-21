@@ -63,7 +63,7 @@ clean:
 	rm -rf bin/
 
 # Lancer les services (--root est un flag GLOBAL, il précède le nom de la sous-commande).
-# Ex. make run-bot ARGS="--root storage/mexc bot --buy-at-launch"
+# Ex. make run-bot ARGS="--root storage/okx bot --buy-at-launch"
 run-bot:
 	go run ./cmd/simple-bot $(ARGS) bot
 
@@ -76,7 +76,7 @@ run-web:
 run-test:
 	DEBUG=true go run ./cmd/simple-bot $(ARGS) test
 
-# Backtest : ex. make run-backtest ARGS="--root storage/mexc" puis options : ARGS="--root storage/mexc" \
+# Backtest : ex. make run-backtest ARGS="--root storage/okx" puis options : ARGS="--root storage/okx" \
 #   BTARGS="--rsi-tf 15m,1h --rsi-threshold 40,45,50 --profit 1,2 --interval 21600,43200,86400"
 run-backtest:
 	go run ./cmd/simple-bot $(ARGS) backtest $(BTARGS)

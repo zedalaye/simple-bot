@@ -78,6 +78,9 @@ func LoadBotWithConfig() (*bot.Bot, config.AppConfig, error) {
 	}
 
 	exchg := exchange.NewExchange(cfg.ExchangeName)
+	if exchg == nil {
+		return nil, config.AppConfig{}, fmt.Errorf("exchange non supporté : %q (seul « okx » l'est)", cfg.ExchangeName)
+	}
 	logger.Infof("[%s] ✓ Exchange initialisé", cfg.ExchangeName)
 
 	tradingBot, err := bot.NewBot(cfg.ToBotConfig(), db, exchg)

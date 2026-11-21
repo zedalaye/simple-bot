@@ -36,6 +36,7 @@ type Exchange interface {
 	FetchCandles(pair string, timeframe string, since *int64, limit int64) ([]Candle, error)
 	FetchMyTrades(pair string, since *int64, until *int64, limit int64) ([]Trade, error)
 	FetchTradesForOrder(id string, pair string) ([]Trade, error)
+	FetchMakerFee(pair string) (float64, error)
 }
 
 type Market struct {
@@ -50,6 +51,9 @@ type Market struct {
 		Amount         float64
 		AmountDecimals int
 	}
+	// MakerFee : taux de frais maker du compte (fraction : 0.0008 = 0,08 %).
+	// Renseigné au démarrage du bot (cf. resolveMakerFee), nul ailleurs.
+	MakerFee float64
 }
 
 type Balance struct {
@@ -194,7 +198,33 @@ func (b *Bot) initializeMarketPrecision() error {
 	b.market = b.exchange.GetMarket(b.Config.Pair)
 	logger.Infof("[%s] Base Asset: %s, Quote Asset: %s", b.Config.ExchangeName, b.market.BaseAsset, b.market.QuoteAsset)
 	logger.Infof("[%s] Market precision: price=%f, amount=%f", b.Config.ExchangeName, b.market.Precision.Price, b.market.Precision.Amount)
+	b.market.MakerFee = b.resolveMakerFee()
 	return nil
+}
+
+// defaultMakerFee : repli quand le tarif du compte est illisible. C'est le tarif
+// OKX de base selon ccxt (0,10 %), volontairement pessimiste : mieux vaut une cible
+// un peu trop haute que des cycles bouclés sous le coût des frais.
+const defaultMakerFee = 0.001
+
+// resolveMakerFee détermine le taux maker utilisé pour relever les cibles de vente :
+// MAKER_FEE_PCT s'il est défini, sinon le tarif réel du compte lu sur l'exchange.
+func (b *Bot) resolveMakerFee() float64 {
+	if b.Config.MakerFee != nil {
+		logger.Infof("[%s] Frais maker : %.3f%% (imposés par MAKER_FEE_PCT)", b.Config.ExchangeName, *b.Config.MakerFee*100)
+		return *b.Config.MakerFee
+	}
+	fee, err := b.exchange.FetchMakerFee(b.Config.Pair)
+	if err != nil {
+		logger.Warnf("[%s] Lecture des frais maker du compte impossible (%v), repli sur %.3f%%",
+			b.Config.ExchangeName, err, defaultMakerFee*100)
+		return defaultMakerFee
+	}
+	if fee < 0 {
+		fee = 0 // rebate maker (gros paliers VIP) : aucun surcoût à couvrir
+	}
+	logger.Infof("[%s] Frais maker du compte : %.3f%%", b.Config.ExchangeName, fee*100)
+	return fee
 }
 
 func (b *Bot) Start(buyAtLaunch bool) error {
@@ -596,12 +626,80 @@ func (b *Bot) processOrder(dbOrder database.Order) {
 	}
 }
 
+// orderFill : exécution réelle d'un ordre, reconstituée à partir de ses trades.
+type orderFill struct {
+	Amount float64 // quantité de base détenue après l'ordre (nette des frais prélevés en base)
+	Fees   float64 // frais totaux, convertis en devise de cotation
+}
+
+// computeFill agrège les trades d'un ordre. Les frais d'un achat OKX sont prélevés
+// sur l'actif reçu (la base) : on retranche ces frais de la quantité achetée, sans
+// quoi la vente porterait sur plus de BTC que le cycle n'en détient. Les frais sont
+// aussi convertis en cotation (au prix du trade) pour le calcul du profit. Un frais
+// dans une autre devise est ignoré et signalé dans unknown.
+func computeFill(trades []Trade, side database.OrderSide, base, quote string) (fill orderFill, unknown []string) {
+	var gross, baseFees float64
+	for _, t := range trades {
+		if t.Amount == nil || t.Price == nil {
+			continue
+		}
+		gross += *t.Amount
+		if t.Fee == nil || *t.Fee == 0 {
+			continue
+		}
+		currency := ""
+		if t.FeeToken != nil {
+			currency = *t.FeeToken
+		}
+		switch currency {
+		case base:
+			baseFees += *t.Fee
+			fill.Fees += *t.Fee * *t.Price
+		case quote:
+			fill.Fees += *t.Fee
+		default:
+			unknown = append(unknown, fmt.Sprintf("%g %s", *t.Fee, currency))
+		}
+	}
+	fill.Amount = gross
+	if side == database.Buy {
+		fill.Amount = gross - baseFees
+	}
+	return fill, unknown
+}
+
 func (b *Bot) handleClosedOrder(dbOrder database.Order, order Order) {
-	err := b.db.UpdateOrderStatus(dbOrder.ExternalID, database.Filled)
+	// Les frais réels ne sont connus qu'au travers des trades. Tant qu'on ne peut pas
+	// les lire, l'ordre reste PENDING en base et sera retraité au prochain check.
+	trades, err := b.exchange.FetchTradesForOrder(dbOrder.ExternalID, b.Config.Pair)
+	if err != nil {
+		logger.Errorf("[%s] Ordre %s exécuté mais trades illisibles (nouvel essai au prochain check) : %v",
+			b.Config.ExchangeName, dbOrder.ExternalID, err)
+		return
+	}
+	if len(trades) == 0 {
+		logger.Warnf("[%s] Ordre %s exécuté mais trades pas encore disponibles (nouvel essai au prochain check)",
+			b.Config.ExchangeName, dbOrder.ExternalID)
+		return
+	}
+
+	fill, unknown := computeFill(trades, dbOrder.Side, b.market.BaseAsset, b.market.QuoteAsset)
+	if len(unknown) > 0 {
+		logger.Warnf("[%s] Ordre %s : frais dans une devise inattendue, non comptabilisés : %s",
+			b.Config.ExchangeName, dbOrder.ExternalID, strings.Join(unknown, ", "))
+	}
+
+	err = b.db.MarkOrderFilled(dbOrder.ExternalID, fill.Amount, fill.Fees)
 	if err != nil {
 		logger.Errorf("Failed to update order status in database: %v", err)
 		return
 	}
+	logger.Infof("[%s] Ordre %s exécuté : quantité %s %s, frais %.4f %s",
+		b.Config.ExchangeName, dbOrder.ExternalID,
+		b.market.FormatAmount(fill.Amount), b.market.BaseAsset, fill.Fees, b.market.QuoteAsset)
+
+	// Les notifications affichent la quantité réellement détenue
+	order.Amount = &fill.Amount
 
 	switch dbOrder.Side {
 	case database.Buy:
@@ -653,19 +751,10 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
 		order.Id)
 
-	// Le prix cible est défini par la stratégie
-	strategy, err := b.db.GetStrategy(dbCycle.StrategyID)
-	if err != nil {
-		logger.Errorf("Failed to get strategy for cycle : %v", err)
-		return
-	}
-
-	targetPrice := *order.Price * (1.0 + strategy.ProfitTarget/100.0)
-
-	err = b.db.UpdateCycleTargetPrice(dbCycle.ID, targetPrice)
-	if err != nil {
-		logger.Errorf("Failed to update cycle target price in database: %v", err)
-	}
+	// La cible du cycle n'est PAS recalculée ici : elle a été fixée par l'algorithme à
+	// la pose de l'ordre (BuySignal.TargetPrice : ajustement de volatilité + frais),
+	// exactement comme dans le backtest. Un ordre post-only s'exécute à son prix
+	// limite, donc cette cible repose déjà sur le prix d'achat réel.
 }
 
 func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
@@ -825,6 +914,10 @@ func (m *Market) GetBaseAsset() string {
 
 func (m *Market) GetQuoteAsset() string {
 	return m.QuoteAsset
+}
+
+func (m *Market) GetMakerFee() float64 {
+	return m.MakerFee
 }
 
 func (m *Market) GetPrecision() algorithms.MarketPrecision {

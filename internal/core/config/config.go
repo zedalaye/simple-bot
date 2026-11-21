@@ -17,6 +17,9 @@ type AppConfig struct {
 	LogFile        string
 	WebPort        string
 	HealthcheckURL string
+	// MakerFee : taux maker imposé (fraction), lu depuis MAKER_FEE_PCT. nil = lire
+	// le tarif réel du compte sur l'exchange.
+	MakerFee *float64
 
 	// Relay de notifications mobile. RelayURL vide = désactivé.
 	RelayURL             string
@@ -35,6 +38,8 @@ type BotConfig struct {
 	// HealthcheckURL : URL « dead-man's switch » pingée à chaque price-check.
 	// Vide = désactivé. Si les pings cessent, le service distant alerte.
 	HealthcheckURL string
+	// MakerFee : taux maker imposé (fraction). nil = tarif du compte lu sur l'exchange.
+	MakerFee *float64
 }
 
 // Load lit la configuration depuis les variables d'environnement.
@@ -45,7 +50,7 @@ func Load() AppConfig {
 		checkIntervalMins = 5
 	}
 
-	exchange := getenv("EXCHANGE", "mexc")
+	exchange := getenv("EXCHANGE", "okx")
 
 	return AppConfig{
 		ExchangeName:   exchange,
@@ -56,6 +61,7 @@ func Load() AppConfig {
 		LogFile:        os.Getenv("LOG_FILE"),
 		WebPort:        getenv("WEB_PORT", ":8080"),
 		HealthcheckURL: os.Getenv("HEALTHCHECK_URL"),
+		MakerFee:       getenvPercent("MAKER_FEE_PCT"),
 
 		RelayURL:   os.Getenv("RELAY_URL"),
 		RelayToken: os.Getenv("RELAY_TOKEN"),
@@ -86,6 +92,17 @@ func getenvInt(key string, fallback int) int {
 	return v
 }
 
+// getenvPercent lit un pourcentage positif ou nul (« 0.08 » = 0,08 %) et le rend en
+// fraction. nil si la variable est absente ou illisible.
+func getenvPercent(key string) *float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(key)), 64)
+	if err != nil || v < 0 {
+		return nil
+	}
+	f := v / 100.0
+	return &f
+}
+
 // GetLogLevel retourne le niveau de log configuré.
 func (c AppConfig) GetLogLevel() string { return c.LogLevel }
 
@@ -100,5 +117,6 @@ func (c AppConfig) ToBotConfig() BotConfig {
 		CheckInterval:  c.CheckInterval,
 		WebPort:        c.WebPort,
 		HealthcheckURL: c.HealthcheckURL,
+		MakerFee:       c.MakerFee,
 	}
 }

@@ -121,6 +121,31 @@ func (db *DB) UpdateOrderStatus(externalId string, status OrderStatus) error {
 	return nil
 }
 
+// MarkOrderFilled passe un ordre à FILLED en y inscrivant les valeurs réelles
+// d'exécution, lues dans les trades de l'exchange :
+//   - amount : quantité de base effectivement détenue après l'ordre. Pour un achat
+//     dont les frais sont prélevés en base (cas OKX), c'est la quantité NETTE de
+//     frais, celle que le cycle pourra revendre.
+//   - fees : frais totaux convertis en devise de cotation.
+//
+// Avec ces deux valeurs, le profit d'un cycle (so.price - bo.price) * bo.amount
+// - bo.fees - so.fees est exact (au premier ordre près).
+func (db *DB) MarkOrderFilled(externalId string, amount, fees float64) error {
+	query := `
+		UPDATE orders SET
+			status = ?,
+			amount = ?,
+			fees = ?,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE external_id = ?
+	`
+	_, err := db.conn.Exec(query, Filled, amount, fees, externalId)
+	if err != nil {
+		return fmt.Errorf("failed to mark order filled: %w", err)
+	}
+	return nil
+}
+
 // GetOldOrders retrieves old orders (older than the specified time)
 func (db *DB) GetOldOrders(olderThan time.Time) ([]Order, error) {
 	query := `

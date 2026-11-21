@@ -111,6 +111,8 @@ func Run(cfg Config, candlesByTF map[string][]database.Candle) (Result, error) {
 		Pair:         cfg.Pair,
 		Calculator:   calc,
 		Precision:    cfg.Precision,
+		// Comme en live : les cibles de vente couvrent l'aller-retour de frais.
+		MakerFee: cfg.FeeRate,
 	}
 
 	var (

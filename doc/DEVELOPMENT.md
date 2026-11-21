@@ -62,8 +62,7 @@ simple-trading-bot/
 │   └── core/             # Shared utilities
 │
 ├── storage/              # Configuration & data (gitignored)
-│   ├── mexc/            # MEXC exchange config
-│   └── hl/              # Hyperliquid config
+│   └── okx/             # OKX instance config
 │
 ├── doc/                  # Documentation
 ├── docker/               # Docker files
@@ -284,13 +283,13 @@ gosec ./...
 
 ```bash
 # View database schema
-sqlite3 storage/mexc/db/bot.db ".schema"
+sqlite3 storage/okx/db/bot.db ".schema"
 
 # Query data interactively
-sqlite3 storage/mexc/db/bot.db
+sqlite3 storage/okx/db/bot.db
 
 # Backup database
-sqlite3 storage/mexc/db/bot.db ".backup backup.db"
+sqlite3 storage/okx/db/bot.db ".backup backup.db"
 ```
 
 ### Debugging

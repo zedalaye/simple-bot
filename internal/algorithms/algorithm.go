@@ -2,6 +2,7 @@ package algorithms
 
 import (
 	"bot/internal/core/database"
+	"math"
 )
 
 // MarketPrecision represents market precision information
@@ -32,6 +33,9 @@ type TradingContext struct {
 	CurrentPrice float64
 	Calculator   IndicatorCalculator
 	Precision    MarketPrecision // Ajout des précisions du marché
+	// MakerFee : taux de frais maker par ordre (fraction : 0.0008 = 0,08 %). Les
+	// cibles de vente l'intègrent pour que ProfitTarget reste une marge NETTE.
+	MakerFee float64
 }
 
 // Balance represents asset balance
@@ -125,6 +129,21 @@ func (ar *AlgorithmRegistry) GetAll() map[string]Algorithm {
 func RoundPrice(price float64, precision MarketPrecision) float64 {
 	factor := 1 / precision.Price
 	return float64(int64(price*factor)) / factor
+}
+
+// WithRoundTripFees ajoute à une marge cible (fraction) le coût d'un aller-retour
+// maker, achat + vente : 1 % + 2 × 0,08 % = 1,16 %. ProfitTarget reste ainsi une
+// marge nette de frais (à 0,002 point près : les frais s'appliquent aussi sur la marge).
+func WithRoundTripFees(profit, makerFee float64) float64 {
+	return profit + 2*makerFee
+}
+
+// RoundAmountDown arrondit une quantité AU PAS INFÉRIEUR : pour revendre, on ne
+// peut pas proposer plus que ce qu'on détient. La tolérance absorbe les erreurs de
+// représentation flottante (0.0009992 * 1e8 = 99919.99999…).
+func RoundAmountDown(amount float64, precision MarketPrecision) float64 {
+	factor := 1 / precision.Amount
+	return math.Floor(amount*factor+1e-6) / factor
 }
 
 // RoundAmountUp rounds an amount UP according to market precision

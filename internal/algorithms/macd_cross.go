@@ -70,7 +70,7 @@ func (a *MACD_Cross) ShouldBuy(ctx TradingContext, strategy database.Strategy) (
 		limitPrice := ctx.CurrentPrice
 		limitPrice = RoundPrice(limitPrice, ctx.Precision)
 
-		targetPrice := limitPrice * (1.0 + strategy.ProfitTarget/100.0)
+		targetPrice := limitPrice * (1.0 + WithRoundTripFees(strategy.ProfitTarget/100.0, ctx.MakerFee))
 		targetPrice = RoundPrice(targetPrice, ctx.Precision)
 
 		baseAmount := strategy.QuoteAmount / limitPrice
