@@ -45,7 +45,7 @@ func TestCreateStrategyInterval_RoundTrip(t *testing.T) {
 		nil, nil, "4h",
 		false, nil, nil, "1d",
 		false, nil, nil, nil, nil,
-		1, 0,
+		1, 0, true, /*keepProfitInBase*/
 	)
 	if err != nil {
 		t.Fatalf("CreateStrategyFromWeb a échoué : %v", err)
@@ -72,6 +72,9 @@ func TestCreateStrategyInterval_RoundTrip(t *testing.T) {
 	if s.BuyIntervalSeconds != interval {
 		t.Errorf("BuyIntervalSeconds attendu %d, obtenu %d", interval, s.BuyIntervalSeconds)
 	}
+	if !s.KeepProfitInBase {
+		t.Error("KeepProfitInBase attendu vrai après création")
+	}
 }
 
 // Vérifie GetLastBuyTime : nil sans achat, puis la date du dernier cycle, et
@@ -90,7 +93,7 @@ func TestGetLastBuyTime_AndCooldown(t *testing.T) {
 		nil, nil, "4h",
 		false, nil, nil, "1d",
 		false, nil, nil, nil, nil,
-		1, 0,
+		1, 0, true, /*keepProfitInBase*/
 	); err != nil {
 		t.Fatalf("CreateStrategyFromWeb a échoué : %v", err)
 	}

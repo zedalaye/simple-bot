@@ -352,7 +352,10 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			"avgProfit":   metrics["avg_profit"],
 			"totalProfit": metrics["total_profit"],
 			"successRate": metrics["success_rate"],
-			"autoRefresh": false,
+			// Base gardée par les cycles « profit en crypto » (cf. KeepProfitInBase)
+			"baseAccumulated": metrics["base_accumulated"],
+			"baseAsset":       strings.Split(tradingPair, "/")[0],
+			"autoRefresh":     false,
 		})
 	})
 
@@ -566,6 +569,8 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			dynamicSizingFullDrawdown = &val
 		}
 
+		keepProfitInBase := c.PostForm("keep_profit_in_base") == "on"
+
 		// Valider la configuration avant insertion (parité avec le runtime)
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
@@ -579,6 +584,7 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			TrendFilterEnabled: trendFilterEnabled, TrendFilterFastPeriod: trendFilterFastPeriod, TrendFilterSlowPeriod: trendFilterSlowPeriod, TrendFilterTimeframe: trendFilterTimeframe,
 			DynamicSizingEnabled: dynamicSizingEnabled, DynamicSizingMin: dynamicSizingMin, DynamicSizingMax: dynamicSizingMax,
 			DynamicSizingWindowDays: dynamicSizingWindowDays, DynamicSizingFullDrawdown: dynamicSizingFullDrawdown,
+			KeepProfitInBase: keepProfitInBase,
 		}); err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Configuration invalide : "+err.Error())
 			return
@@ -593,7 +599,7 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-			int(concurrentCycles), maxBuyOrderAgeHours)
+			int(concurrentCycles), maxBuyOrderAgeHours, keepProfitInBase)
 		if err != nil {
 			handleError(c, "Erreur - Création Stratégie", "strategies", "Failed to create strategy: "+err.Error())
 			return
@@ -751,6 +757,8 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			dynamicSizingFullDrawdown = &val
 		}
 
+		keepProfitInBase := c.PostForm("keep_profit_in_base") == "on"
+
 		// Valider la configuration avant mise à jour (parité avec le runtime)
 		if err := validateStrategyForm(database.Strategy{
 			Name: name, Description: description, Enabled: enabled,
@@ -764,6 +772,7 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			TrendFilterEnabled: trendFilterEnabled, TrendFilterFastPeriod: trendFilterFastPeriod, TrendFilterSlowPeriod: trendFilterSlowPeriod, TrendFilterTimeframe: trendFilterTimeframe,
 			DynamicSizingEnabled: dynamicSizingEnabled, DynamicSizingMin: dynamicSizingMin, DynamicSizingMax: dynamicSizingMax,
 			DynamicSizingWindowDays: dynamicSizingWindowDays, DynamicSizingFullDrawdown: dynamicSizingFullDrawdown,
+			KeepProfitInBase: keepProfitInBase,
 		}); err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Configuration invalide : "+err.Error())
 			return
@@ -777,7 +786,7 @@ func registerHandlers(router *gin.Engine, exchangeName, tradingPair string, db *
 			volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 			trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 			dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-			int(concurrentCycles), maxBuyOrderAgeHours)
+			int(concurrentCycles), maxBuyOrderAgeHours, keepProfitInBase)
 		if err != nil {
 			handleError(c, "Erreur - Modification Stratégie", "strategies", "Failed to update strategy: "+err.Error())
 			return

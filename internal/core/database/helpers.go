@@ -97,6 +97,9 @@ func (db *DB) buildCycleEnhancedFromOrders(id int, targetPrice, maxPrice float64
 			cycle.Status = Completed
 		}
 
+		// Profit en valeur, calculé sur la quantité ACHETÉE : si le cycle n'a revendu que
+		// sa mise (KeepProfitInBase), la base gardée est ainsi valorisée au prix de vente.
+		// (ps×vendu - frais_v) + ps×gardé - (pb×acheté + frais_a) = (ps-pb)×acheté - frais
 		profit := (cycle.SellOrder.Price - cycle.BuyOrder.Price) * cycle.BuyOrder.Amount
 		profit -= cycle.BuyOrder.Fees
 		profit -= cycle.SellOrder.Fees

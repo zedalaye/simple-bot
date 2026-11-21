@@ -773,22 +773,31 @@ func (b *Bot) handleFilledSellOrder(dbOrder database.Order, order Order) {
 	profit := fmt.Sprintf("%.2f", win)
 	profitPct := fmt.Sprintf("%+.1f", winPercent)
 
+	fields := map[string]string{
+		"cycle_id":   strconv.Itoa(dbCycle.ID),
+		"order_id":   *order.Id,
+		"quantity":   quantity,
+		"base":       b.market.BaseAsset,
+		"price":      price,
+		"quote":      b.market.QuoteAsset,
+		"value":      value,
+		"profit":     profit,
+		"profit_pct": profitPct,
+	}
+	text := fmt.Sprintf("Profit : %s %s (%s%%)", profit, b.market.QuoteAsset, profitPct)
+
+	// Profit gardé en base (KeepProfitInBase) : seule la mise a été revendue
+	if kept := dbCycle.BuyOrder.Amount - *order.Amount; kept >= b.market.Precision.Amount {
+		fields["kept"] = b.market.FormatAmount(kept)
+		text += fmt.Sprintf(", dont %s %s gardés", fields["kept"], b.market.BaseAsset)
+	}
+
 	b.emit(notify.Event{
-		Kind:  notify.KindSellFilled,
-		Level: notify.LevelInfo,
-		Title: fmt.Sprintf("Vente remplie — cycle #%d", dbCycle.ID),
-		Text:  fmt.Sprintf("Profit : %s %s (%s%%)", profit, b.market.QuoteAsset, profitPct),
-		Fields: map[string]string{
-			"cycle_id":   strconv.Itoa(dbCycle.ID),
-			"order_id":   *order.Id,
-			"quantity":   quantity,
-			"base":       b.market.BaseAsset,
-			"price":      price,
-			"quote":      b.market.QuoteAsset,
-			"value":      value,
-			"profit":     profit,
-			"profit_pct": profitPct,
-		},
+		Kind:   notify.KindSellFilled,
+		Level:  notify.LevelInfo,
+		Title:  fmt.Sprintf("Vente remplie — cycle #%d", dbCycle.ID),
+		Text:   text,
+		Fields: fields,
 	})
 
 	logger.Infof("[%s] Sell Order Filled: %s %s at %s %s (ID=%s)",

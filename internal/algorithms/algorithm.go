@@ -146,6 +146,23 @@ func RoundAmountDown(amount float64, precision MarketPrecision) float64 {
 	return math.Floor(amount*factor+1e-6) / factor
 }
 
+// RecoverCostAmount calcule la quantité de base à vendre au prix price pour
+// récupérer cost (en cotation, frais d'achat compris) une fois déduits les frais de
+// vente : x × price × (1 - makerFee) ≥ cost. Arrondie au pas SUPÉRIEUR (on récupère
+// au moins la mise), plafonnée à held (on ne vend pas plus que ce qu'on détient).
+// Le reste, held - x, est le profit du cycle conservé en base.
+func RecoverCostAmount(cost, price, makerFee, held float64, precision MarketPrecision) float64 {
+	if price <= 0 || makerFee >= 1 {
+		return held
+	}
+	factor := 1 / precision.Amount
+	x := math.Ceil(cost/(price*(1-makerFee))*factor-1e-6) / factor
+	if x > held {
+		return held
+	}
+	return x
+}
+
 // RoundAmountUp rounds an amount UP according to market precision
 // This ensures that the order value meets minimum requirements
 func RoundAmount(amount float64, precision MarketPrecision) float64 {

@@ -49,6 +49,12 @@ type Result struct {
 	UnrealizedPnL        float64 // P&L latent des cycles ouverts au dernier prix
 	OpenNotional         float64 // notional investi encore détenu (cycles non vendus)
 	FinalPrice           float64
+	// Profit gardé en base (stratégie KeepProfitInBase) : quantité de base conservée
+	// par les cycles bouclés, et variation de sa valeur entre les ventes et la fin.
+	// RealizedPnL valorise cette base au prix de vente ; BaseKeptPnL complète jusqu'au
+	// dernier prix (négative si le cours a baissé depuis).
+	BaseKept    float64
+	BaseKeptPnL float64
 }
 
 // simCycle est l'état interne d'un cycle pendant la simulation.
@@ -64,6 +70,7 @@ type simCycle struct {
 	maxPrice   float64
 	sellPlaced bool
 	sellLimit  float64
+	sellAmount float64 // quantité revendue (< amount si le profit est gardé en base)
 	closed     bool
 }
 
@@ -124,6 +131,8 @@ func Run(cfg Config, candlesByTF map[string][]database.Candle) (Result, error) {
 		firstMs   int64 = -1
 		lastClose float64
 		lastMs    int64
+		// valeur, au prix de vente, de la base gardée (pour BaseKeptPnL)
+		keptValueAtSale float64
 	)
 
 	for i := range price {
@@ -164,9 +173,17 @@ func Run(cfg Config, candlesByTF map[string][]database.Candle) (Result, error) {
 			} else if cy.sellPlaced {
 				if c.HighPrice >= cy.sellLimit {
 					cy.closed = true
+					// PnL en valeur : la base gardée est valorisée au prix de vente
+					// (même convention que les stats du bot). Les frais de vente ne
+					// portent que sur la quantité revendue.
 					gross := (cy.sellLimit - cy.buyPrice) * cy.amount
-					res.Fees += cy.sellLimit * cy.amount * cfg.FeeRate
-					pnl := gross - cy.buyPrice*cy.amount*cfg.FeeRate - cy.sellLimit*cy.amount*cfg.FeeRate
+					sellFee := cy.sellLimit * cy.sellAmount * cfg.FeeRate
+					res.Fees += sellFee
+					pnl := gross - cy.buyPrice*cy.amount*cfg.FeeRate - sellFee
+					if kept := cy.amount - cy.sellAmount; kept > 0 {
+						res.BaseKept += kept
+						keptValueAtSale += kept * cy.sellLimit
+					}
 					res.RealizedPnL += pnl
 					res.InvestedClosed += cy.buyPrice * cy.amount
 					if pnl > 0 {
@@ -194,6 +211,12 @@ func Run(cfg Config, candlesByTF map[string][]database.Candle) (Result, error) {
 			if err == nil && sig.ShouldSell {
 				cy.sellPlaced = true
 				cy.sellLimit = sig.LimitPrice
+				cy.sellAmount = cy.amount
+				if cfg.Strategy.KeepProfitInBase {
+					// Comme en live : ne revendre que la mise (frais d'achat compris)
+					cost := cy.buyPrice*cy.amount + cy.buyPrice*cy.amount*cfg.FeeRate
+					cy.sellAmount = algorithms.RecoverCostAmount(cost, cy.sellLimit, cfg.FeeRate, cy.amount, cfg.Precision)
+				}
 			}
 		}
 
@@ -272,6 +295,7 @@ func Run(cfg Config, candlesByTF map[string][]database.Candle) (Result, error) {
 			res.OpenNotional += cy.buyPrice * cy.amount
 		}
 	}
+	res.BaseKeptPnL = res.BaseKept*lastClose - keptValueAtSale
 	if math.IsNaN(res.RealizedReturnPct) {
 		res.RealizedReturnPct = 0
 	}

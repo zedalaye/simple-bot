@@ -20,8 +20,8 @@ import (
 )
 
 // precision utilisée pour l'arrondi des ordres simulés (identique à la commande
-// backtest) : pas de prix 0,01, pas de quantité 1e-6 (valeurs génériques).
-var precision = algorithms.MarketPrecision{Price: 0.01, Amount: 0.000001}
+// backtest) : précision OKX BTC/USDC, pas de prix 0,1, pas de quantité 1e-8.
+var precision = algorithms.MarketPrecision{Price: 0.1, Amount: 0.00000001}
 
 // toolDefs déclare le catalogue d'outils exposés à Claude. Chaque entrée est un
 // schéma JSON : Claude lit le nom + la description pour décider quand l'appeler,

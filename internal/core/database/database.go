@@ -78,15 +78,19 @@ type Strategy struct {
 	TrendFilterTimeframe  string   `json:"trend_filter_timeframe"`
 	// Taille dynamique : montant par ordre proportionnel à la profondeur de baisse
 	// (petit ordre près des sommets, gros ordre au creux). Fallback sur QuoteAmount si désactivé.
-	DynamicSizingEnabled      bool       `json:"dynamic_sizing_enabled"`
-	DynamicSizingMin          *float64   `json:"dynamic_sizing_min,omitempty"`           // taille mini (USDT), près du sommet
-	DynamicSizingMax          *float64   `json:"dynamic_sizing_max,omitempty"`           // taille maxi (USDT), au plus profond
-	DynamicSizingWindowDays   *int       `json:"dynamic_sizing_window_days,omitempty"`   // fenêtre du plus-haut de référence (jours)
-	DynamicSizingFullDrawdown *float64   `json:"dynamic_sizing_full_drawdown,omitempty"` // profondeur (%) où la taille max est atteinte
-	LastExecutedAt            *time.Time `json:"last_executed_at,omitempty"`
-	NextExecutionAt           *time.Time `json:"next_execution_at,omitempty"`
-	CreatedAt                 time.Time  `json:"created_at"`
-	UpdatedAt                 time.Time  `json:"updated_at"`
+	DynamicSizingEnabled      bool     `json:"dynamic_sizing_enabled"`
+	DynamicSizingMin          *float64 `json:"dynamic_sizing_min,omitempty"`           // taille mini (USDT), près du sommet
+	DynamicSizingMax          *float64 `json:"dynamic_sizing_max,omitempty"`           // taille maxi (USDT), au plus profond
+	DynamicSizingWindowDays   *int     `json:"dynamic_sizing_window_days,omitempty"`   // fenêtre du plus-haut de référence (jours)
+	DynamicSizingFullDrawdown *float64 `json:"dynamic_sizing_full_drawdown,omitempty"` // profondeur (%) où la taille max est atteinte
+	// KeepProfitInBase : à la vente, ne revendre que la quantité de base nécessaire pour
+	// récupérer les USDC investis (frais compris) ; le surplus, c'est-à-dire le profit,
+	// reste en base (BTC) et s'accumule. L'USDC est ainsi recyclé indéfiniment.
+	KeepProfitInBase bool       `json:"keep_profit_in_base"`
+	LastExecutedAt   *time.Time `json:"last_executed_at,omitempty"`
+	NextExecutionAt  *time.Time `json:"next_execution_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type Order struct {
@@ -498,6 +502,15 @@ var migrations = []Migration{
 		Name: "add_max_buy_order_age_to_strategies",
 		SQL: `
 			ALTER TABLE strategies ADD COLUMN max_buy_order_age_hours INTEGER NOT NULL DEFAULT 0;
+		`,
+	},
+	{
+		// Profit conservé en base : la vente ne récupère que la mise en USDC (frais
+		// compris), le reste du BTC est gardé. 0 = vente de toute la position.
+		ID:   20,
+		Name: "add_keep_profit_in_base_to_strategies",
+		SQL: `
+			ALTER TABLE strategies ADD COLUMN keep_profit_in_base BOOLEAN NOT NULL DEFAULT 0;
 		`,
 	},
 }

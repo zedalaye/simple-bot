@@ -42,6 +42,7 @@ func Main(args []string) {
 		gThreshold = flag.String("rsi-threshold", "", "Seuil(s) RSI, ex: 40,45,50")
 		gProfit    = flag.String("profit", "", "Cible(s) de profit en %%, ex: 0.5,1,2")
 		gInterval  = flag.String("interval", "", "Intervalle(s) d'achat en secondes, ex: 21600,43200,86400")
+		gKeepBase  = flag.String("keep-base", "", "Garder le profit en crypto : 0, 1 ou 0,1 pour comparer (vide = valeur de la stratégie)")
 
 		// Surcharges simples (valeur unique)
 		rsiPeriod  = flag.Int("rsi-period", 14, "Période RSI")
@@ -113,8 +114,15 @@ func Main(args []string) {
 	thresholds := listOrDefaultFloat(*gThreshold, ptrOr(base.RSIThreshold, 45))
 	profits := listOrDefaultFloat(*gProfit, orFloat(base.ProfitTarget, 1.0))
 	intervals := listOrDefaultInt(*gInterval, orInt(base.BuyIntervalSeconds, 86400))
+	defaultKeep := 0
+	if base.KeepProfitInBase {
+		defaultKeep = 1
+	}
+	keeps := listOrDefaultInt(*gKeepBase, defaultKeep)
 
-	precision := algorithms.MarketPrecision{Price: 0.01, Amount: 0.000001}
+	// Précision OKX BTC/USDC (pas de prix 0,1, pas de quantité 1e-8). Le pas de
+	// quantité compte : le BTC gardé par cycle est de l'ordre de 1e-6.
+	precision := algorithms.MarketPrecision{Price: 0.1, Amount: 0.00000001}
 
 	fmt.Printf("Backtest %s — chemin de prix %s — frais %.2f%%/côté\n", *pair, *priceTF, *feePct)
 	var results []backtest.Result
@@ -123,31 +131,38 @@ func Main(args []string) {
 		for _, th := range thresholds {
 			for _, pf := range profits {
 				for _, itv := range intervals {
-					s := base
-					s.RSITimeframe = tf
-					s.RSIThreshold = fptr(th)
-					s.ProfitTarget = pf
-					s.BuyIntervalSeconds = itv
-					cfg := backtest.Config{
-						Pair:           *pair,
-						Strategy:       s,
-						PriceTimeframe: *priceTF,
-						FeeRate:        *feePct / 100.0,
-						Precision:      precision,
-						StartMs:        startMs,
-						EndMs:          endMs,
-						BuyTTLBars:     *buyTTLBars,
+					for _, keep := range keeps {
+						s := base
+						s.RSITimeframe = tf
+						s.RSIThreshold = fptr(th)
+						s.ProfitTarget = pf
+						s.BuyIntervalSeconds = itv
+						s.KeepProfitInBase = keep != 0
+						cfg := backtest.Config{
+							Pair:           *pair,
+							Strategy:       s,
+							PriceTimeframe: *priceTF,
+							FeeRate:        *feePct / 100.0,
+							Precision:      precision,
+							StartMs:        startMs,
+							EndMs:          endMs,
+							BuyTTLBars:     *buyTTLBars,
+						}
+						r, err := backtest.Run(cfg, candlesByTF)
+						if err != nil {
+							log.Fatalf("Backtest (%s/%.0f/%.2f/%ds) : %v", tf, th, pf, itv, err)
+						}
+						results = append(results, r)
+						adj := 0.0
+						if s.VolatilityAdjustment != nil {
+							adj = *s.VolatilityAdjustment
+						}
+						label := fmt.Sprintf("%s/%.0f/%.2g%%/adj%.0f/%dh", tf, th, pf, adj, itv/3600)
+						if s.KeepProfitInBase {
+							label += "/garde"
+						}
+						labels = append(labels, label)
 					}
-					r, err := backtest.Run(cfg, candlesByTF)
-					if err != nil {
-						log.Fatalf("Backtest (%s/%.0f/%.2f/%ds) : %v", tf, th, pf, itv, err)
-					}
-					results = append(results, r)
-					adj := 0.0
-					if s.VolatilityAdjustment != nil {
-						adj = *s.VolatilityAdjustment
-					}
-					labels = append(labels, fmt.Sprintf("%s/%.0f/%.2g%%/adj%.0f/%dh", tf, th, pf, adj, itv/3600))
 				}
 			}
 		}
@@ -165,17 +180,22 @@ func Main(args []string) {
 			results[0].Days, msDay(results[0].StartMs), msDay(results[0].EndMs))
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "config\tachats/j\tcycles/j\tdur_med_j\tpic_cyc\tcapital_pic\tstock_fin\tgain_net\tlatent\ttotal\twin%\tnon_vendus")
+	fmt.Fprintln(w, "config\tachats/j\tcycles/j\tdur_med_j\tpic_cyc\tcapital_pic\tstock_fin\tgain_net\tlatent\tbase_gardée\tval_gardée\ttotal\twin%\tnon_vendus")
 	for _, i := range idx {
 		r := results[i]
-		// total = réalisé (cycles bouclés) + latent (stock invendu valorisé au dernier prix)
-		total := r.RealizedPnL + r.UnrealizedPnL
-		fmt.Fprintf(w, "%s\t%.2f\t%.2f\t%.2f\t%d\t%.0f\t%.0f\t%.1f\t%+.0f\t%+.0f\t%.0f\t%d\n",
+		// total = réalisé (cycles bouclés, base gardée valorisée au prix de vente)
+		//       + latent (stock invendu au dernier prix)
+		//       + variation de valeur de la base gardée depuis les ventes
+		total := r.RealizedPnL + r.UnrealizedPnL + r.BaseKeptPnL
+		fmt.Fprintf(w, "%s\t%.2f\t%.2f\t%.2f\t%d\t%.0f\t%.0f\t%.1f\t%+.0f\t%.8f\t%.1f\t%+.0f\t%.0f\t%d\n",
 			labels[i], r.BuysPerDay, r.CyclesPerDay, r.MedianCycleDays, r.PeakOpenCycles,
-			r.PeakCapital, r.OpenNotional, r.RealizedPnL, r.UnrealizedPnL, total,
+			r.PeakCapital, r.OpenNotional, r.RealizedPnL, r.UnrealizedPnL,
+			r.BaseKept, r.BaseKept*r.FinalPrice, total,
 			r.WinRate, r.CyclesOpenEnd)
 	}
 	w.Flush()
+	fmt.Println("\nbase_gardée : crypto conservée par les cycles bouclés (option « garder le profit en crypto ») ;")
+	fmt.Println("val_gardée : sa valeur au dernier prix. total = gain_net + latent + variation de valeur de la base gardée.")
 }
 
 // ---- helpers ----

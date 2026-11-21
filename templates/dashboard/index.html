@@ -78,6 +78,8 @@
             <div class="card-body text-center">
                 <div id="total-profit" class="display-6 text-success mb-2">{{printf "%.2f" .totalProfit}}</div>
                 <h6 class="card-subtitle text-muted">Profit Total</h6>
+                <small id="base-accumulated" class="text-muted{{if not (gt .baseAccumulated 0.0)}} d-none{{end}}"
+                       title="Profit gardé en crypto par les stratégies « Garder le profit en crypto »">dont <span id="base-accumulated-value">{{printf "%.8f" .baseAccumulated}}</span> {{.baseAsset}} gardés</small>
             </div>
         </div>
     </div>
@@ -481,6 +483,9 @@ async function refreshDashboardStats() {
             document.getElementById('pending-orders').textContent = stats.pending_orders || 0;
             document.getElementById('avg-profit').textContent = (stats.avg_profit || 0).toFixed(2);
             document.getElementById('total-profit').textContent = (stats.total_profit || 0).toFixed(2);
+            const baseAcc = stats.base_accumulated || 0;
+            document.getElementById('base-accumulated-value').textContent = baseAcc.toFixed(8);
+            document.getElementById('base-accumulated').classList.toggle('d-none', baseAcc <= 0);
             
             // Mettre à jour les alertes
             updateAlerts(stats);

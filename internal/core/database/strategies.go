@@ -14,6 +14,7 @@ const strategyColumns = `
 	volatility_period, volatility_adjustment, volatility_timeframe,
 	trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
 	dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
+	keep_profit_in_base,
 	last_executed_at, next_execution_at, created_at, updated_at`
 
 // rowScanner est implémenté par *sql.Row et *sql.Rows
@@ -42,6 +43,7 @@ func scanStrategy(row rowScanner) (Strategy, error) {
 		&volatilityPeriod, &volatilityAdjustment, &s.VolatilityTimeframe,
 		&s.TrendFilterEnabled, &trendFilterFastPeriod, &trendFilterSlowPeriod, &s.TrendFilterTimeframe,
 		&s.DynamicSizingEnabled, &dynamicSizingMin, &dynamicSizingMax, &dynamicSizingWindowDays, &dynamicSizingFullDrawdown,
+		&s.KeepProfitInBase,
 		&lastExecutedAt, &nextExecutionAt, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
@@ -227,7 +229,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
-	concurrentCycles, maxBuyOrderAgeHours int) error {
+	concurrentCycles, maxBuyOrderAgeHours int, keepProfitInBase bool) error {
 
 	// Check if strategy exists
 	var count int
@@ -267,8 +269,8 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 			volatility_period, volatility_adjustment, volatility_timeframe,
 			trend_filter_enabled, trend_filter_fast_period, trend_filter_slow_period, trend_filter_timeframe,
 			dynamic_sizing_enabled, dynamic_sizing_min, dynamic_sizing_max, dynamic_sizing_window_days, dynamic_sizing_full_drawdown,
-			max_concurrent_cycles, max_buy_order_age_hours
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			max_concurrent_cycles, max_buy_order_age_hours, keep_profit_in_base
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = db.conn.Exec(query, name, description, enabled, algorithm, cron, buyIntervalSeconds, quoteAmount,
@@ -279,7 +281,7 @@ func (db *DB) CreateStrategyFromWeb(name, description, algorithm, cron string, b
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-		concurrentCycles, maxBuyOrderAgeHours)
+		concurrentCycles, maxBuyOrderAgeHours, keepProfitInBase)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
 	}
@@ -296,7 +298,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 	volatilityPeriod *int, volatilityAdjustment *float64, volatilityTimeframe string,
 	trendFilterEnabled bool, trendFilterFastPeriod *int, trendFilterSlowPeriod *int, trendFilterTimeframe string,
 	dynamicSizingEnabled bool, dynamicSizingMin, dynamicSizingMax *float64, dynamicSizingWindowDays *int, dynamicSizingFullDrawdown *float64,
-	maxConcurrentCycles, maxBuyOrderAgeHours int) error {
+	maxConcurrentCycles, maxBuyOrderAgeHours int, keepProfitInBase bool) error {
 
 	// Set defaults for timeframes if empty
 	if rsiTimeframe == "" {
@@ -351,6 +353,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 			dynamic_sizing_full_drawdown = ?,
 			max_concurrent_cycles = ?,
 			max_buy_order_age_hours = ?,
+			keep_profit_in_base = ?,
 			updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
 	`
@@ -363,7 +366,7 @@ func (db *DB) UpdateStrategy(id int, name, description, algorithm, cron string, 
 		volatilityPeriod, volatilityAdjustment, volatilityTimeframe,
 		trendFilterEnabled, trendFilterFastPeriod, trendFilterSlowPeriod, trendFilterTimeframe,
 		dynamicSizingEnabled, dynamicSizingMin, dynamicSizingMax, dynamicSizingWindowDays, dynamicSizingFullDrawdown,
-		maxConcurrentCycles, maxBuyOrderAgeHours, id)
+		maxConcurrentCycles, maxBuyOrderAgeHours, keepProfitInBase, id)
 
 	return err
 }

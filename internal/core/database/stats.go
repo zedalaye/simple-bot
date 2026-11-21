@@ -104,6 +104,24 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 		stats["total_profit"] = 0.0
 	}
 
+	// Base accumulée : ce que les cycles bouclés ont gardé au lieu de le revendre
+	// (stratégies KeepProfitInBase). Nul pour une vente de toute la position.
+	var baseAccumulated sql.NullFloat64
+	err = db.conn.QueryRow(`
+		SELECT SUM(bo.amount - so.amount)
+		FROM cycles c
+		JOIN orders bo ON c.buy_order_id = bo.id
+		JOIN orders so ON c.sell_order_id = so.id
+		WHERE bo.status = 'FILLED' AND so.status = 'FILLED'
+	`).Scan(&baseAccumulated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base accumulated: %w", err)
+	}
+	stats["base_accumulated"] = 0.0
+	if baseAccumulated.Valid && baseAccumulated.Float64 > 0 {
+		stats["base_accumulated"] = baseAccumulated.Float64
+	}
+
 	return stats, nil
 }
 

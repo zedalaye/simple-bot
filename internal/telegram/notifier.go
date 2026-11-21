@@ -49,6 +49,9 @@ func (n *notifier) render(e notify.Event) string {
 		fmt.Fprintf(&b, "\n📈 Sell Price: %s %s", f("price"), f("quote"))
 		fmt.Fprintf(&b, "\n💲 Value: %s %s", f("value"), f("quote"))
 		fmt.Fprintf(&b, "\n🤑 Profit: %s %s (%s%%)", f("profit"), f("quote"), f("profit_pct"))
+		if kept := f("kept"); kept != "" {
+			fmt.Fprintf(&b, "\n🪙 Kept: %s %s", kept, f("base"))
+		}
 		return b.String()
 
 	case notify.KindPattern:

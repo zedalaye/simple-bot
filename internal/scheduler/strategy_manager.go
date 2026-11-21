@@ -266,7 +266,18 @@ func (sm *StrategyManager) executeBuyOrder(buySignal algorithms.BuySignal, strat
 func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cycle database.CycleEnhanced, strategy database.Strategy) error {
 	// On revend la quantité réellement détenue (nette des frais d'achat prélevés en
 	// base), arrondie au pas inférieur pour ne jamais dépasser le solde du cycle.
-	amount := algorithms.RoundAmountDown(cycle.BuyOrder.Amount, sm.market.GetPrecision())
+	precision := sm.market.GetPrecision()
+	held := algorithms.RoundAmountDown(cycle.BuyOrder.Amount, precision)
+	amount := held
+	if strategy.KeepProfitInBase {
+		// Ne récupérer que la mise : coût d'achat réel (quantité nette × prix + frais
+		// d'achat convertis en cotation), frais de vente compris. Le reste est gardé.
+		cost := cycle.BuyOrder.Price*cycle.BuyOrder.Amount + cycle.BuyOrder.Fees
+		amount = algorithms.RecoverCostAmount(cost, sellSignal.LimitPrice, sm.market.GetMakerFee(), held, precision)
+		logger.Infof("[%s] Strategy %s: cycle %d, profit gardé en base : vente de %s sur %s (garde %s)",
+			sm.exchangeName, strategy.Name, cycle.ID,
+			sm.market.FormatAmount(amount), sm.market.FormatAmount(held), sm.market.FormatAmount(held-amount))
+	}
 
 	logger.Infof("[%s] Executing sell order for strategy %s: Cycle=%d, Amount=%s, Price=%.4f",
 		sm.exchangeName, strategy.Name, cycle.ID, sm.market.FormatAmount(amount), sellSignal.LimitPrice)
@@ -290,8 +301,10 @@ func (sm *StrategyManager) executeSellOrder(sellSignal algorithms.SellSignal, cy
 		return fmt.Errorf("failed to associate sell order with cycle: %w", err)
 	}
 
+	// Profit en valeur : la base éventuellement gardée est valorisée au prix de vente
+	// (même convention que les stats, qui raisonnent sur la quantité achetée).
 	expectedSellFees := sellSignal.LimitPrice * amount * sm.market.GetMakerFee()
-	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*amount - cycle.BuyOrder.Fees - expectedSellFees
+	expectedProfit := (sellSignal.LimitPrice-cycle.BuyOrder.Price)*cycle.BuyOrder.Amount - cycle.BuyOrder.Fees - expectedSellFees
 
 	logger.Infof("[%s] Sell order created: Order ID=%d, Cycle ID=%d, Strategy=%s, Expected profit=%.2f",
 		sm.exchangeName,

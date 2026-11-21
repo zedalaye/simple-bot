@@ -133,6 +133,16 @@
                                                {{if .strategy.SellOffset}}value="{{.strategy.SellOffset}}"{{end}} placeholder="0.1">
                                         <div class="form-text">Marge de sécurité pour la vente</div>
                                     </div>
+                                    <div class="col-12 mt-3">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="keep_profit_in_base" name="keep_profit_in_base"
+                                                   {{if .strategy.KeepProfitInBase}}checked{{end}}>
+                                            <label class="form-check-label" for="keep_profit_in_base">
+                                                Garder le profit en crypto
+                                            </label>
+                                        </div>
+                                        <div class="form-text">À la vente, ne revend que la quantité nécessaire pour récupérer la mise (frais compris) : le profit reste en crypto (ex. BTC) et s'accumule, la mise est réinvestie au cycle suivant.</div>
+                                    </div>
                                 </div>
 
                                 <!-- Volatility Settings (Common to all algorithms) -->

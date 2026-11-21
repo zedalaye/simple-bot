@@ -59,3 +59,35 @@ func TestRoundAmountDown(t *testing.T) {
 		}
 	}
 }
+
+// TestRecoverCostAmount : on revend juste de quoi récupérer la mise (frais de
+// vente compris), arrondi au pas supérieur ; le reste est gardé en base.
+func TestRecoverCostAmount(t *testing.T) {
+	p := MarketPrecision{Amount: 0.00000001}
+	fee := 0.0008
+
+	// Achat 20 USDC à 60 000 (frais 0,08 % prélevés en BTC) puis vente à +1,16 %
+	held := RoundAmountDown(20.0/60000*(1-fee), p)
+	cost := 60000*held + 60000*(20.0/60000)*fee // quantité nette × prix + frais d'achat
+	sellPrice := 60000 * 1.0116
+
+	x := RecoverCostAmount(cost, sellPrice, fee, held, p)
+	if got := x * sellPrice * (1 - fee); got < cost {
+		t.Errorf("vente de %.8f : récupère %.6f USDC < mise %.6f", x, got, cost)
+	}
+	if got := (x - 0.00000001) * sellPrice * (1 - fee); got >= cost {
+		t.Errorf("vente de %.8f : un pas de moins suffirait déjà (%.6f ≥ %.6f)", x, got, cost)
+	}
+	if kept := held - x; kept <= 0 {
+		t.Errorf("aucun BTC gardé (vendu %.8f sur %.8f)", x, held)
+	}
+
+	// Prix sous le coût (ne devrait pas arriver : on vend au-dessus de la cible) :
+	// on ne vend jamais plus que ce qu'on détient.
+	if got := RecoverCostAmount(cost, 50000, fee, held, p); got != held {
+		t.Errorf("prix sous le coût : vente %.8f, attendu tout le stock %.8f", got, held)
+	}
+	if got := RecoverCostAmount(cost, 0, fee, held, p); got != held {
+		t.Errorf("prix nul : vente %.8f, attendu %.8f", got, held)
+	}
+}
