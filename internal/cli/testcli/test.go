@@ -13,6 +13,10 @@ import (
 
 const MinQuoteAmount = 10.0
 
+// testPriceOffset : écart au cours des ordres de test (1 %). Assez large pour qu'un
+// ordre post-only ne s'exécute pas pendant les quelques secondes où il est ouvert.
+const testPriceOffset = 0.01
+
 var step = 0
 
 func logStep(fmt string, v ...any) {
@@ -115,77 +119,16 @@ func Main(args []string) {
 	//	}
 	//}
 
-	// 5. Créer un ordre d'achat limite de 1au prix - offset
-	logStep("Create limit buy order...")
-
-	// Use a small test amount since quote amounts are now configured per strategy
+	// 5-8. Poser puis annuler un achat et une vente, assez loin du cours (±1 %)
+	// pour que ces ordres post-only ne puissent pas s'exécuter pendant le test.
 	buyAmountInQuoteAsset := max(min(quoteBalance, 50.0)*0.01, MinQuoteAmount)
-	logger.Infof("   Test buy amount: %.6f %s", buyAmountInQuoteAsset, quoteAsset)
+	buyPrice := currentPrice * (1 - testPriceOffset)
+	baseAmount := buyAmountInQuoteAsset / buyPrice
+	sellPrice := currentPrice * (1 + testPriceOffset)
 
-	// For testing, use a simple fixed offset (similar to old behavior)
-	testOffset := 10.0 // Use a small fixed offset for testing
-	limitPrice := currentPrice - testOffset
-	baseAmount := buyAmountInQuoteAsset / limitPrice
-
-	buyOrder, err := exchg.PlaceLimitBuyOrder(botConfig.Pair, baseAmount, limitPrice)
-	if err != nil {
-		logger.Errorf("Failed to place buy order: %v", err)
-	} else {
-		buyOrder, err = exchg.FetchOrder(*buyOrder.Id, botConfig.Pair)
-		if err != nil {
-			logger.Fatalf("Failed to fetch buy order: %v", err)
-		}
-		logger.Infof("✓ Buy order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
-			*buyOrder.Id, *buyOrder.Price, *buyOrder.Amount, *buyOrder.Status)
-
-		// Attendre un moment pour que l'ordre soit enregistré
-		time.Sleep(2 * time.Second)
-
-		// 6. Annuler l'ordre d'achat
-		logStep("Cancel buy order...")
-		_, err = exchg.CancelOrder(*buyOrder.Id, botConfig.Pair)
-		if err != nil {
-			logger.Errorf("Failed to cancel buy order: %v", err)
-		} else {
-			logger.Infof("✓ Buy order cancelled: ID=%s", *buyOrder.Id)
-		}
-
-		// Attendre un moment pour que l'annulation soit effective
-		time.Sleep(2 * time.Second)
-
-		// 7. Créer un ordre de vente limite au prix + offset
-		logStep("Create limit sell order...")
-		sellOffset := currentPrice * 0.002
-		sellPrice := currentPrice + sellOffset
-		sellAmountInBaseAsset := *buyOrder.Amount
-
-		logger.Infof("   Sell price: %.2f %s (current + %.2f)", sellPrice, quoteAsset, sellOffset)
-		logger.Infof("   Sell amount: %.6f %s", sellAmountInBaseAsset, baseAsset)
-
-		sellOrder, err := exchg.PlaceLimitSellOrder(botConfig.Pair, sellAmountInBaseAsset, sellPrice)
-		if err != nil {
-			logger.Errorf("Failed to place sell order: %v", err)
-		} else {
-			sellOrder, err = exchg.FetchOrder(*sellOrder.Id, botConfig.Pair)
-			if err != nil {
-				logger.Fatalf("Failed to fetch sell order: %v", err)
-			}
-			logger.Infof("✓ Sell order created: ID=%s, Price=%.2f, Amount=%.6f, Status=%s",
-				*sellOrder.Id, *sellOrder.Price, *sellOrder.Amount, *sellOrder.Status)
-
-			// Attendre un moment
-			time.Sleep(2 * time.Second)
-
-			// 8. Annuler l'ordre de vente
-			logStep("Cancel sell order...")
-			_, err = exchg.CancelOrder(*sellOrder.Id, botConfig.Pair)
-			if err != nil {
-				logger.Errorf("Failed to cancel sell order: %v", err)
-			} else {
-				logger.Infof("✓ Sell order cancelled: ID=%s", *sellOrder.Id)
-			}
-		}
-	}
+	ok := placeAndCancel(exchg, market, botConfig.Pair, "buy", baseAmount, buyPrice)
+	time.Sleep(2 * time.Second)
+	ok = placeAndCancel(exchg, market, botConfig.Pair, "sell", baseAmount, sellPrice) && ok
 
 	// Résumé final
 	logger.Info("=== Test Summary ===")
@@ -194,7 +137,60 @@ func Main(args []string) {
 	logger.Infof("Current price: %.2f %s", currentPrice, quoteAsset)
 	logger.Infof("%s balance: %.6f", quoteAsset, quoteBalance)
 	logger.Infof("%s balance: %.6f", baseAsset, baseBalance)
+	if !ok {
+		logger.Fatalf("✗ Test en échec : vérifier sur l'exchange qu'aucun ordre de test n'est resté ouvert")
+	}
 	logger.Info("✓ All tests completed successfully!")
+}
+
+// placeAndCancel pose un ordre limite (post-only), l'annule, puis vérifie qu'il est bien
+// annulé. Renvoie false si une étape échoue ; dans ce cas l'id est loggé pour pouvoir
+// contrôler (et annuler à la main) l'ordre sur l'exchange.
+func placeAndCancel(exchg *exchange.Exchange, market bot.Market, pair, side string, amount, price float64) bool {
+	logStep("Create limit %s order (%s %s @ %s)...", side,
+		market.FormatAmount(amount), market.BaseAsset, market.FormatPrice(price))
+
+	var order bot.Order
+	var err error
+	if side == "buy" {
+		order, err = exchg.PlaceLimitBuyOrder(pair, amount, price)
+	} else {
+		order, err = exchg.PlaceLimitSellOrder(pair, amount, price)
+	}
+	if err != nil {
+		logger.Errorf("✗ Failed to place %s order: %v", side, err)
+		return false
+	}
+	id := *order.Id
+	logger.Infof("✓ %s order created: ID=%s, Price=%s, Amount=%s, Status=%s", side, id,
+		market.FormatPrice(*order.Price), market.FormatAmount(*order.Amount), *order.Status)
+
+	time.Sleep(2 * time.Second)
+
+	logStep("Cancel %s order %s...", side, id)
+	if _, err := exchg.CancelOrder(id, pair); err != nil {
+		// L'annulation peut avoir réussi même si la relecture qui suit a échoué :
+		// on tranche avec la vérification ci-dessous.
+		logger.Warnf("Cancel %s order %s a renvoyé : %v", side, id, err)
+	}
+
+	// Vérifier l'état final (quelques relectures : l'exchange peut mettre un instant)
+	for attempt := 0; attempt < 5; attempt++ {
+		time.Sleep(time.Second)
+		final, err := exchg.FetchOrder(id, pair)
+		if err != nil {
+			logger.Warnf("Relecture de l'ordre %s : %v", id, err)
+			continue
+		}
+		if final.Status != nil && *final.Status == "canceled" {
+			logger.Infof("✓ %s order cancelled: ID=%s", side, id)
+			return true
+		}
+		logger.Errorf("✗ %s order %s : statut %s au lieu de canceled", side, id, *final.Status)
+		return false
+	}
+	logger.Errorf("✗ %s order %s : état final introuvable, à vérifier sur l'exchange", side, id)
+	return false
 }
 
 func checkBalance(exchange bot.Exchange, baseAsset, quoteAsset string) (float64, float64, error) {
