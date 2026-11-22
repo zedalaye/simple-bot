@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"bot/internal/bot"
 	"errors"
 	"fmt"
 	"testing"
@@ -161,4 +162,44 @@ func signedHeaders(ex *ccxt.Myokx, api any) (headers map[string]any) {
 	req, _ := any(ex.Sign("account/trade-fee", api, "GET", map[string]any{"instType": "SPOT"})).(map[string]any)
 	headers, _ = req["headers"].(map[string]any)
 	return headers
+}
+
+// Un ordre accepté par l'exchange mais pas encore visible en lecture (OKX 51603)
+// doit finir par être relu, sans erreur remontée à l'appelant.
+func TestConfirmOrderRelitApresOrderNotFound(t *testing.T) {
+	calls := 0
+	notFound := errors.New(`[OrderNotFound] myokx {"code":"51603","data":[],"msg":"Order does not exist"}`)
+	id, amount, price, status := "42", 0.0006, 60000.0, "closed"
+	got, err := confirmOrder("42", func() (bot.Order, error) {
+		calls++
+		if calls < 3 {
+			return bot.Order{}, notFound
+		}
+		return bot.Order{Id: &id, Amount: &amount, Price: &price, Status: &status}, nil
+	}, 0.0006, 60000, []time.Duration{0, 0, 0, 0}, func(error) { t.Fatal("abandon inattendu") })
+	if err != nil {
+		t.Fatalf("aucune erreur attendue, got %v", err)
+	}
+	if calls != 3 || *got.Status != "closed" {
+		t.Fatalf("attendu l'ordre relu au 3e essai, got calls=%d status=%s", calls, *got.Status)
+	}
+}
+
+// Si l'ordre reste illisible, on renvoie l'ordre tel qu'envoyé (statut open) et
+// SURTOUT pas d'erreur : sinon il serait orphelin puis reposé (double vente du 2026-11-22).
+func TestConfirmOrderNeRenvoieJamaisDErreur(t *testing.T) {
+	gaveUp := false
+	got, err := confirmOrder("42", func() (bot.Order, error) {
+		return bot.Order{}, errors.New("[OrderNotFound] 51603")
+	}, 0.00059433, 60865.9, []time.Duration{0, 0}, func(error) { gaveUp = true })
+	if err != nil {
+		t.Fatalf("aucune erreur attendue, got %v", err)
+	}
+	if !gaveUp {
+		t.Fatal("onGiveUp aurait dû être appelé")
+	}
+	if *got.Id != "42" || *got.Amount != 0.00059433 || *got.Price != 60865.9 || *got.Status != "open" {
+		t.Fatalf("ordre reconstruit inattendu : id=%s amount=%v price=%v status=%s",
+			*got.Id, *got.Amount, *got.Price, *got.Status)
+	}
 }

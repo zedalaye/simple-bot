@@ -314,7 +314,7 @@ func (a *RSI_DCA) ShouldSell(ctx TradingContext, cycle database.Cycle, strategy 
 			return SellSignal{
 				ShouldSell: true,
 				LimitPrice: limitPrice,
-				Reason: fmt.Sprintf("Trailing Stop: %.4f < Max %.4f * %.4f%% = %.4f",
+				Reason: fmt.Sprintf("Trailing Stop: %.4f < Max %.4f × (1 − %.4f%%) = %.4f",
 					ctx.CurrentPrice, cycle.MaxPrice, (1.0-trailingStopThreshold)*100.0, cycle.MaxPrice*trailingStopThreshold),
 			}, nil
 		}

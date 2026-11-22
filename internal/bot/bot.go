@@ -746,10 +746,10 @@ func (b *Bot) handleFilledBuyOrder(dbOrder database.Order, order Order) {
 		},
 	})
 
-	logger.Infof("[%s] Buy Order Filled: %s %s at %s %s (ID=%v)",
+	logger.Infof("[%s] Buy Order Filled: %s %s at %s %s (ID=%s)",
 		b.Config.ExchangeName,
 		b.market.FormatAmount(*order.Amount), b.market.BaseAsset, b.market.FormatPrice(*order.Price), b.market.QuoteAsset,
-		order.Id)
+		*order.Id)
 
 	// La cible du cycle n'est PAS recalculée ici : elle a été fixée par l'algorithme à
 	// la pose de l'ordre (BuySignal.TargetPrice : ajustement de volatilité + frais),

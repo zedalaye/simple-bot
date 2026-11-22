@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"bot/internal/bot"
+	"bot/internal/logger"
 	"fmt"
 	"math"
 	"os"
@@ -256,7 +257,7 @@ func (e *Exchange) PlaceLimitBuyOrder(pair string, amount float64, price float64
 		return bot.Order{}, err
 	}
 	//fmt.Printf("DEBUG. Buy Order=%+v\n", result)
-	return e.FetchOrder(*result.Id, pair)
+	return e.confirmPlacedOrder(result, pair, "buy", amount, price)
 }
 
 func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float64) (bot.Order, error) {
@@ -273,7 +274,52 @@ func (e *Exchange) PlaceLimitSellOrder(pair string, amount float64, price float6
 		return bot.Order{}, err
 	}
 	//fmt.Printf("DEBUG. Sell Order=%+v\n", result)
-	return e.FetchOrder(*result.Id, pair)
+	return e.confirmPlacedOrder(result, pair, "sell", amount, price)
+}
+
+// placedOrderFetchDelays : attentes successives avant chaque relecture d'un ordre
+// qu'on vient de poser (var pour que les tests puissent les raccourcir).
+var placedOrderFetchDelays = []time.Duration{
+	300 * time.Millisecond, 700 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second,
+}
+
+// confirmPlacedOrder relit un ordre que l'exchange vient d'ACCEPTER. Une fois l'id
+// obtenu, l'ordre vit sur l'exchange : on ne doit plus jamais renvoyer d'erreur, sinon
+// l'appelant le croit non posé, ne l'enregistre pas, et le rejoue au signal suivant.
+// Vécu le 2026-11-22 : OKX a répondu 51603 « Order does not exist » à la relecture
+// immédiate (l'ordre n'était pas encore visible en lecture) → vente orpheline exécutée
+// puis seconde vente du même cycle, prise sur la réserve de BTC.
+func (e *Exchange) confirmPlacedOrder(created ccxt.Order, pair, side string, amount, price float64) (bot.Order, error) {
+	if created.Id == nil {
+		return bot.Order{}, fmt.Errorf("ordre %s accepté par l'exchange mais sans id", side)
+	}
+	id := *created.Id
+	return confirmOrder(id, func() (bot.Order, error) { return e.FetchOrder(id, pair) },
+		amount, price, placedOrderFetchDelays, func(err error) {
+			logger.Warnf("[%s] Ordre %s %s posé mais illisible pour l'instant (%v) : enregistré tel qu'envoyé, le suivi des ordres prendra le relais",
+				e.name, side, id, err)
+		})
+}
+
+// confirmOrder : logique pure de confirmPlacedOrder (testable sans exchange). Tente
+// fetch après chaque délai ; si l'ordre reste introuvable, renvoie l'ordre reconstruit
+// à partir de la requête, statut « open ».
+func confirmOrder(id string, fetch func() (bot.Order, error), amount, price float64,
+	delays []time.Duration, onGiveUp func(error)) (bot.Order, error) {
+	var lastErr error
+	for _, d := range delays {
+		time.Sleep(d)
+		order, err := fetch()
+		if err == nil && order.Id != nil {
+			return order, nil
+		}
+		lastErr = err
+	}
+	if onGiveUp != nil {
+		onGiveUp(lastErr)
+	}
+	status := "open"
+	return bot.Order{Id: &id, Amount: &amount, Price: &price, Status: &status}, nil
 }
 
 func (e *Exchange) GetMarket(pair string) bot.Market {
