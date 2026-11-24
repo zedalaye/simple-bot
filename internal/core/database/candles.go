@@ -7,9 +7,22 @@ import (
 	"time"
 )
 
-// SaveCandle saves a candle to the database
+// SaveCandle enregistre une bougie (upsert sur pair/timeframe/timestamp).
+//
+// Une bougie déjà connue est RÉÉCRITE avec les valeurs reçues : le collecteur récupère
+// la bougie en cours (ex. 1 min après son ouverture) ; avec un simple INSERT OR IGNORE
+// elle restait figée dans cet état incomplet (high/low/close/volume d'une seule minute)
+// et faussait graphe, indicateurs et détection de patterns. Les collectes suivantes la
+// complètent désormais jusqu'à sa clôture.
 func (db *DB) SaveCandle(pair, timeframe string, timestamp int64, open, high, low, close, volume float64) error {
-	query := `INSERT OR IGNORE INTO candles (pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO candles (pair, timeframe, timestamp, open_price, high_price, low_price, close_price, volume)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(pair, timeframe, timestamp) DO UPDATE SET
+			open_price = excluded.open_price,
+			high_price = excluded.high_price,
+			low_price = excluded.low_price,
+			close_price = excluded.close_price,
+			volume = excluded.volume`
 	_, err := db.conn.Exec(query, pair, timeframe, timestamp, open, high, low, close, volume)
 	if err != nil {
 		return fmt.Errorf("failed to save candle: %w", err)

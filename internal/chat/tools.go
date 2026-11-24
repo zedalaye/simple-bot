@@ -250,7 +250,7 @@ func (a *Agent) toolSyncCandles(rawInput string) (string, bool) {
 		return err.Error(), true
 	}
 	// Lecture seule : on récupère les bougies publiques puis on les persiste.
-	// SaveCandle est idempotent (INSERT OR IGNORE) : aucun doublon.
+	// SaveCandle est idempotent (upsert) : aucun doublon.
 	candles, err := ex.FetchCandles(a.pair, in.Timeframe, nil, int64(limit))
 	if err != nil {
 		return fmt.Sprintf("échec du fetch OHLCV %s/%s : %v", a.pair, in.Timeframe, err), true

@@ -47,8 +47,9 @@ func NewMarketDataCollector(exchangeName, pair string, db *database.DB, exchange
 // On récupère toujours les `limit` dernières bougies (sans `since`) : c'est ce que les exchanges
 // renvoient nativement et cela garantit des données à jour pour le graphe et les indicateurs.
 // Fetcher « depuis la dernière bougie connue » menait à un crawl avant inrattrapable dès qu'une
-// timeframe prenait du retard (le graphe restait bloqué dans le passé). `INSERT OR IGNORE` rend
-// l'opération idempotente ; l'historique s'étend naturellement vers l'avant au fil du temps.
+// timeframe prenait du retard (le graphe restait bloqué dans le passé). SaveCandle fait un upsert :
+// l'opération est idempotente, la bougie en cours est complétée à chaque collecte jusqu'à sa
+// clôture, et l'historique s'étend naturellement vers l'avant au fil du temps.
 func (mdc *MarketDataCollector) CollectCandles(pair, timeframe string, limit int) error {
 	logger.Debugf("Collecting candles for %s/%s (limit: %d)", pair, timeframe, limit)
 
@@ -65,7 +66,7 @@ func (mdc *MarketDataCollector) CollectCandles(pair, timeframe string, limit int
 
 	logger.Debugf("Fetched %d candles from exchange", len(candles))
 
-	// 4. Save candles to database (INSERT OR IGNORE handles duplicates)
+	// Enregistrer en base (upsert : les bougies connues sont mises à jour)
 	saved := 0
 	for _, candle := range candles {
 		err := mdc.db.SaveCandle(pair, timeframe, candle.Timestamp,

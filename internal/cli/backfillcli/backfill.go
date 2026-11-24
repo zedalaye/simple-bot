@@ -8,8 +8,9 @@
 //
 //	simple-bot --root storage/okx backfill --tf 15m,1h --since 2026-01-01
 //
-// Idempotent : les bougies déjà présentes sont ignorées (INSERT OR IGNORE), on peut
-// relancer la commande sans risque.
+// Idempotent : les bougies déjà présentes sont réécrites avec les valeurs de l'exchange
+// (upsert), on peut relancer la commande sans risque. Sert aussi à RÉPARER une plage
+// (bougies incomplètes, trous) : --since <date> la recharge entièrement.
 package backfillcli
 
 import (
@@ -106,7 +107,7 @@ func listingStart(ex *exchange.Exchange, pair string) (int64, error) {
 }
 
 // backfill pagine de start jusqu'à maintenant et enregistre les bougies CLÔTURÉES (la
-// bougie en cours est ignorée : INSERT OR IGNORE la figerait dans un état incomplet).
+// bougie en cours est ignorée : le collecteur du bot la tient à jour jusqu'à sa clôture).
 // Renvoie le nombre de bougies enregistrées et leurs bornes.
 func backfill(ex *exchange.Exchange, db *database.DB, pair, tf string, start int64) (n int, first, last int64, err error) {
 	dur := backtest.TimeframeMillis(tf)
