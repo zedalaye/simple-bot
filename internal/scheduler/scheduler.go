@@ -272,7 +272,7 @@ func (ss *StrategyScheduler) GetStats() map[string]interface{} {
 
 	for i, job := range jobs {
 		nextRun, _ := job.NextRun()
-		lastRun, _ := job.LastRun()
+		lastRun, _ := job.LastRunStartedAt()
 
 		stats["jobs"].([]map[string]interface{})[i] = map[string]interface{}{
 			"name":     job.Name(),

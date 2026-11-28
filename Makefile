@@ -95,9 +95,9 @@ deps-verify:
 	go mod verify
 
 # Scanner les vulnérabilités connues du code et des dépendances — bloquant
-# (sans installation globale : exécuté à la volée)
+# (govulncheck installé par `mise install`, à la version épinglée dans mise.toml)
 vulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	govulncheck ./...
 
 # Installation des dépendances
 deps:

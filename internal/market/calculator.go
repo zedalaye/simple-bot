@@ -3,6 +3,7 @@ package market
 import (
 	"bot/internal/core/database"
 	"bot/internal/logger"
+	"context"
 	"fmt"
 
 	"github.com/cinar/indicator/v2/trend"
@@ -153,7 +154,7 @@ func (c *Calculator) CalculateBollingerBands(pair, timeframe string, period int,
 	close(inputChan)
 
 	// Compute Bollinger Bands values using channels (returns 3 channels: upper, middle, lower)
-	upperChan, middleChan, lowerChan := bb.Compute(inputChan)
+	upperChan, middleChan, lowerChan := bb.ComputeWithContext(context.Background(), inputChan)
 
 	// Collect results from all three channels
 	var upperResults, middleResults, lowerResults []float64
@@ -172,7 +173,7 @@ func (c *Calculator) CalculateBollingerBands(pair, timeframe string, period int,
 	}
 
 	if len(upperResults) == 0 || len(middleResults) == 0 || len(lowerResults) == 0 {
-		return 0, 0, 0, fmt.Errorf("Bollinger Bands calculation returned no values")
+		return 0, 0, 0, fmt.Errorf("bollinger bands calculation returned no values")
 	}
 
 	// Get latest values from each band
@@ -219,7 +220,7 @@ func (c *Calculator) CalculateSMA(pair, timeframe string, period int) (float64, 
 	close(inputChan)
 
 	// Compute SMA values using channels
-	smaChan := sma.Compute(inputChan)
+	smaChan := sma.ComputeWithContext(context.Background(), inputChan)
 
 	// Collect all SMA values
 	var smaValues []float64
