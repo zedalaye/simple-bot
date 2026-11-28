@@ -395,19 +395,6 @@ func (e *Exchange) FetchCandles(pair string, timeframe string, since *int64, lim
 	return botCandles, nil
 }
 
-func withFetchTradeOptions(since *int64, until *int64, limit int64) ccxt.FetchTradesOptions {
-	return func(opts *ccxt.FetchTradesOptionsStruct) {
-		if since != nil {
-			opts.Since = since
-		}
-		opts.Limit = &limit
-		if until != nil {
-			opts.Params = &map[string]interface{}{}
-			(*opts.Params)["until"] = *until
-		}
-	}
-}
-
 func withFetchMyTradeOptions(pair string, since *int64, until *int64, limit int64) ccxt.FetchMyTradesOptions {
 	return func(opts *ccxt.FetchMyTradesOptionsStruct) {
 		opts.Symbol = &pair

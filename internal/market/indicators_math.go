@@ -1,6 +1,7 @@
 package market
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/cinar/indicator/v2/momentum"
@@ -47,7 +48,7 @@ func RSIValue(closes []float64, period int) (float64, error) {
 	close(inputChan)
 
 	var rsiValues []float64
-	for value := range rsi.Compute(inputChan) {
+	for value := range rsi.ComputeWithContext(context.Background(), inputChan) {
 		rsiValues = append(rsiValues, value)
 	}
 	if len(rsiValues) == 0 {
@@ -75,7 +76,7 @@ func RSISeries(closes []float64, period int) ([]float64, error) {
 	close(inputChan)
 
 	var rsiValues []float64
-	for value := range rsi.Compute(inputChan) {
+	for value := range rsi.ComputeWithContext(context.Background(), inputChan) {
 		rsiValues = append(rsiValues, value)
 	}
 	if len(rsiValues) == 0 {
@@ -110,7 +111,7 @@ func VolatilityValue(closes []float64, period int) (float64, error) {
 	close(inputChan)
 
 	var stdValues []float64
-	for value := range movingStd.Compute(inputChan) {
+	for value := range movingStd.ComputeWithContext(context.Background(), inputChan) {
 		stdValues = append(stdValues, value)
 	}
 	if len(stdValues) == 0 {
@@ -134,7 +135,7 @@ func EMAValue(closes []float64, period int) (float64, error) {
 	close(inputChan)
 
 	var emaValues []float64
-	for value := range ema.Compute(inputChan) {
+	for value := range ema.ComputeWithContext(context.Background(), inputChan) {
 		emaValues = append(emaValues, value)
 	}
 	if len(emaValues) == 0 {
@@ -158,7 +159,7 @@ func MACDValue(closes []float64, fastPeriod, slowPeriod, signalPeriod int) (macd
 	}
 	close(inputChan)
 
-	macdChan, signalChan := macdIndicator.Compute(inputChan)
+	macdChan, signalChan := macdIndicator.ComputeWithContext(context.Background(), inputChan)
 
 	// Les deux canaux sont alimentés en parallèle par cinar : il faut les drainer
 	// concurremment, sinon le producteur se bloque en écrivant sur le canal non lu

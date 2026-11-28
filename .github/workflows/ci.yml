@@ -89,13 +89,10 @@ jobs:
             "ip link set lo up && \"$GO\" test -race -count=1 ./..."
 
   staticcheck:
-    name: staticcheck (non bloquant)
+    name: staticcheck
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # 10 alertes sur le code actuel (8 SA1019 dépréciations cinar/indicator et
-    # gocron, 1 ST1005, 1 U1000) : non bloquant tant qu'elles ne sont pas traitées.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
