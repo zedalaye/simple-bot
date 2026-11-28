@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.29.0
 #
 # Image du relay de notifications mobile — distincte de celle du bot.
 #
