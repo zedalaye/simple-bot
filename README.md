@@ -122,7 +122,8 @@ Examples:
 
 ## Build the bot manually
 
-Install latest [Go Lang](https://go.dev/learn/) or use [Mise-en-Place](https://mise.jdx.dev/)
+Install [Go Lang](https://go.dev/learn/) 1.27.4, or use [Mise-en-Place](https://mise.jdx.dev/) : `mise install`
+installs the exact versions pinned in `mise.toml` (Go and the CI analysis tools).
 
 ```bash
 $ make release

@@ -9,7 +9,7 @@ This set of documentation has been generated automatically by an AI. Please repo
 ## 🚀 Quick Start
 
 ### Prerequisites
-- [Go 1.21+](https://go.dev/dl/) or [Mise-en-Place](https://mise.jdx.dev/)
+- [Go 1.27.4](https://go.dev/dl/) or [Mise-en-Place](https://mise.jdx.dev/) (`mise install` installs the versions pinned in `mise.toml`)
 - [Docker & Docker Compose](https://docs.docker.com/get-docker/) (for containerized deployment)
 
 ### Basic Setup

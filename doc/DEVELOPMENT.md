@@ -6,7 +6,7 @@ This guide covers the development setup, coding standards, testing practices, an
 
 ### Prerequisites
 
-- **Go 1.21+**: [Download here](https://go.dev/dl/)
+- **Go 1.27.4** (exact version pinned in `mise.toml`): [Download here](https://go.dev/dl/)
 - **Git**: Version control
 - **SQLite 3**: Database engine (usually pre-installed)
 - **Make**: Build automation (usually pre-installed)
@@ -14,14 +14,17 @@ This guide covers the development setup, coding standards, testing practices, an
 
 ### Alternative: Mise-en-Place
 
-[Mise-en-Place](https://mise.jdx.dev/) provides automatic tool version management:
+[Mise-en-Place](https://mise.jdx.dev/) installs the exact tool versions pinned in
+`mise.toml` (Go and the static-analysis tools used by the CI):
 
 ```bash
-# Install mise
-curl https://mise.jdx.dev/install.sh | sh
+# Install mise: see https://mise.jdx.dev/getting-started.html
 
-# Install tools automatically
+# Install the pinned tools (go, staticcheck, govulncheck, gitleaks, hadolint, actionlint)
 mise install
+
+# Run any command with these versions
+mise exec -- go test ./...
 ```
 
 ### Clone and Setup
@@ -272,12 +275,16 @@ gofmt -w .
 # Vet code for suspicious constructs
 go vet ./...
 
-# Run linter (install golangci-lint first)
-golangci-lint run
-
-# Check for security issues
-gosec ./...
+# Static analysis and security (tools installed by `mise install`)
+staticcheck ./...
+govulncheck ./...          # or: make vulncheck
+gitleaks git --redact .
+hadolint Dockerfile Dockerfile.relay
+actionlint
 ```
+
+The same checks run in GitHub Actions (`.github/workflows/ci.yml`) on every pull
+request and on `master`.
 
 ### Database Tools
 

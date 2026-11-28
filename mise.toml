@@ -1,2 +1,12 @@
+# Versions exactes des outils du projet (`mise install`, puis `mise exec -- <cmd>`).
+# La CI (.github/workflows/ci.yml) installe ces mêmes versions via jdx/mise-action.
 [tools]
-go = "latest"
+# Aligné sur la toolchain de prod (images golang:1.27.4-alpine des Dockerfile).
+go = "1.27.4"
+
+# Analyse statique / sécurité (mêmes versions en local et en CI).
+staticcheck = "2026.2.2"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.10.0"
+gitleaks = "8.30.1"
+hadolint = "2.15.1"
+actionlint = "1.7.12"

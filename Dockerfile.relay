@@ -10,8 +10,12 @@
 # Cette image ne contient aucun code de trading et ne reçoit aucune clé
 # d'exchange : elle ne manipule que ce que le bot lui pousse.
 
+# Versions épinglées : GO_VERSION doit rester alignée sur mise.toml (vérifié en CI).
+ARG GO_VERSION=1.27.4
+ARG ALPINE_VERSION=3.24
+
 ## Builder environment
-FROM --platform=$BUILDPLATFORM golang:alpine AS build
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build
 
 # golang:alpine ne fournit pas /usr/share/zoneinfo : sur Alpine la base de
 # fuseaux vit dans le paquet tzdata. Sans lui, l'image finale — qui n'a aucun
