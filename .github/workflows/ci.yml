@@ -128,8 +128,7 @@ jobs:
           key: go-build-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
           restore-keys: go-build-${{ runner.os }}-
       - name: govulncheck
-        # N'échoue que sur une vulnérabilité atteinte par le code. GO-2026-6278
-        # (gorilla/websocket, dépendance de ccxt) est importée mais non atteinte.
+        # N'échoue que sur une vulnérabilité atteinte par le code.
         run: govulncheck ./...
 
   secrets:
