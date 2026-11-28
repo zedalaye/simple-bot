@@ -1,0 +1,8 @@
+# Configuration hadolint (job « dockerfiles » de la CI).
+ignored:
+  # Épingler chaque paquet apk casse le build dès qu'Alpine retire l'ancienne
+  # révision ; les images de base sont déjà épinglées par tag précis.
+  - DL3018
+  # « COPY --from=xx / / » est l'usage documenté de tonistiigi/xx (helpers de
+  # cross-compilation), pas une copie accidentelle d'un système de fichiers.
+  - DL3067

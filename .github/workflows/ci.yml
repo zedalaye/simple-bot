@@ -1,0 +1,176 @@
+# CI de simple-bot : build, tests, linters et analyses de sécurité.
+#
+# - Aucun secret ni clé d'exchange : les tests tournent sans réseau (namespace
+#   réseau vide), ils ne peuvent donc appeler aucun exchange réel.
+# - Outils installés par mise aux versions exactes de mise.toml (aqua vérifie
+#   les sommes de contrôle) ; actions épinglées par SHA de commit.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Utiliser exactement le Go de mise.toml, jamais une toolchain téléchargée.
+  GOTOOLCHAIN: local
+  MISE_VERSION: 2026.11.14
+
+jobs:
+  build:
+    name: Build, vet, gofmt, go.mod
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-build-${{ runner.os }}-
+      - name: go mod verify
+        run: go mod verify
+      - name: go.mod / go.sum à jour (go mod tidy)
+        run: go mod tidy -diff
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::Fichiers non formatés (lancer gofmt -w .) :"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go build
+        run: go build ./...
+      - name: go vet
+        run: go vet ./...
+
+  test:
+    name: Tests (-race, sans réseau)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-race-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-race-${{ runner.os }}-
+      - name: Télécharger les modules
+        run: go mod download
+      - name: go test -race (namespace réseau isolé)
+        # Le namespace réseau n'a que l'interface loopback (pour httptest) :
+        # aucun appel sortant possible, donc aucun exchange réel.
+        # Ubuntu 24.04 restreint les namespaces non privilégiés via AppArmor.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          GO="$(mise which go)"
+          GOPROXY=off GOFLAGS=-mod=readonly \
+            unshare --map-root-user --net sh -euc \
+            "ip link set lo up && \"$GO\" test -race -count=1 ./..."
+
+  staticcheck:
+    name: staticcheck (non bloquant)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # 10 alertes sur le code actuel (8 SA1019 dépréciations cinar/indicator et
+    # gocron, 1 ST1005, 1 U1000) : non bloquant tant qu'elles ne sont pas traitées.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go staticcheck
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-build-${{ runner.os }}-
+      - name: staticcheck
+        run: staticcheck ./...
+
+  govulncheck:
+    name: govulncheck
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go go:golang.org/x/vuln/cmd/govulncheck
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-build-${{ runner.os }}-
+      - name: govulncheck
+        # N'échoue que sur une vulnérabilité atteinte par le code. GO-2026-6278
+        # (gorilla/websocket, dépendance de ccxt) est importée mais non atteinte.
+        run: govulncheck ./...
+
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: gitleaks
+      - name: gitleaks (tout l'historique)
+        # Faux positifs connus listés par empreinte dans .gitleaksignore.
+        run: gitleaks git --redact --verbose .
+
+  lint-files:
+    name: Dockerfile et workflows (hadolint, actionlint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: hadolint actionlint
+      - name: hadolint
+        run: hadolint Dockerfile Dockerfile.relay
+      - name: Go des Dockerfile aligné sur mise.toml
+        run: |
+          go_version=$(sed -n 's/^go = "\(.*\)"$/\1/p' mise.toml)
+          for f in Dockerfile Dockerfile.relay; do
+            if ! grep -qx "ARG GO_VERSION=${go_version}" "$f"; then
+              echo "::error file=$f::ARG GO_VERSION doit valoir ${go_version} (mise.toml)"
+              exit 1
+            fi
+          done
+      - name: actionlint
+        run: actionlint

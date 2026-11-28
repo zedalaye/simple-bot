@@ -1,0 +1,8 @@
+# Faux positifs connus de gitleaks (job « secrets » de la CI), un par empreinte.
+# Paire VAPID générée pour les tests du relay, sans usage réel.
+07aaca2a0c503d23b1c4cce2df8a2d525381b562:internal/relayserver/push_test.go:generic-api-key:11
+07aaca2a0c503d23b1c4cce2df8a2d525381b562:internal/relayserver/push_test.go:generic-api-key:12
+# Exemples de documentation (token de rechargement d'exemple, en-tête curl factice).
+67a73e7c11ae12775d60a54927ff29c868a14d9d:README.md:generic-api-key:155
+67a73e7c11ae12775d60a54927ff29c868a14d9d:README.md:generic-api-key:162
+67a73e7c11ae12775d60a54927ff29c868a14d9d:doc/API.md:curl-auth-header:22
