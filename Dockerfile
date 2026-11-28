@@ -1,17 +1,20 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.29.0
 # https://stackoverflow.com/a/76440207
 # https://github.com/tonistiigi/xx
 
 # Versions épinglées : GO_VERSION doit rester alignée sur mise.toml (vérifié en CI).
 ARG GO_VERSION=1.27.4
-ARG ALPINE_VERSION=3.24
+# golang ne publie ses images que par branche Alpine (alpine3.24) : le builder suit
+# la branche, l'image finale est épinglée au correctif exact (même branche).
+ARG ALPINE_BRANCH=3.24
+ARG ALPINE_VERSION=3.24.4
 ARG XX_VERSION=1.10.0
 
 ## Provide cross-platform compilation helpers
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:${XX_VERSION} AS xx
 
 ## Builder environment
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine${ALPINE_BRANCH} AS build
 
 # Install clang and co. for BUILDPLATFORM
 RUN apk add --no-cache --update clang lld make
